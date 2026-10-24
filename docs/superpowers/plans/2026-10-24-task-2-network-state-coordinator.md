@@ -136,11 +136,12 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - Consumes: Batch 1 typed GET `/api/state` result；Batch 2 connection/snapshot/invalidate events。
 - Produces: canonical `FullStateSnapshot` plus separate connection/freshness/read-error state；完整 snapshot 以外的 invalidate 不能作为 patch 写入。
 
-- [ ] 写水位和状态转换的纯单测，先验证旧快照/旧连接覆盖的失败路径。
-- [ ] 写同一状态读取合并测试，以及 GET 期间收到更高 invalidate 水位时必须再次读取的测试。
-- [ ] 实现 Store 接纳策略：epoch 切换仅接受新连接有效 snapshot；同 epoch 拒绝倒退 sequence；相关 revisions/generation 不回退。
-- [ ] 实现 stale/unknown 保留与 fresh 恢复规则；没有完整有效快照时不允许 fresh-dependent actions。
-- [ ] 运行目标测试、完整单测/Lint 和 `git diff --check`，提交本 Batch。
+- [x] 先写并运行水位/状态转换单测确认 RED，再实现：覆盖旧 epoch/sequence/连接世代、library/playlist/queue revisions、library-sync 与 explicit-stop generations 的倒退拒绝。
+- [x] 完成并发相同 GET 合并测试，以及 GET 期间 invalidate 水位上升后必须再次读取的测试；旧 sequence invalidate 被忽略。
+- [x] 实现 immutable `FullStateSnapshot`、纯 `SnapshotAcceptancePolicy`、canonical `SnapshotStore` 与 `StateReadCoordinator`；invalidate 只作为水位，不作为局部 patch。
+- [x] 实现 stale/unknown 保留、fresh 恢复和 controls eligibility；未就绪 realtime 连接的 HTTP GET 不能将状态恢复为 fresh，实际播放确认仅由明确 fresh observation 推导。
+- [x] 完整验证：`./gradlew --no-daemon -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 clean testDebugUnitTest lintDebug assembleDebug` → PASS，JUnit 44 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors、3 个既有依赖版本提示；Debug APK 生成，`git diff --check` 通过。完整日志 `/tmp/task2-batch3-finalverify.log`。
+- [x] 完成最终 diff 自审并提交本 Batch；未合并分支、未推送远端，未开始 Batch 4。
 
 ## Batch 4：唯一 Realtime Controller 与应用级 Runtime ownership
 
