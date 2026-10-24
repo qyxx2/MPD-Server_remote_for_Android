@@ -86,7 +86,7 @@ MPD-Server（唯一业务状态来源）
 
 ## 8. 基线更新与关键验收
 
-若目标 `MPD-Server/main` 前进到新 HEAD，先核对 `server/app/api`、相关 schema、`server/app/main.py`、Web services/stores/runtime/player/queue/layout 代码、现行规格与测试的差异，再更新本仓库这三份权威合同。
+若目标 `MPD-Server/main` 前进到新 HEAD，先核对 `server/app/api`、相关 schema、`server/app/main.py`、Web services/stores/runtime/player/queue/layout 代码、现行规格与测试的差异，再更新本仓库所有受影响的权威合同（产品与工程总规格、后端接口与实时协议、Web 行为继承、客户端边界与架构）；未受影响的合同不必机械修改。
 
 首轮集成至少验证：完整初始快照和重连、旧 epoch/sequence 拒绝、读请求中收到更高水位、unknown mutation 同 key 重试、current target 变化、重复歌曲 occurrence、Queue clear 不等于 Stop、歌词普通文本/时钟 stale、输出及曲库状态错误。
 
