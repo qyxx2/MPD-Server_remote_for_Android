@@ -17,6 +17,13 @@
 4. 网络中断、初始读取超时、协议错误或重连期间可保留最后已知事实作 stale 展示，但需禁用依赖当前确认状态的 controls。重连必须用新完整快照恢复可信状态，旧连接迟到响应不可写入新连接。
 5. HTTP 200 本身不代表外部播放观察是 fresh。所有 fresh/stale/unknown、observed_at 和 error 字段按服务端实际值呈现。
 
+### 客户端进程死亡与重启
+
+- 导航、Composable 或 ViewModel 重建不能丢失当前进程中的 mutation owner；共享操作协调器必须比页面生命周期更长。
+- 当前 Web 的操作记录由运行时内存维护，并不形成跨进程持久化的 mutation journal。Android 首期沿用该边界：进程被系统杀死或应用崩溃后，不恢复旧快照为权威状态，也不自动重放重启前尚未确认的写请求。
+- 重启后先建立新 realtime 连接并取得完整权威快照，再重读受影响的资源。若无法据此判定先前写操作是否生效，应明确提示结果仍未知，不能静默生成新 `Idempotency-Key` 再次提交；在用户确认新的操作意图前不得自动重试。
+- 跨进程保存并恢复原 `method/path/payload/key` 的持久化操作日志不属于首期范围。若未来需要该能力，必须另行冻结保留期限、隐私边界、服务器幂等记录有效期及恢复交互，不能仅通过持久化完整状态快照实现。
+
 ## 3. 什么才算实际正在播放
 
 当前 Web 只在连接可写、`playback_observation.freshness` 与 `actual_freshness` 为 fresh、`matches_current == true`、存在 `bound_queue_item_id`，同步状态为 `CONFIRMED` 或 `NO_CANDIDATES`，且实际状态是 playing/paused 时，才将业务 `current_song` 当作已确认实际曲目。
