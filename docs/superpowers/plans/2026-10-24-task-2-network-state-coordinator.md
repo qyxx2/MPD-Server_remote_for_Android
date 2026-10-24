@@ -40,13 +40,52 @@
 - Review: 四份既有权威规格和 `docs/superpowers/plans/2026-10-24-android-client-master-plan.md`
 - Create/Update: 本计划中记录的实际 package/file map、fixture 来源和基线 HEAD（如需单独证据文件则放 `.superpowers/sdd/2026-10-24-task-2-network-state-coordinator/progress.md`）
 
-- [ ] 读取 Task 2 合同中已记录的服务端固定基线及现有权威规格；本 Batch 不访问上游、不重复核对 HEAD。只有用户明确要求同步上游或告知协议变化时，才执行额外核对。
-- [ ] 盘点现有 Gradle 依赖、测试配置和 `app/src`，确认 OkHttp、Serialization、Coroutines 是否已提供及其版本；不得假设依赖已经存在。
-- [ ] 冻结包路径、类型名称、owner 创建位置、dispatcher/clock/test transport seam 与 DTO fixture 来源。
-- [ ] 将每个合同矩阵行映射到具体 Batch、测试名、人工检查和退出证据。
-- [ ] 运行 Task 1 基线 `./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug` 并保存退出码/摘要，确认起点可复现。
+- [x] 已读取 Task 2 合同、四份上位权威规格、Task 1 工程/测试配置与现有源码；服务端固定基线沿用合同记录的 `2ad84454ceb70817bd996c92b590cfa2d9e9b128`，本 Batch 不访问上游、不重复核对 HEAD。
+- [x] 已盘点 Gradle 依赖、测试配置和 `app/src`：目前只有 Compose/Activity/JUnit；OkHttp、Kotlin Serialization、Coroutines/StateFlow 均未声明，后续 Batch 1 必须在依赖评估后按合同添加，不得把它们当成现成依赖。
+- [x] 已冻结下方 package/file/type/owner/test seam/fixture map；Batch 0 不创建产品实现代码、不增加依赖。
+- [x] 已将合同矩阵逐项映射到具体 Batch、自动测试、人工检查及退出证据。
+- [x] 已执行 Task 1 基线 `./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug`；结果见 `.superpowers/sdd/2026-10-24-task-2-network-state-coordinator/progress.md`，完整日志 `/tmp/task2-batch0-baseline.log`。
 
-**退出条件：** 既有权威规格之间无未决 wire/DTO 差异；每个后续 Batch 的接口依赖与测试 seam 可定位。不得把重复核对上游 HEAD 作为退出条件。
+### Batch 0 frozen implementation map
+
+Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existing single `app` module. Paths below are binding targets for later Batches, not files to create in Batch 0.
+
+| Layer | Frozen path / primary types | Owner / test seam | Batch |
+|---|---|---|---|
+| Network origin | `network/ServerOrigin.kt`: `ServerOrigin`, `EndpointResolver` | Pure URL resolver; injected origin, no global mutable config | 1 |
+| HTTP transport/results | `network/HttpTransport.kt`: `HttpTransport`, `HttpResult`, `HttpFailure` | Injected OkHttp `Call.Factory` or narrow transport interface; response body is consumed once and closed | 1 |
+| Serialization/error | `protocol/JsonConfiguration.kt`, `protocol/ApiErrorDto.kt`, `protocol/ApiResult.kt` | Explicit `Json` configuration; typed business/transport/decode/protocol distinctions | 1 |
+| API DTOs | `protocol/dto/StateSnapshotDto.kt`, `protocol/dto/SystemDto.kt`, `protocol/dto/PlaybackDto.kt`, `protocol/dto/LibraryDto.kt`, `protocol/dto/PlaylistDto.kt`, `protocol/dto/RealtimeFrameDto.kt` | Wire DTOs separate from canonical runtime models; required/missing/null/enum rules tested explicitly | 1–2 |
+| Thin repositories | `data/StateRepository.kt`, `data/SystemRepository.kt`, `data/PlaybackRepository.kt`, `data/LibraryRepository.kt`, `data/PlaylistRepository.kt` | Accept injected `HttpTransport`; endpoint calls only, no parallel business algorithms | 1 and later consumers as needed |
+| Realtime wire/lifecycle | `network/RealtimeTransport.kt`, `runtime/RealtimeConnection.kt` | Injected WebSocket adapter, callback/event seam, connection generation; no Store mutation in transport | 2 |
+| Canonical snapshot | `runtime/FullStateSnapshot.kt`, `runtime/SnapshotStore.kt`, `runtime/SnapshotAcceptancePolicy.kt`, `runtime/StateReadCoordinator.kt` | Immutable snapshot + pure acceptance policy; injected dispatcher and controllable fake repository for deterministic ordering | 3 |
+| Application/runtime composition root | `MpdServerRemoteApplication.kt`, `runtime/AppRuntime.kt`, `runtime/RealtimeController.kt` | `Application.onCreate` creates one `AppRuntime`; ViewModels only consume shared flows and never create owners | 4 |
+| Mutation/activity | `runtime/MutationCoordinator.kt`, `runtime/MutationIntent.kt`, `runtime/OperationActivity.kt`, `runtime/ActivityStore.kt` | Injected transport/repositories, key factory, dispatcher and clock; stable intent identity for deterministic retry tests | 5 |
+| Tests/fixtures | `app/src/test/resources/fixtures/task2/` plus package-mirrored `app/src/test/java/io/github/qyxx2/mpdserver/remote/{network,protocol,data,runtime}/` | Synthetic fixtures derived only from the frozen API/Web contracts and documented baseline; each fixture records source/field intent. Do not copy secrets or depend on a live server in unit tests | 1–5 |
+
+**Ownership rules:** the `Application` composition root owns exactly one `AppRuntime`; `AppRuntime` owns the canonical `SnapshotStore`, one `RealtimeController`, and one `MutationCoordinator`. Repositories and transport adapters are dependencies of this runtime, not owners created by screens/ViewModels. HTTP and WS URLs derive from the same `ServerOrigin`; endpoint changes increment connection generation and invalidate old results. Dispatchers, time/clock, key generation and fake transport are constructor-injected only where needed for deterministic tests; do not add service locator/global singleton frameworks.
+
+**Contract matrix → implementation/test/verification mapping**
+
+| Contract row | Batch / expected test names | Manual check | Exit evidence |
+|---|---|---|---|
+| Origin and transport | B1 `EndpointResolverTest.httpAndWsShareOrigin`, `EndpointResolverTest.rejectsForeignOrigin` | B6 read-only connection to configured service origin | Resolver tests + configured-origin snapshot evidence |
+| HTTP errors/body | B1 `HttpResultTest.distinguishesHttpBusinessTransportAndDecodeFailures`, `HttpResultTest.accepts204WithoutBody`, `HttpResultTest.preservesNonJsonErrorStatus`, `ApiErrorDtoTest.requiresErrorEnvelope` | B6 compare a real response/error with contract; no destructive request required for this row | Unit test report and response classification evidence |
+| WebSocket initial frame | B2 `RealtimeFrameDecoderTest.requiresCompleteV1SnapshotFirst`, `RealtimeFrameDecoderTest.rejectsUnsupportedVersion`, `RealtimeFrameDecoderTest.rejectsOuterInnerWatermarkMismatch` | B6 confirm real connection supplies complete snapshot | Frame tests + recorded initial snapshot result |
+| Invalidate and authoritative reread | B2/B3 `RealtimeFrameDecoderTest.decodedInvalidateIsNotPatch`, `StateReadCoordinatorTest.coalescesConcurrentReads`, `StateReadCoordinatorTest.rereadsWhenWatermarkAdvancesDuringGet` | B6 observe a state change and subsequent full-snapshot reread | Deterministic read-coordinator tests/log |
+| Epoch/sequence/revisions | B3/B4 `SnapshotAcceptancePolicyTest.rejectsOlderEpochSequenceAndRevisions`, `RealtimeControllerTest.ignoresLateOldConnectionEvents` | B6 disconnect/reconnect and verify new snapshot ownership | Store/controller tests + reconnect observation |
+| Fresh/stale/unknown and observation | B3 `SnapshotStoreTest.retainsLastKnownAsStale`, `SnapshotStoreTest.doesNotBecomeFreshWithoutAcceptedSnapshot`, `SnapshotStoreTest.doesNotInferActualPlaybackFromBusinessState` | B6 inspect real observation/freshness fields | State transition tests + captured field checklist |
+| Mutation intent/idempotency | B5 `MutationCoordinatorTest.retriesSameIntentWithSameKeyAndPayload`, `MutationCoordinatorTest.marksTransportAmbiguityUnknown`, `MutationCoordinatorTest.doesNotAutoReplayUnknown` | B6 only one explicitly safe/reversible mutation if environment and state allow; otherwise document blocked | Coordinator tests + mutation receipt/readback evidence or explicit blocker |
+| Write sync and 204 | B1/B5 `HttpResultTest.accepts204WithoutBody`, `MutationCoordinatorTest.keepsWriteSuccessWhenFollowupReadFails` | B6 verify receipt and readback are distinct if safe to exercise | Unit test report + activity/result evidence |
+| Origin change/process restart | B4/B5 `RealtimeControllerTest.discardsOldOriginGenerationResults`, `MutationCoordinatorTest.doesNotMigrateIntentOnOriginChange`, `MutationCoordinatorTest.doesNotReplayAfterRuntimeRecreation` | B6 change origin only if a safe alternate endpoint is available; otherwise use deterministic tests | Generation/restart tests + documented manual limitation |
+| Activity/error ownership | B5 `ActivityStoreTest.retainsUnresolvedOperationAcrossObserverRecreation`, `MutationCoordinatorTest.separatesUnknownFromFailed` | B6 inspect shared operation activity through a later UI integration only; Task 2 currently has no UI, so runtime evidence only | Activity/coordinator test report |
+| Local persistence boundary | B4/B5 `RuntimeCompositionTest.hasOneCanonicalOwner`, `MutationCoordinatorTest.doesNotPersistOrReplayAcrossProcessBoundary` | B6 restart process and confirm fresh snapshot; no Task 2 UI assumption | Composition/boundary tests + restart observation |
+
+**Fixture provenance:** fixtures are hand-authored minimal JSON based on the fields and invariants explicitly documented in `docs/superpowers/specs/2026-10-23-android-backend-api-contract.md` §§2–5 and `docs/superpowers/specs/2026-10-23-android-web-behavior-contract.md` §§2–4, with ownership/persistence constraints from `docs/superpowers/specs/2026-10-23-android-client-boundary-and-architecture.md` §§2–6 and `docs/superpowers/specs/2026-10-24-android-client-product-and-engineering-spec.md` §§10, 12. Fixture metadata must identify whether each value is contractually required, nullable, an enum, or a deliberately invalid case. Do not claim fixtures were captured from a live server unless actually captured and versioned as such.
+
+**Batch 0 review ruling:** dependency versions are not frozen by this batch because those libraries are absent from the version catalog. Batch 1 must select versions compatible with the already frozen Kotlin/AGP toolchain, add the smallest required set, and record evidence in the contract before implementation. No new library is added during Batch 0.
+
+**Exit condition:** the existing authority documents do not leave a known unresolved wire/DTO conflict for the mapped surfaces; every subsequent Batch has a concrete path, owner, test seam and negative test; baseline build/test/Lint result is recorded. Rechecking upstream HEAD is explicitly not an exit condition.
 
 ## Batch 1：Origin、HTTP transport、DTO/wire 与错误解码
 
