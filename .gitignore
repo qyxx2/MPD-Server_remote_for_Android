@@ -1,1 +1,11 @@
 .superpowers/
+local.properties
+.gradle/
+**/build/
+*.jks
+*.keystore
+signing.properties
+*.apk
+*.aab
+*.hprof
+.idea/
