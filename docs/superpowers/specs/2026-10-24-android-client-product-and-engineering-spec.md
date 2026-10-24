@@ -2,7 +2,7 @@
 
 > **状态：Android 产品与工程权威规格。** 本文冻结产品定位、平台范围、技术栈方向、顶层导航、主要页面结构、主题和系统媒体控制等 Android 专属决策。本文不重写后端 API、Web 行为或客户端领域边界的细节合同。
 >
-> **Android 仓库基线：** qyxx2/MPD-Server_remote_for_Android 的 docs/android-client-roadmap 分支，commit 971a81077147ed0262f4dd86b655dafee9eb14e1（2026-10-23）。
+> **规格起草时的 Android 仓库核对点：** qyxx2/MPD-Server_remote_for_Android 的 docs/android-client-roadmap 分支，commit 971a81077147ed0262f4dd86b655dafee9eb14e1（2026-10-23）。这是本文起草时的历史核对点，不代表当前分支 HEAD。
 >
 > **上游后端核对基线：** qyxx2/MPD-Server/main，commit 2ad84454ceb70817bd996c92b590cfa2d9e9b128（2026-10-18）。上游 main 前进后，实施受影响功能前必须按本文第 13 节重新核对。
 
