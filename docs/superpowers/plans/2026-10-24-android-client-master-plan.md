@@ -1,20 +1,22 @@
-# MPD-Server Android 客户端主计划
+# MPD-Server Android Client Master Plan / Android 客户端主计划
 
-> **文档定位：主计划与阶段门控，不是逐 Batch 执行计划。** 本文固定 Task 顺序、每个 Task 必须核对的合同矩阵、机器/人工验证类型、前置阻塞及退出条件。进入某个 Task 时，再根据当时的上游代码和测试编写该 Task 的详细合同、冻结边界、验收标准，并拆分 Batch。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. The checkboxes track Task exit gates; do not start the next Task before the current gate passes.
 
-**目标：** 在不复制 MPD-Server 业务能力、不新增客户端业务权威的前提下，交付一个可重复构建、可安装、具备精致原生 UI 的 Kotlin + Jetpack Compose Android 遥控与状态展示客户端。
+**Goal:** 在不复制 MPD-Server 业务能力、不新增客户端业务权威的前提下，交付一个可重复构建、可安装、具备精致原生 UI 的 Kotlin + Jetpack Compose Android 遥控与状态展示客户端。
 
-**架构：** MPD-Server 是唯一业务和状态权威。Android 通过既有 HTTP API 和 WebSocket 遥控、读取权威状态并展示。应用 UI、系统媒体会话和通知共享同一应用运行时、状态 Store 与操作协调器。
+**Architecture:** MPD-Server 是唯一业务和状态权威。Android 通过既有 HTTP API 和 WebSocket 遥控、读取权威状态并展示。应用 UI、系统媒体会话和通知共享同一应用运行时、状态 Store 与操作协调器。
 
-**技术方向：** Kotlin、标准 Gradle Wrapper / Kotlin DSL、Android Gradle Plugin、Jetpack Compose / Material 3、Coroutines / StateFlow、OkHttp、kotlinx.serialization、Preferences DataStore；具体版本在 Task 0 核验后冻结。
+**Tech Stack:** Kotlin、标准 Gradle Wrapper / Kotlin DSL、Android Gradle Plugin、Jetpack Compose / Material 3、Coroutines / StateFlow、OkHttp、kotlinx.serialization、Preferences DataStore；具体版本在 Task 0 核验后冻结。
 
-**权威规格：**
+**Spec:** 本计划由以下四份权威规格共同约束：
 - [Android 产品与工程总规格](../specs/2026-10-24-android-client-product-and-engineering-spec.md)
 - [后端接口与实时协议规格](../specs/2026-10-23-android-backend-api-contract.md)
 - [Web 行为继承规格](../specs/2026-10-23-android-web-behavior-contract.md)
 - [客户端边界与架构规格](../specs/2026-10-23-android-client-boundary-and-architecture.md)
 
-## 全局约束
+> **文档定位：主计划与阶段门控，不是逐 Batch 执行计划。** 本文固定 Task 顺序、每个 Task 必须核对的合同矩阵、机器/人工验证类型、前置阻塞及退出条件。进入某个 Task 时，再根据当时的上游代码和测试编写该 Task 的详细合同、冻结边界、验收标准，并拆分 Batch。
+
+## Global Constraints / 全局约束
 
 - 最低系统版本固定为 Android 8.0 / API 26；首期目标是手机竖屏，不做平板专属或横屏双栏信息架构。
 - 使用原生 Compose，不使用 WebView；不使用本地音频引擎，不直接连接 MPD TCP 端口。
@@ -52,6 +54,8 @@
 
 ### Task 0：开发环境、签名策略与 CI 流程冻结
 
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+
 **目标：** 在创建产品工程骨架之前，确认实际可用的开发/构建环境、可复现工具链、APK 签名策略和 CI 交付方式。用户会在启动 Task 0 时提供具体环境；本主计划不预设使用哪台机器、哪种 IDE 或哪套 SDK 安装位置。
 
 **合同矩阵起点：**
@@ -79,6 +83,8 @@
 
 ### Task 1：原生工程骨架与基础 CI
 
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+
 **目标：** 按 Task 0 冻结的工具链建立标准 Kotlin/Compose Gradle 工程，形成可重复构建的最小应用和 CI 基线。
 
 **合同矩阵起点：** 产品与工程总规格 §§3–4、§13；Task 0 环境/签名/CI 合同；客户端边界与架构规格 §4。
@@ -92,6 +98,8 @@
 **阻塞/退出门：** Task 0 合同已冻结；构建、测试、Lint、CI artifact 和安装检查通过。不得在骨架阶段引入业务数据库、WebView 或本地播放引擎。
 
 ### Task 2：网络协议、共享状态 Store 与操作协调器
+
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
 
 **目标：** 建立后续页面唯一依赖的服务端连接、DTO 校验、完整状态快照、实时失效通知和 mutation 生命周期基础。
 
@@ -107,6 +115,8 @@
 
 ### Task 3：原生应用壳、导航、主题与通用状态 UI
 
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+
 **目标：** 实现被冻结的四项导航、页面容器、迷你播放器、应用内状态环/活动详情和本地外观偏好，接入 Task 2 的共享状态。
 
 **合同矩阵起点：** 产品规格 §§5–6、§8、§12、§13；架构合同 §§5–7；Web 行为合同 §9。
@@ -120,6 +130,8 @@
 **阻塞/退出门：** Task 2 的共享状态/连接接口稳定；根导航和共用组件规则冻结；关键布局无遮挡，控件禁用同时具备视觉与功能效果。
 
 ### Task 4：全屏正在播放、歌词、进度与 Queue
+
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
 
 **目标：** 完成核心遥控体验，并完整继承服务端播放观察、target、幂等和 Queue occurrence 语义。
 
@@ -135,6 +147,8 @@
 
 ### Task 5：主页、搜索、音乐库、歌单与收藏
 
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+
 **目标：** 完成发现与曲库浏览能力，严格使用现有服务端资源/API。
 
 **合同矩阵起点：** 产品规格 §§7.1–7.3、§13；后端 API 合同 §4–5；Web 行为合同 §7；架构合同 §5。
@@ -148,6 +162,8 @@
 **阻塞/退出门：** Task 2 API/DTO 语义稳定；各主页模块的数据来源有明确证据；任何需要新增后端业务/API 的要求必须另行分析和批准。
 
 ### Task 6：设置页与服务端系统配置
+
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
 
 **目标：** 完成本地客户端偏好，以及现有服务端健康、MPD 连接目标和输出状态/操作的展示与可用操作。
 
@@ -163,6 +179,8 @@
 
 ### Task 7：Android 系统媒体会话、通知与锁屏控制
 
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+
 **目标：** 使用 Android 系统媒体控件远程控制服务端播放，使锁屏/通知栏的播放状态与 App 共享状态一致。
 
 **合同矩阵起点：** 产品规格 §§4.1、11–13；Web 行为合同 §§2–5、9；架构合同 §§4–6。
@@ -177,6 +195,8 @@
 
 ### Task 8：端到端回归、视觉打磨与交付验收
 
+- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+
 **目标：** 将所有功能作为一个应用验证，修复跨页面、实时状态、后台生命周期和设备适配问题，按 Task 0 的方案验证交付产物。
 
 **合同矩阵起点：** 四份权威规格全部相关章节；Task 0 的环境/签名/CI 合同；Task 1–7 已冻结且已通过的 Task 合同。
@@ -187,7 +207,7 @@
 
 **阻塞/退出门：** Task 0–7 的必需退出门均通过；无 Critical/Important 审查问题；构建、测试、Lint 和交付产物证据可追溯；遗留问题被记录、分类并经用户接受。未完成的发布签名或设备验收必须如实标为未完成，不得用 CI 绿灯替代人工验证。
 
-## 五个重点回归风险
+## Review Focus / 五个重点回归风险
 
 以下风险必须映射到所属 Task 的自动测试，不得只靠人工注意：
 
