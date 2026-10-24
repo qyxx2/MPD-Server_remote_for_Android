@@ -118,11 +118,11 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - 输入：origin 与连接配置。
 - 输出：连接状态事件、完整初始 snapshot candidate、invalidate watermarks；本 Batch 不直接合并 canonical Store，也不拼装业务 patch。
 
-- [ ] 编写首帧必须为完整 snapshot、协议版本不支持、字段缺失、epoch/sequence 不一致的测试。
-- [ ] 编写断线/取消/重连和旧连接迟到帧必须被忽略的测试。
-- [ ] 确认 RED 后实现连接 lifecycle；重连策略需有超时、取消和有界/带抖动退避，具体值若与 Web 基线不同须在实现前说明并冻结。
-- [ ] 验证任何有效初始 snapshot 未接纳前 connection readiness 不表示 fresh/writable。
-- [ ] 运行目标测试、完整单测/Lint 和 `git diff --check`，提交本 Batch。
+- [x] 编写首帧必须为完整 snapshot、协议版本不支持、字段缺失、epoch/sequence 不一致的测试（`RealtimeFrameDecoderTest`）。
+- [x] 编写断线/取消/重连、首帧 invalidate 拒绝和旧连接迟到帧忽略测试（`RealtimeConnectionTest`）。
+- [x] 先运行目标测试确认 RED，再实现连接 lifecycle；单次初始连接/快照共用 10 秒超时，取消关闭 socket，重连采用有界指数退避并注入 jitter。
+- [x] 有效 snapshot 被严格解码前 readiness 不会进入 `Ready`；此状态仅表示当前 WS 连接收到协议有效的初始快照，不代表 canonical Store 已接纳或 fresh/writable（由 Batch 3 接管）。
+- [x] 完整单测/Lint/Debug 构建和 `git diff --check` 通过；36 项单测 0 失败/错误，Lint 0 errors、3 个依赖版本可升级提示，完成范围复审后提交本 Batch。
 
 ## Batch 3：Canonical Snapshot Store 与水位/并发读取规则
 
