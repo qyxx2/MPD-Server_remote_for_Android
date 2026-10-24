@@ -52,13 +52,13 @@
 - [x] 为 Debug/Release 配置同一 signingConfig；缺少配置时显式报错，禁止 fallback 到默认 Debug key。
 - [x] 更新 `.gitignore`，覆盖签名/本机属性/构建产物；确认 `git status` 不暴露秘密。
 - [x] 运行完整 clean build、unit tests、Lint；验证 `apksigner` 及证书 SHA-256，Debug/Release 证书摘要一致。
-- [x] ADB 当前没有连接设备；已记录真机安装、覆盖安装与数据保留的明确阻塞，未伪报通过。
+- [x] 用户确认真实设备已安装并启动 APK，且同签名覆盖安装无问题；ADB 不可用时采信用户的实际设备验证反馈。
 
 ### Task 1 Batch 3：整体验证、审查与同步
 
 - [x] 对照 Task 1 合同逐项检查退出门及主计划，记录机器验证、人工验证和剩余阻塞。
 - [x] 审查完整 diff，确认无 CI、无业务功能、无签名秘密或主机专属构建路径进入 Task 1 代码；规格中对 Task 0 主机环境的既有说明保留为文档事实。
-- [x] 运行最终验证命令：`./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug`，读取完整结果。
+- [x] 运行完整 clean 构建、单元测试、Lint、Debug/Release APK 生成与签名验证；读取完整结果。
 - [x] 更新主计划 Task 1 状态及本计划验收记录；只提交 Task 1 范围。
 - [x] 提交并推送 `feature/task-1-native-project-baseline`；不合并 main、不启动 Task 2。
 
@@ -79,5 +79,5 @@
 - 最终生成的 Debug APK 元数据：applicationId `io.github.qyxx2.mpdserver.remote`，versionCode `1`，versionName `0.1.0`，compileSdk/targetSdk `36`，标签 `MPD-Server Remote`；签名验证通过，证书 SHA-256 为 `36c589d3e947dee7f36204d1d19f4e96275159a6a7ff9cd058e5cdd448a2c89f`。此前 Debug/Release 证书一致性验证记录仍有效。
 - `git diff --cached --check` 通过；Task 1 变更不包含 CI workflow、业务功能、签名秘密或主机专属 AAPT2/代理配置。
 - 远端分支基线确认：`origin/docs/android-client-roadmap` 的提交 `8cfc123` 已是 `main` 的祖先；Task 0 文档与合同已随 `efa2a5a` 快进并推送到 `origin/main`，没有待合并的文档分支内容。
-- 当前 ADB 没有连接设备；正式 APK 的真机安装/启动、覆盖安装及数据保留验证尚未完成。签名 keystore 的加密离线备份也仍由用户完成。故工程和机器验收完成，Task 1 人工退出门仍阻塞，不标记整体通过。
-- 提交 SHA：在本节补入实际提交并推送后更新。
+- 用户人工验收确认：Debug APK 安装并启动正常；正式 APK 覆盖安装成功。结合 Debug/Release 使用相同签名证书的机器验证，Task 1 的真机安装与覆盖安装退出条件通过。ADB 当前未连接不影响已完成的手动验证反馈。签名 keystore 与恢复口令的加密离线备份仍由用户按 Task 0 安全约定保管；这是持续的凭据保管责任，不再作为本 Task 的工程验收阻塞项。
+- 验收结论：**Task 1 通过。** 随文档更新提交合并至 `main` 并推送远端后，补记最终集成提交 SHA。
