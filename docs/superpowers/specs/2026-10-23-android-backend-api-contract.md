@@ -97,7 +97,7 @@
 |---|---|---|
 | GET | `/api/library/songs` | 全部歌曲；支持 `sort_by=title|modified_at`、`sort_order=asc|desc` |
 | GET | `/api/library/songs/{song_id}` | 歌曲详情、歌词、音频元数据、可用性、封面描述 |
-| GET | `/api/library/songs/{song_id}/artwork` | 封面资源 |
+| GET | `/api/library/songs/{song_id}/artwork` | 返回嵌入封面的原始二进制图片，不是 JSON DTO |
 | GET | `/api/library/albums`、`/albums/{album_id}/songs` | 专辑及成员 |
 | GET | `/api/library/artists`、`/artists/{artist_id}/songs` | 艺术家及成员 |
 | GET | `/api/library/genres`、`/genres/{genre_id}/songs` | 风格及成员 |
@@ -107,6 +107,12 @@
 | GET | `/api/library/search/results?q=...` | 分类 groups 与 song ids |
 | POST | `/api/library/collections` | CollectionRequest；该 POST 不要求 Idempotency-Key |
 | POST | `/api/library/scan` | body `{root}`，202 返回 activity_id |
+
+#### 封面二进制响应
+
+- `GET /api/library/songs/{song_id}/artwork` 成功时，响应体是图片原始字节，`Content-Type` 由服务端读取到的实际图片 MIME type 决定；不能按 JSON DTO 解码。
+- 歌曲不存在时返回 404 `SONG_NOT_FOUND`；歌曲存在但没有可读封面时返回 404 `ARTWORK_NOT_FOUND`；读取失败返回 500 `ARTWORK_READ_ERROR`。错误响应遵循通用 `error.code/message/details` 外层结构。
+- 封面缺失与封面读取失败必须区分。请求失败时不能用其他歌曲的封面代替当前封面；切歌或资源身份变化后应丢弃迟到的旧图片响应。
 
 CollectionRequest 字段为 `source_type`、`source_id?`、`query?`、`song_ids`、`randomize`、`random_seed?`、`sort_by?`、`sort_order`。来源类型为 `ALBUM`、`ARTIST`、`GENRE`、`YEAR`、`TAG`、`SEARCH`、`PLAYLIST`、`FAVORITES`、`LIBRARY`、`SONGS`。具体来源参数组合、可用歌曲和排序由服务端校验，不在 Android 重做。
 
@@ -137,6 +143,12 @@ CollectionRequest 字段为 `source_type`、`source_id?`、`query?`、`song_ids`
 
 - [上游 main commit](https://github.com/qyxx2/MPD-Server/commit/2ad84454ceb70817bd996c92b590cfa2d9e9b128)
 - [API 路由](https://github.com/qyxx2/MPD-Server/tree/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api)
+- [播放控制与 Queue 路由](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/playback.py)
+- [曲库、搜索与封面路由](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/library.py)
+- [歌单与收藏路由](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/playlists.py)
+- [历史路由](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/history.py)
+- [系统与健康路由](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/system.py)
+- [实时协议与完整状态路由](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/realtime.py)
 - [公共 schemas](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/schemas.py)
 - [实时 schemas](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/api/realtime_schemas.py)
 - [通用错误与幂等中间件](https://github.com/qyxx2/MPD-Server/blob/2ad84454ceb70817bd996c92b590cfa2d9e9b128/server/app/main.py)
