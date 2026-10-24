@@ -100,11 +100,11 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - 输入：唯一配置 origin、HTTP method/path/body、必要 headers。
 - 输出：明确区分成功 body、无 body 成功、业务 HTTP 错误、传输错误和解码/协议错误的 typed result；不得直接修改 canonical state。
 
-- [ ] 为 URL 解析、请求 origin 限制、HTTP/WS scheme 派生写失败测试。
-- [ ] 为必需字段缺失、null、未知 enum、错误 DTO、204 无 body、202 activity 与非 JSON body 写失败测试。
-- [ ] 运行目标测试确认 RED，再实现最小 transport/DTO/错误模型使其 GREEN。
-- [ ] 验证写请求的 key/body 原样传输，敏感凭据/请求 body 不进入日志。
-- [ ] 运行目标单测、`./gradlew --no-daemon testDebugUnitTest lintDebug`、`git diff --check` 并提交本 Batch。
+- [x] 为 URL 解析、请求 origin 限制、HTTP/WS scheme 派生写失败测试（`EndpointResolverTest`）。
+- [x] 为必需字段缺失、显式 null、未知 enum、错误 DTO、204 无 body、202 activity 与非 JSON body 写测试（`PlaybackDtoTest`、`ApiErrorDtoTest`、`HttpResultTest`、`ApiResultTest`）。
+- [x] 先运行目标测试确认 RED（实现类型/依赖缺失），再实现最小 transport/DTO/错误模型使其 GREEN；期间发现并修正了 OkHttp 不接受 `wss` 作为 `HttpUrl` scheme 和 204 测试响应构造约束。
+- [x] 验证写请求的 method/path/body/`Idempotency-Key` 原样保留，诊断信息只包含 method/path、不输出凭据或 body（`HttpResultTest`）。
+- [x] 运行目标单测、完整 `./gradlew --no-daemon testDebugUnitTest lintDebug` 和 `git diff --check`。完整验证结果见 `.superpowers/sdd/2026-10-24-task-2-network-state-coordinator/progress.md`；提交在验证及最终复审后完成。
 
 ## Batch 2：完整 Snapshot / Realtime wire 与连接生命周期
 

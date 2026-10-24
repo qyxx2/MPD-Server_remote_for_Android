@@ -16,6 +16,7 @@ Task 2 只建立可独立验证的网络和状态基础，不实现根导航、�
 
 - MPD-Server 是唯一业务与状态权威；Android 不直连 MPD TCP，不建立第二套 Queue/AutoPlay/History/Collection/Playlist/Favorites/reconciliation 逻辑。
 - 使用 Kotlin、现有 Gradle/Compose 工程和已冻结依赖基线；网络层沿用 OkHttp、Kotlin Serialization、Coroutines/StateFlow 的原生方向。若需要增加库或升级版本，先给出兼容性证据并更新合同，不以实现方便为由临时引入。
+- Batch 1 依赖选择（已与 Kotlin 2.0.21 / AGP 8.10.1 工具链完成本地 Gradle 解析与编译验证）：OkHttp `4.12.0` 负责 HTTP transport；Kotlin Serialization JSON `1.7.3` 与 Kotlin `2.0.21` 插件配套，用于严格 DTO/wire 解码；Coroutines Android `1.9.0` 供后续 StateFlow runtime 使用。依赖版本集中管理于 `gradle/libs.versions.toml`，无大版本升级或无关库。
 - 单一应用级运行时拥有一个 canonical snapshot Store、一个长期 realtime controller、一个 mutation coordinator。页面/ViewModel 不得各自创建 WebSocket、canonical playback state 或重试 owner。
 - HTTP 和 WebSocket 都从同一个用户配置的 origin 派生：HTTP(S) `/api/...`、WS(S) `/api/realtime`。不得硬编码 NAS 地址或服务端口监听，不添加登录 API 假设。
 - 不使用 Room/SQLite 或其他本地业务数据库；不将持久化快照当作启动后的权威状态。当前进程内 last-known 只用于 stale/unknown 展示。
