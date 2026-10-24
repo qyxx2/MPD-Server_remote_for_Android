@@ -19,7 +19,7 @@ Android UI **不以复制 Web 页面布局为目标**。Web 源码用于核对�
 - 四个一级入口与迷你播放器始终遵循统一的应用壳；完整播放控制只存在于全屏正在播放页面。
 - 播放、Queue、曲库、歌单、收藏、播放观察与恢复行为遵守现有服务端合同，不形成第二套业务权威。
 - App 内播放控件、迷你播放器、状态环、系统媒体控件与当前共享状态一致，不因页面切换或进入后台产生互相矛盾的状态。
-- 工程可通过标准 Gradle 命令构建、测试，并在 CI 生成 APK 构建产物。
+- 工程可通过标准 Gradle 命令在指定 Ubuntu 工作区本地构建、测试并生成可安装 APK；当前阶段不要求 CI。
 
 ## 2. 权威层级与现有合同分工
 
@@ -62,14 +62,14 @@ Android UI **不以复制 Web 页面布局为目标**。Web 源码用于核对�
 | Android 系统媒体集成 | Android 平台 MediaSession、AndroidX Core NotificationCompat/MediaStyle，以及满足后台生命周期所需的服务组件 | 将远端播放状态映射至系统媒体控件；不启动本地音频播放器或解码 NAS 音频 |
 | 单元与协议测试 | JUnit、kotlinx-coroutines-test、OkHttp MockWebServer（或经阶段合同确认的等价测试工具） | 覆盖 DTO、共享状态、幂等操作、HTTP 错误和实时协议 |
 | UI 测试 | Compose UI Test、AndroidX Test | 验证导航、可访问性、主题、关键状态和主要交互 |
-| 持续集成 | GitHub Actions + Gradle Wrapper | 执行构建、测试、Lint，并保存可供验证的 APK artifact |
+| 构建与验证 | 指定 Ubuntu 设备上的本地工作区 + Gradle Wrapper | 当前构建、测试、Lint 和 APK 生成均在本地完成；GitHub 远端仅同步源代码分支，不用于构建 |
 
 ### 4.2 版本与工程约束
 
 - 工程骨架阶段选择当时兼容且稳定的 Gradle、AGP、Kotlin、Compose BOM、AndroidX 与 JDK 版本，并通过统一版本目录管理依赖；本总规格不提前锁死可能过期的具体版本号。
 - 工程必须提交 Gradle Wrapper、依赖版本目录、必要的 Kotlin/Compose 编译配置和测试配置；不能依赖开发者机器上未声明的全局 Gradle。
-- CI 至少执行 Debug 构建、单元/协议测试与 Android Lint；构建成功后保存 Debug APK。Release 签名由后续发布合同处理，密钥不得提交到仓库。
-- 包名/applicationId、应用图标、启动图、发布签名配置和精确版本号在工程骨架阶段冻结，不阻塞本总规格的产品边界。
+- 当前所有构建、测试和 Lint 均在指定 Ubuntu 设备的本地工作区使用 Gradle Wrapper 执行；不添加 GitHub Actions workflow，远端 Git 仓库仅同步源代码分支，不承担构建。只有本地因 APK 体积/资源不足无法构建，或构建耗时过长时，才重新评估远端构建，且必须先取得用户再次批准。
+- 正式 applicationId 与 Kotlin/Gradle namespace 固定为 io.github.qyxx2.mpdserver.remote，应用显示名固定为 MPD-Server Remote。Task 1 必须落实相同的 applicationId / namespace 并验证 APK 元数据；正式 APK 建立后不得擅自更改包名。应用图标、启动图、版本号在工程骨架阶段冻结。
 - 版本升级应验证最低 API 26 兼容性，不能为追逐新版依赖而悄悄提高最低系统要求。
 
 ### 4.3 明确不采用的技术
@@ -351,7 +351,7 @@ MPD (实际音频播放与输出)
 ### 13.2 每阶段冻结
 
 总规格冻结稳定的产品边界；以下内容在相应阶段开始前建立单独的细化合同：
-- 工程骨架：applicationId、具体 SDK/依赖/Gradle/JDK 版本、网络安全配置、目录与模块边界、CI 命令。
+- 工程骨架：具体 SDK/依赖/Gradle/JDK 版本、网络安全配置、目录与模块边界、本地构建/测试/Lint 命令。正式 applicationId / namespace 已由 Task 0 冻结。
 - 应用壳/主题：语义颜色 tokens、AppBar/底部导航/迷你播放器准确尺寸、窗口 inset、状态环尺寸/位置/线宽、主题对比度测量。
 - 主页：模块数据源、顺序、数量、无数据行为、刷新机制以及“猜你喜欢”的真实能力边界。
 - 搜索/音乐库：查询交互、归类与详情导航、长列表和操作菜单。

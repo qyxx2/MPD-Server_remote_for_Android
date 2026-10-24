@@ -19,6 +19,11 @@
 
 它们不取代 MPD-Server 本身的代码和测试；上游服务端是业务及状态唯一权威。若上游 main 前进，先比较实际代码、测试和规格差异，更新受影响合同，再开始相关客户端工作。阶段级 UI/交互规格可以细化实现参数，但不得推翻总规格或服务端合同。
 
+## Task 0 环境、签名与本地交付合同
+
+- [Task 0 环境、构建、签名与本地交付合同](specs/2026-10-24-task-0-environment-build-signing-ci.md)：冻结本地工具链、正式 applicationId、统一安装签名身份与远端构建的重新评估条件；当前不配置 CI。
+- [Task 0 执行计划](plans/2026-10-24-task-0-environment-build-signing-ci.md)：记录机器验证、用户决策、真机人工验收和 Task 0 退出门。
+
 ## 主计划与实现路线
 
 - [Android 客户端主计划](plans/2026-10-24-android-client-master-plan.md)：Task 0–8 的顺序、每个 Task 的合同矩阵、机器/人工验证、前置阻塞与退出门。后续工作以此作为阶段门控主入口。
