@@ -1,10 +1,10 @@
 # Task 2：网络协议、共享状态 Store 与操作协调器合同
 
-> 状态：**Task 2 实施前冻结合同**。本文只定义客户端网络/协议/状态/操作基础，不实现任何产品功能代码。与四份上位权威规格冲突时以上位规格和当前 `MPD-Server/main` 实际代码/测试为准。
+> 状态：**Task 2 实施前冻结合同**。本文只定义客户端网络/协议/状态/操作基础，不实现任何产品功能代码。与四份上位权威规格冲突时以上位规格和本合同记录的服务端基线为准。
 >
 > Android 仓库基线：`qyxx2/MPD-Server_remote_for_Android/main` commit `28ac7fc134d6248ae0c9720b0ebd1c426e27356e`（2026-10-24）。
 >
-> 服务端基线：`qyxx2/MPD-Server/main` commit `2ad84454ceb70817bd996c92b590cfa2d9e9b128`（本轮 `git ls-remote` 核对，2026-10-24）。Task 2 实施前若该 HEAD 前进，必须先按本合同 §3 做差异核验；不得静默沿用旧 DTO/端点。
+> 固定服务端基线：`qyxx2/MPD-Server/main` commit `2ad84454ceb70817bd996c92b590cfa2d9e9b128`（2026-10-24 已核对）。按用户决定，Task 2 期间将该基线视为固定权威；各 Batch 不需要反复查询上游 HEAD。只有用户明确要求同步上游，或明确告知服务端协议已变更时，才重新核对并更新受影响合同。
 
 ## 1. 目标与范围
 
@@ -22,17 +22,16 @@ Task 2 只建立可独立验证的网络和状态基础，不实现根导航、�
 - mutation owner 的生命周期长于页面；本 Task 不引入跨进程持久化 mutation journal，也不在进程重启后自动重放未确认写入。
 - 不更改服务端、服务端 API、数据库、Web 前端或部署配置；不添加 CI/远端构建。所有实现与验证只在 `/home/Gold/WorkSpace/MS_remote_for_Android` 唯一工作区完成。
 
-## 3. 实施前上游基线门
+## 3. 固定服务端基线与重新核对条件
 
-本轮规格核对的服务端 HEAD 与文档快照一致：`2ad84454ceb70817bd996c92b590cfa2d9e9b128`。开始 Task 2 第一个实现 Batch 前，重新读取实际 `MPD-Server/main` HEAD；如果变化，检查：
+Task 2 使用已记录的服务端基线 `2ad84454ceb70817bd996c92b590cfa2d9e9b128`，其协议和行为由仓库中既有后端 API 合同、Web 行为继承合同及客户端边界规格提供依据。用户已明确表示暂时不会更新上游，因此本 Task 不把检查 `MPD-Server/main` HEAD 设为任何 Batch 的前置条件，也不要求重复执行 `git ls-remote` 或重新审阅上游文件。
 
-1. `server/app/api/realtime.py`、`schemas.py`、`realtime_schemas.py` 及相关 API 路由；
-2. `server/app/main.py` 的统一错误与 Idempotency-Key 处理；
-3. `web/src/services/api.ts`、`realtime.ts`、`wire.ts`、`web/src/types/api.ts`；
-4. `web/src/stores/player.ts`、`web/src/stores/notices.ts`、`web/src/runtime/taskActions.ts`、`web/src/runtime/playerSession.ts`；
-5. 对应服务端/Web 测试和四份 Android 权威规格。
+只有以下情况才重新核对上游：
 
-只在证据表明端点、DTO、协议或行为有变化时更新受影响的 Android 合同。若发现服务端当前实现与既有合同矛盾，暂停相关实现并记录具体文件/测试证据；不由客户端猜测并创造第三种协议。
+1. 用户明确要求将 Android 客户端规格/实现同步到新的服务端版本；或
+2. 用户明确告知服务端端点、DTO、Realtime 协议或行为已发生变化。
+
+触发上述情况后，才核对新的服务端 HEAD 与相关 API/realtime schemas、Web services/runtime 和测试；仅更新证据表明受影响的合同。没有上述触发条件时，直接按已冻结合同实施，不得自行增加重复的上游检查步骤。若实施中现有合同内部出现矛盾，先依据仓库已有权威规格解决，不以猜测创造新协议。
 
 ## 4. 合同矩阵
 
@@ -92,7 +91,7 @@ Task 2 只建立可独立验证的网络和状态基础，不实现根导航、�
 在 Task 2 实现前必须确认：
 
 1. 本合同矩阵与第 5 节不变量已冻结；
-2. 实际 `MPD-Server/main` HEAD 已记录，若有差异已完成证据核对并更新合同；
+2. 使用本合同记录的固定服务端基线；只有满足 §3 明确触发条件时才重新核对上游并更新合同；
 3. 精确目录/类型映射完成，明确 public/internal 接口和测试 seam；
 4. 每个 Batch 的输入、输出、依赖、负向测试、验收命令与提交边界明确；
 5. 不需要新增服务端 API、数据库、CI 或依赖大版本升级；若发现必须新增，暂停并先重新评估合同。

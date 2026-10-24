@@ -14,7 +14,7 @@
 - [Web 行为继承规格](../specs/2026-10-23-android-web-behavior-contract.md)
 - [客户端边界与架构规格](../specs/2026-10-23-android-client-boundary-and-architecture.md)
 
-> **文档定位：主计划与阶段门控，不是逐 Batch 执行计划。** 本文固定 Task 顺序、每个 Task 必须核对的合同矩阵、机器/人工验证类型、前置阻塞及退出条件。进入某个 Task 时，再根据当时的上游代码和测试编写该 Task 的详细合同、冻结边界、验收标准，并拆分 Batch。
+> **文档定位：主计划与阶段门控，不是逐 Batch 执行计划。** 本文固定 Task 顺序、每个 Task 必须核对的合同矩阵、机器/人工验证类型、前置阻塞及退出条件。进入某个 Task 时，根据已冻结的权威规格与已记录的服务端基线编写详细合同、冻结边界、验收标准，并拆分 Batch。只有用户明确要求同步上游或告知服务端协议变化时，才重新核对上游。
 
 ## Global Constraints / 全局约束
 
@@ -31,7 +31,7 @@
 
 ## 每个 Task 的固定工作流程
 
-1. **重新核对基线：** 记录本 Android 分支实际 HEAD 和 `MPD-Server/main` 实际 HEAD。若后端 HEAD 与权威规格记录不同，先比较受影响的路由、schema、Web 调用点、测试和领域规格，按需更新合同，不直接沿用旧端点假设。
+1. **确认工作基线：** 记录本 Android 分支实际 HEAD。服务端使用已有权威规格记录的固定基线，不要求每个 Task/Batch 重复查询 `MPD-Server/main`；只有用户明确要求同步上游或告知服务端协议变化时，才重新核对受影响的路由、schema、Web 调用点与测试。
 2. **建立合同矩阵：** 为本 Task 列出“需求/决策 → 权威规格章节 → 上游代码或测试证据 → 本 Task 新合同/已有合同 → 验证方式”。明确哪些内容已冻结、哪些需要本轮确认、哪些明确不做。
 3. **冻结 Task 合同：** 在 `docs/superpowers/specs/` 建立或更新该 Task 的详细合同，写明范围、依赖、接口/状态边界、非目标、机器验证、人工验证和可判定的退出条件。涉及用户产品选择、环境限制或安全凭据的问题，先向用户确认；未决事项不得靠实施者猜测。
 4. **拆分执行计划：** 在 `docs/superpowers/plans/` 创建该 Task 的分批计划。每个 Batch 只完成明确范围，测试先行，变更后运行对应验证并提交；不得顺带开始下一 Task。
@@ -96,7 +96,7 @@
 
 - [ ] 合同矩阵与 Batch 分解已冻结；尚未实施 Task 2 功能代码，机器/真实服务验证与退出门待后续 Batch 完成。
 
-**Task 2 详细合同：** [网络协议、共享状态 Store 与操作协调器合同](../specs/2026-10-24-task-2-network-state-coordinator.md)；[分批实施计划](2026-10-24-task-2-network-state-coordinator.md)。本阶段先冻结 origin/HTTP/WS、严格 DTO、snapshot 水位、单一 realtime owner、mutation 幂等与 unknown 恢复合同；实施前必须再次核对实际 `MPD-Server/main` HEAD。
+**Task 2 详细合同：** [网络协议、共享状态 Store 与操作协调器合同](../specs/2026-10-24-task-2-network-state-coordinator.md)；[分批实施计划](2026-10-24-task-2-network-state-coordinator.md)。本阶段先冻结 origin/HTTP/WS、严格 DTO、snapshot 水位、单一 realtime owner、mutation 幂等与 unknown 恢复合同。服务端以 Task 2 合同中记录的固定基线为准；用户明确要求同步上游或告知服务端协议变化时才重新核对，不要求每个 Batch 重复检查。
 
 **目标：** 建立后续页面唯一依赖的服务端连接、DTO 校验、完整状态快照、实时失效通知和 mutation 生命周期基础。
 

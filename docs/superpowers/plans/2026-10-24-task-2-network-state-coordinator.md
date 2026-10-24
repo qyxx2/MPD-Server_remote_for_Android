@@ -31,22 +31,22 @@
 
 ---
 
-## Batch 0：上游合同复核与精确文件/接口映射
+## Batch 0：固定合同映射与精确文件/接口映射
 
-**目的：** 在任何实现代码之前，把合同矩阵映射到当前上游代码、当前 Android 工程和测试 seam。
+**目的：** 在任何实现代码之前，把已冻结的合同矩阵映射到 Android 工程、具体类型/文件和测试 seam。使用 Task 2 合同中记录的固定服务端基线；按用户决定，不在各 Batch 重复核对上游 HEAD。
 
 **Files:**
 - Review: `docs/superpowers/specs/2026-10-24-task-2-network-state-coordinator.md`
 - Review: 四份既有权威规格和 `docs/superpowers/plans/2026-10-24-android-client-master-plan.md`
 - Create/Update: 本计划中记录的实际 package/file map、fixture 来源和基线 HEAD（如需单独证据文件则放 `.superpowers/sdd/2026-10-24-task-2-network-state-coordinator/progress.md`）
 
-- [ ] 重新核对 `MPD-Server/main` 实际 HEAD；若变化，比较 realtime/API schemas、Web services/runtime、相关测试，并更新受影响合同。
+- [ ] 读取 Task 2 合同中已记录的服务端固定基线及现有权威规格；本 Batch 不访问上游、不重复核对 HEAD。只有用户明确要求同步上游或告知协议变化时，才执行额外核对。
 - [ ] 盘点现有 Gradle 依赖、测试配置和 `app/src`，确认 OkHttp、Serialization、Coroutines 是否已提供及其版本；不得假设依赖已经存在。
 - [ ] 冻结包路径、类型名称、owner 创建位置、dispatcher/clock/test transport seam 与 DTO fixture 来源。
 - [ ] 将每个合同矩阵行映射到具体 Batch、测试名、人工检查和退出证据。
 - [ ] 运行 Task 1 基线 `./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug` 并保存退出码/摘要，确认起点可复现。
 
-**退出条件：** 无未决 wire/DTO 差异；每个后续 Batch 的接口依赖与测试 seam 可定位。若发现服务端合同冲突，暂停相关 Batch，先修正规格。
+**退出条件：** 既有权威规格之间无未决 wire/DTO 差异；每个后续 Batch 的接口依赖与测试 seam 可定位。不得把重复核对上游 HEAD 作为退出条件。
 
 ## Batch 1：Origin、HTTP transport、DTO/wire 与错误解码
 
@@ -160,7 +160,7 @@
 ## Task 2 完成报告模板
 
 - Android base HEAD / branch / final commit：
-- Actual MPD-Server/main HEAD and contract-diff result：
+- Fixed MPD-Server baseline used (no recheck unless user requests/announces a change)：
 - Implemented batches and commits：
 - `clean testDebugUnitTest lintDebug assembleDebug` result：
 - Protocol/state/mutation tests and counts：
