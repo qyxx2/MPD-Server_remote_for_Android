@@ -94,7 +94,9 @@
 
 ### Task 2：网络协议、共享状态 Store 与操作协调器
 
-- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+- [ ] 合同矩阵与 Batch 分解已冻结；尚未实施 Task 2 功能代码，机器/真实服务验证与退出门待后续 Batch 完成。
+
+**Task 2 详细合同：** [网络协议、共享状态 Store 与操作协调器合同](../specs/2026-10-24-task-2-network-state-coordinator.md)；[分批实施计划](2026-10-24-task-2-network-state-coordinator.md)。本阶段先冻结 origin/HTTP/WS、严格 DTO、snapshot 水位、单一 realtime owner、mutation 幂等与 unknown 恢复合同；实施前必须再次核对实际 `MPD-Server/main` HEAD。
 
 **目标：** 建立后续页面唯一依赖的服务端连接、DTO 校验、完整状态快照、实时失效通知和 mutation 生命周期基础。
 

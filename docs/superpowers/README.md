@@ -29,6 +29,8 @@
 - [Android 客户端主计划](plans/2026-10-24-android-client-master-plan.md)：Task 0–8 的顺序、每个 Task 的合同矩阵、机器/人工验证、前置阻塞与退出门。后续工作以此作为阶段门控主入口。
 - [Task 1 原生工程骨架合同](specs/2026-10-24-task-1-native-project-baseline.md)：冻结工程身份、工具链、统一签名、范围边界与退出门。
 - [Task 1 执行计划](plans/2026-10-24-task-1-native-project-baseline.md)：本地原生工程实施步骤、TDD、验证和交付记录。
+- [Task 2 网络协议、共享状态 Store 与操作协调器合同](specs/2026-10-24-task-2-network-state-coordinator.md)：冻结服务端 origin/HTTP/WS、严格 DTO、完整快照、单一 realtime owner、mutation 幂等/unknown 恢复边界与合同矩阵。
+- [Task 2 分批实施计划](plans/2026-10-24-task-2-network-state-coordinator.md)：按上游复核、HTTP/DTO、Realtime、Snapshot Store、单一 Runtime、Mutation Coordinator 和整体验收拆分 Batch；当前仅规划，不代表已开始实现。
 - [初步实现路线图](plans/2026-10-23-android-client-roadmap.md)：早期阶段概览，仅作背景参考；若与主计划的 Task 顺序或退出门冲突，以主计划为准。
 - 每个 Task 开始时，另行细化该 Task 的权威合同、冻结边界、验收标准和 Batch 执行计划；精确 UI 尺寸、动画、主页模块数据规则和依赖版本在对应阶段冻结。
 
