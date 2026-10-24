@@ -2,6 +2,8 @@
 
 > **状态：阶段路线图，非逐批执行计划。** 本文概括实现顺序；Android 产品范围和 UI 结构以产品与工程总规格为准，接口与 Web 行为以同目录下相应权威合同为准。开始每个具体阶段前，仍需制定详细计划和验收条件。
 
+> **主计划优先级：** [Android 客户端主计划](2026-10-24-android-client-master-plan.md) 已细化 Task 顺序、合同矩阵、验证要求和退出门。本文只保留早期阶段概览；当本文与主计划在执行顺序或阶段门控上不一致时，以主计划为准。
+
 ## 目标与核心边界
 
 使用 Kotlin + Jetpack Compose 开发独立原生 Android 客户端，不使用 WebView。MPD-Server 是唯一业务和状态权威。Android 尽量作为遥控与状态展示端，复用已有 HTTP API、WebSocket、DTO 和 Web 操作语义，不另建业务数据库，不复制 Queue、AutoPlay、History、MPD 绑定/恢复或服务端事务。
