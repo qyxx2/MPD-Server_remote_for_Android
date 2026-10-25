@@ -43,18 +43,28 @@ class AppRuntime private constructor(
             transport.execute(httpRequest)
         },
         synchronize = { intentId ->
-            scope.launch {
-                try {
-                    when (val result = stateReader(realtimeController.currentOrigin())) {
-                        is io.github.qyxx2.mpdserver.remote.protocol.ApiResult.Success ->
-                            snapshots.accept(result.value, realtimeController.generation.value, SnapshotSource.HTTP_READ)
-                        else -> mutations.recordSynchronizationFailure(intentId, "Authoritative snapshot read after mutation failed")
+            val syncOrigin = realtimeController.currentOrigin()
+            val syncGeneration = realtimeController.generation.value
+            try {
+                when (val result = stateReader(syncOrigin)) {
+                    is io.github.qyxx2.mpdserver.remote.protocol.ApiResult.Success -> {
+                        if (realtimeController.currentOrigin() == syncOrigin &&
+                            realtimeController.generation.value == syncGeneration
+                        ) {
+                            snapshots.accept(result.value, syncGeneration, SnapshotSource.HTTP_READ)
+                        } else {
+                            mutations.recordSynchronizationFailure(intentId, "Server origin changed during post-write synchronization")
+                        }
                     }
-                } catch (error: Exception) {
-                    mutations.recordSynchronizationFailure(intentId, error.message ?: "Authoritative snapshot read after mutation failed")
+                    else -> mutations.recordSynchronizationFailure(intentId, "Authoritative snapshot read after mutation failed")
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                mutations.recordSynchronizationFailure(intentId, error.message ?: "Authoritative snapshot read after mutation failed")
             }
         },
+        parentScope = scope,
     ) }
 
     fun start() = realtimeController.start()
@@ -67,6 +77,7 @@ class AppRuntime private constructor(
     override fun close() {
         // Stop owners before cancelling their shared scope so socket and collector cleanup can finish.
         CoroutineScope(Dispatchers.IO).launch {
+            mutations.close()
             realtimeController.stop()
             scope.cancel()
             httpClient.dispatcher.cancelAll()
