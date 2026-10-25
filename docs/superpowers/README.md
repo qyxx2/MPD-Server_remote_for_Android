@@ -10,12 +10,14 @@
 2. [后端接口与实时协议规格](specs/2026-10-23-android-backend-api-contract.md)：当前路由、DTO、HTTP/WebSocket 协议、错误和幂等约定。
 3. [Web 行为继承规格](specs/2026-10-23-android-web-behavior-contract.md)：实际播放判断、实时状态恢复、mutation、Queue occurrence、歌词/时钟和活动通知行为。
 4. [客户端权威边界与架构规格](specs/2026-10-23-android-client-boundary-and-architecture.md)：MPD-Server 与 Android 的职责、禁止复制的服务端能力、共享状态架构方向及应用内状态环范围。
+5. [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结参考实机截图的布局比例、四入口导航、橙色主题、迷你播放器、音乐库列表、状态环参数，以及后续集合级操作的视觉入口与行为映射。
 
 上述文档按职责共同构成 Android 客户端权威合同：
 - 产品与工程总规格决定 Android 端的产品范围、顶层 UI 结构和技术栈方向。
 - 后端接口合同决定客户端如何消费现有 server API 和实时协议。
 - Web 行为继承合同决定需要保留的业务操作与状态恢复语义。
 - 客户端边界与架构合同决定 server 与 Android 的责任边界及单一状态来源。
+- Task 3 视觉设计规格冻结细粒度视觉参数；它不得改变产品/API/Web 合同中的业务行为与范围边界。
 
 它们不取代 MPD-Server 本身的代码和测试；上游服务端是业务及状态唯一权威。若上游 main 前进，先比较实际代码、测试和规格差异，更新受影响合同，再开始相关客户端工作。阶段级 UI/交互规格可以细化实现参数，但不得推翻总规格或服务端合同。
 
@@ -32,9 +34,10 @@
 - [Task 2 网络协议、共享状态 Store 与操作协调器合同](specs/2026-10-24-task-2-network-state-coordinator.md)：冻结服务端 origin/HTTP/WS、严格 DTO、完整快照、单一 realtime owner、mutation 幂等/unknown 恢复边界与合同矩阵。
 - [Task 2 分批实施计划](plans/2026-10-24-task-2-network-state-coordinator.md)：按固定服务端基线、HTTP/DTO、Realtime、Snapshot Store、单一 Runtime、Mutation Coordinator 和整体验收拆分 Batch；实现/机器测试已完成，但真实 mutation/readback 与 APK live-origin 仍为 BLOCKED。
 - [Task 3 原生应用壳合同](specs/2026-10-25-task-3-native-app-shell.md)：冻结四入口、mini 显隐、主题、状态环/活动详情、runtime 所有权、Task 2 残余门槛与退出条件。
+- [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结 AppBar/导航/迷你播放器/资料库/状态环的视觉参数，并将集合播放、随机播放、歌曲排序与单曲菜单的行为映射到现有 Web/API 合同。
 - [Task 3 分批实施计划](plans/2026-10-25-task-3-native-app-shell.md)：拆分为合同映射、主题、导航、App Shell、mini 投影、活动状态、播放器占位和集成验收共 8 个 Batch。
 - [初步实现路线图](plans/2026-10-23-android-client-roadmap.md)：早期阶段概览，仅作背景参考；若与主计划的 Task 顺序或退出门冲突，以主计划为准。
-- 每个 Task 开始时，另行细化该 Task 的权威合同、冻结边界、验收标准和 Batch 执行计划；精确 UI 尺寸、动画、主页模块数据规则和依赖版本在对应阶段冻结。
+- 每个 Task 开始时，另行细化该 Task 的权威合同、冻结边界、验收标准和 Batch 执行计划。Task 3 的根导航、AppBar、迷你播放器、音乐库列表与状态环精确参数由其视觉设计规格冻结；主页真实模块数据规则和后续业务页面细节仍在对应业务阶段冻结。
 
 ## 上游核对基线
 

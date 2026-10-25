@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin、当前 Gradle Wrapper 8.14.6、AGP 8.10.1、Kotlin/Compose plugin 2.0.21、Compose BOM 2025.06.00。Task 3 的依赖盘点结果与后续版本冻结如下：Navigation Compose `2.9.0`（Batch 2）；Preferences DataStore `1.1.7`（Batch 1）；Lifecycle Runtime Compose `2.9.1`（使用 `collectAsStateWithLifecycle`，Batch 1/2）；Compose UI Test (`ui-test-junit4`、`ui-test-manifest`) 由已有 Compose BOM `2025.06.00` 管理；AndroidX Test Ext JUnit `1.2.1`、Test Runner `1.6.2`（Batch 2 配置 instrumentation runner）。这些依赖当前均未在 catalog/应用模块直接声明；Batch 0 不改工程依赖，首次引入的 Batch 必须执行 Gradle 解析/编译验证，若不能解析则依据当前工具链作最小修订并记录 ruling，不得升级无关依赖。
 
-**Spec:** `docs/superpowers/specs/2026-10-25-task-3-native-app-shell.md`；同时遵守 `docs/superpowers/plans/2026-10-24-android-client-master-plan.md` 和四份权威产品/API/行为/边界规格。
+**Spec:** `docs/superpowers/specs/2026-10-25-task-3-native-app-shell.md` 与 `docs/superpowers/specs/2026-10-25-task-3-visual-design-specification.md`；同时遵守 `docs/superpowers/plans/2026-10-24-android-client-master-plan.md` 和四份权威产品/API/行为/边界规格。视觉参数以 Task 3 视觉设计规格为准，不能改变 API/Web 既有行为语义。
 
 ## Global Constraints
 
@@ -97,7 +97,7 @@
 - Test: no snapshot、no current song、fresh/paused/playing、stale/unknown、settings hidden、button disabled
 
 - [ ] 先为空/current/stale/unknown 及设置显隐写投影/UI 测试。
-- [ ] 实现封面/内置占位、标题/艺术家、单一播放/暂停视觉位置；不显示进度/上一首/下一首。
+- [ ] 实现封面/内置占位、单行曲名（不显示艺术家）、单一播放/暂停视觉位置；不显示进度/上一首/下一首。尺寸遵循 Task 3 视觉设计规格 §6。
 - [ ] 由于 Task 4 尚未接入播放动作，此阶段所有播放/暂停动作保持不可执行，并显示简洁的暂未接入提示或将其作为明确 disabled 控件。
 - [ ] 验证状态只由 app-scoped runtime 提供；运行完整单测/Lint/Debug build，diff-check 并提交。
 

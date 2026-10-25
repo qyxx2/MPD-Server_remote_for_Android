@@ -10,7 +10,7 @@
 
 用 Jetpack Compose 建立可运行、可测试的原生 App Shell：主页、搜索、音乐库、设置四个固定根入口；设置页之外共享同一个迷你播放器；独立全屏播放器占位目的地；应用内全局状态环与统一活动详情；跟随系统/浅色/深色主题和本地非业务外观偏好。所有实时连接、canonical snapshot 和 mutation owner 均复用 Task 2 的单一应用级 `AppRuntime`。
 
-本 Task 是 UI 结构和通用展示层，不实现完整播放器、曲库/搜索数据流程、歌单收藏、完整服务设置表单或 Android 系统媒体会话。
+本 Task 是 UI 结构和通用展示层，不实现完整播放器、曲库/搜索数据流程、歌单收藏、完整服务设置表单或 Android 系统媒体会话。精确视觉尺寸、状态环参数与页面占位布局以 [Task 3 视觉设计规格](2026-10-25-task-3-visual-design-specification.md) 为准。
 
 ## 2. 前置判断：Task 2 的残余验收如何处理
 
@@ -33,10 +33,10 @@ Task 2 已具备可编译的网络 transport、严格 DTO、snapshot store、rea
 |---|---|---|---|---|
 | 四个根入口、固定顺序与选中态 | 产品总规格 §§5、7；架构合同 §5 | Batch 2、6 | AppNavigationUiTest：主页→搜索→音乐库→设置的标签/顺序/selected state 正确；重复选择当前根入口不清空 back stack 或重建 runtime | 真机逐一点击四入口，核对顺序、选中态和系统返回行为 |
 | App Shell 层级、安全区与 Mini 显隐 | 产品总规格 §§3、5.2、6；架构合同 §5 | Batch 3、4 | AppShellUiTest：AppBar、正文和底部导航同时存在；Mini 作为独立布局节点不覆盖正文；主页/搜索/音乐库显示 Mini，设置隐藏 Mini 但保留导航和状态入口 | 真机检查状态栏/挖孔 inset、键盘、大字体、短屏和窄屏；确认正文不被底部区域遮住 |
-| Mini 的曲目投影与禁用动作 | 产品总规格 §6；Web 行为合同 §§3–5 | Batch 4 | MiniPlayerPresentationTest：snapshot 缺失/无 current 时使用明确占位；只从当前 canonical snapshot 映射 title/artist/artwork；stale/unknown 被明确标记；Task 3 的播放/暂停始终 disabled，点击不能提交 mutation；不得生成推荐/假曲目 | 真机检查无服务端时无假曲目、无假成功，播放按钮明确不可用 |
+| Mini 的曲目投影与禁用动作 | 产品总规格 §6；Task 3 视觉设计规格 §6；Web 行为合同 §§3–5 | Batch 4 | MiniPlayerPresentationTest：snapshot 缺失/无 current 时使用明确占位；只从当前 canonical snapshot 映射 title/artwork（不显示 artist）；stale/unknown 被明确标记；Task 3 的播放/暂停始终 disabled，点击不能提交 mutation；不得生成推荐/假曲目 | 真机检查无服务端时无假曲目、无假成功，播放按钮明确不可用 |
 | 独立全屏播放器目的地 | 产品总规格 §5.2、§7.5 | Batch 2、6 | AppNavigationUiTest：从每个根入口进入全屏占位目的地时隐藏 Mini/根导航；返回恢复原根入口；占位页不显示伪造封面、歌词、进度或 Queue | 真机用返回按钮和系统返回手势进退，确认返回原页面 |
 | 跟随系统/浅色/深色主题与本地偏好 | 产品总规格 §8；架构合同 §§2–3 | Batch 1 | ThemePreferenceTest：默认 Follow System；系统主题改变时跟随；显式 Light/Dark 不随系统覆盖；偏好重建后恢复；验证偏好仅本地存储 | 真机检查跟随系统、浅色、深色、状态栏图标与文本对比度，并重启应用检查主题保持 |
-| 状态环与统一活动详情 | 产品总规格 §5.3；Web 行为合同 §9；架构合同 §7 | Batch 5 | ActivityPresentationTest：MutationStatus 与连接/freshness 的映射无伪成功；ActivityStatusSheetUiTest：详情开合、空状态、pending/syncing/unknown/failed/success/info 显示；导航不丢失共享活动 owner | 真机确认信息不仅依靠颜色、文字可读、详情能关闭；占位 origin 不显示连接成功 |
+| 状态环与统一活动详情 | 产品总规格 §5.3；Task 3 视觉设计规格 §10；Web 行为合同 §9；架构合同 §7 | Batch 5 | ActivityPresentationTest：MutationStatus 与连接/freshness 的映射无伪成功；ActivityStatusSheetUiTest：详情开合、空状态、pending/syncing/unknown/failed/success/info 显示；导航不丢失共享活动 owner | 真机确认信息不仅依靠颜色、文字可读、详情能关闭；占位 origin 不显示连接成功 |
 | Application runtime 唯一所有权 | Task 2 合同 §§2、5.2、5.3、9；架构合同 §§4、6 | Batch 2、5、6、7 | 复用现有 RuntimeCompositionTest 的 owner identity 断言，并增加 UI 导航循环回归；对 ui/** 做边界检查，禁止创建 AppRuntime/SnapshotStore/RealtimeController/MutationCoordinator/RealtimeConnection | 反复切换根页面和播放器目的地，确认共享状态/活动不会因为页面重建而清空 |
 | 非业务偏好与禁止创建第二套权威 | 产品总规格 §§4.1、7.4、8；架构合同 §§2–3、6 | Batch 1、7 | UiPreferencesRepositoryTest 与依赖/源码扫描：偏好不走 server API；禁止 Room/SQLite、WebView、Media3/ExoPlayer、业务 snapshot 持久化与假业务数据 | 重启后只保留主题等本地偏好；canonical server snapshot 不被还原成 fresh |
 | 可访问性与尺寸适配 | 产品总规格 §§3、8.4 | Batch 3–6 | Compose UI tests 检查导航/按钮语义、状态描述、触控目标至少 48dp、正文可滚动并尊重系统字体缩放 | 目标真机检查大字体、短屏、窄屏、键盘出现时的布局与点击目标 |
@@ -85,7 +85,7 @@ Batch 0 已冻结这些职责路径与共享 Runtime 只读接口；后续 Batch
 - 根入口选中态与内容目的地一致，重新选择当前入口不得创建新的 runtime。
 - 全屏播放目的地与根导航分开：进入后隐藏 mini 与底部导航；返回时恢复原根入口/本地滚动状态（本 Task 测试只需验证导航 back stack 不被重置）。
 - 设置页隐藏 mini，但全局状态入口仍可使用。
-- mini 区域固定参与 layout；不得覆盖正文或 bottom navigation。AppBar 紧凑，不通过过高头部挤压正文。
+- mini 区域固定参与 layout；不得覆盖正文或 bottom navigation。AppBar 紧凑，不通过过高头部挤压正文。视觉尺寸以 [Task 3 视觉设计规格](2026-10-25-task-3-visual-design-specification.md) 为准：Mini 高 64dp、封面 48dp、曲名单行 16sp，不显示艺术家。
 - 主题默认 Follow System；浅色采用柔和近白底、强调色 `#DE7622`；深色使用深色中性表面和 `#BE7E4A` 或经对比验证的暗化橙色。禁止仅靠颜色表达 error/stale/disabled。
 - 没有已接纳的 snapshot、快照 stale/unknown 或当前播放观察未确认时，展示状态必须如实表达，不可从业务 `playback.state` 单独推断真实播放。
 - 任何待实现入口/按钮都应是明确占位且不可误触提交，或者在 UI 中隐藏；不得伪装为已交付能力。
