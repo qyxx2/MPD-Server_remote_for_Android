@@ -9,3 +9,6 @@ signing.properties
 *.aab
 *.hprof
 .idea/
+
+# Isolated task worktrees
+.worktrees/
