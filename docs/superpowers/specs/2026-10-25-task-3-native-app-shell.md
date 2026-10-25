@@ -29,19 +29,34 @@ Task 2 已具备可编译的网络 transport、严格 DTO、snapshot store、rea
 
 ## 3. 权威合同矩阵
 
-| 需求 / 不变量 | 权威来源 | Task 3 冻结合同 | 机器验证 | 人工验证 |
+| 需求 / 不变量 | 权威来源 | 实现 Batch | 自动化测试与通过条件 | 人工验收 |
 |---|---|---|---|---|
-| 四个根入口、顺序、原生布局 | 产品总规格 §§5、7；架构合同 §5 | 主页、搜索、音乐库、设置；原生 Compose，无 WebView；选中项与导航状态一致 | Compose UI test 验证入口标签/选择/切换/返回 | 真机检查点击区域、旋转不在范围内、短屏和窄屏不遮挡 |
-| App Shell 层级与迷你播放器显隐 | 产品总规格 §5.2、§6；架构合同 §5 | 紧凑 AppBar/全局状态入口、页面正文、迷你播放器（设置隐藏）、底部导航；mini 位于导航上方且参与正常布局流 | 验证主页/搜索/库显示、设置隐藏，正文没有被覆盖 | 真机检查安全区、软键盘、大字体下几何与触摸 |
-| 迷你播放器内容边界 | 产品总规格 §6；Web 行为合同 §§3–5 | 仅封面/占位、标题、艺术家、播放/暂停单按钮；本 Task 只渲染，不执行播放写操作；无 current / stale 时按合同显示占位并禁用 | 已知/空/stale/unknown 快照的呈现和按钮 enabled 测试 | 真机检查空状态清楚、按钮确实无法误触执行 |
-| 全屏播放目的地 | 产品总规格 §5.2、§7.5 | 独立 route 可进/退，隐藏根 mini 和根导航；仅建结构占位，不包含完整播放功能 | route 导航、返回恢复根入口状态；无 runtime 重建 | 真机验证进/退手势/返回按钮，未实现控件无虚假可用状态 |
-| 主题与偏好 | 产品总规格 §8；架构合同 §2 | Follow System / Light / Dark；使用本地 UI 偏好存储，不写后端；品牌色与语义对比度按总规格 | 主题选择状态、重建恢复、色彩 token 配置测试 | 真机/系统检查浅深主题、状态栏图标、可读性 |
-| 状态环/统一活动详情 | 产品总规格 §5.3；Web 行为合同 §9；架构合同 §7 | 只作共享 runtime 连接/快照/活动事实的视觉投影；单一入口/详情，不创建页面专属活动 owner；本 Batch 不实现写操作重试 | 连接状态与 empty activity 映射；打开/关闭详情；旋转/导航不重复 owner | 真机检查文字可读、状态不只靠颜色表达、详情可关闭 |
-| 共享运行时所有权 | Task 2 合同 §§2、5.2、5.3；架构合同 §§4、6 | 仅 Application 提供的唯一 `AppRuntime`；页面/ViewModel/Composable 只能收取/观察引用，不得 new `AppRuntime`/Socket/Store/Coordinator | UI 导航过程 runtime identity 不变；源代码边界检查 | 页面反复切换时连接/活动状态不丢失 |
-| 本地偏好与业务边界 | 产品总规格 §§4.1、7.4、8；架构合同 §§2–3 | 只存主题及本 Task 明确实现的 UI 外观参数；无 Room/SQLite，无业务 snapshot 持久化，无伪造歌曲/推荐数据 | 依赖和代码扫描，偏好读写单测 | 重启后本地主题保持，业务事实仍显示为空/未连接而非假数据 |
-| 可访问性与屏幕适配 | 产品总规格 §§3、8.4 | 触控目标以 48dp 为设计基线；文字尊重 sp/系统字体缩放；insets 正确；窄屏/短屏允许滚动 | 语义节点与关键导航测试、窗口尺寸/字体配置可测用例 | 目标设备检查大字体、短屏、窄屏、键盘、安全区 |
+| 四个根入口、固定顺序与选中态 | 产品总规格 §§5、7；架构合同 §5 | Batch 2、6 | AppNavigationUiTest：主页→搜索→音乐库→设置的标签/顺序/selected state 正确；重复选择当前根入口不清空 back stack 或重建 runtime | 真机逐一点击四入口，核对顺序、选中态和系统返回行为 |
+| App Shell 层级、安全区与 Mini 显隐 | 产品总规格 §§3、5.2、6；架构合同 §5 | Batch 3、4 | AppShellUiTest：AppBar、正文和底部导航同时存在；Mini 作为独立布局节点不覆盖正文；主页/搜索/音乐库显示 Mini，设置隐藏 Mini 但保留导航和状态入口 | 真机检查状态栏/挖孔 inset、键盘、大字体、短屏和窄屏；确认正文不被底部区域遮住 |
+| Mini 的曲目投影与禁用动作 | 产品总规格 §6；Web 行为合同 §§3–5 | Batch 4 | MiniPlayerPresentationTest：snapshot 缺失/无 current 时使用明确占位；只从当前 canonical snapshot 映射 title/artist/artwork；stale/unknown 被明确标记；Task 3 的播放/暂停始终 disabled，点击不能提交 mutation；不得生成推荐/假曲目 | 真机检查无服务端时无假曲目、无假成功，播放按钮明确不可用 |
+| 独立全屏播放器目的地 | 产品总规格 §5.2、§7.5 | Batch 2、6 | AppNavigationUiTest：从每个根入口进入全屏占位目的地时隐藏 Mini/根导航；返回恢复原根入口；占位页不显示伪造封面、歌词、进度或 Queue | 真机用返回按钮和系统返回手势进退，确认返回原页面 |
+| 跟随系统/浅色/深色主题与本地偏好 | 产品总规格 §8；架构合同 §§2–3 | Batch 1 | ThemePreferenceTest：默认 Follow System；系统主题改变时跟随；显式 Light/Dark 不随系统覆盖；偏好重建后恢复；验证偏好仅本地存储 | 真机检查跟随系统、浅色、深色、状态栏图标与文本对比度，并重启应用检查主题保持 |
+| 状态环与统一活动详情 | 产品总规格 §5.3；Web 行为合同 §9；架构合同 §7 | Batch 5 | ActivityPresentationTest：MutationStatus 与连接/freshness 的映射无伪成功；ActivityStatusSheetUiTest：详情开合、空状态、pending/syncing/unknown/failed/success/info 显示；导航不丢失共享活动 owner | 真机确认信息不仅依靠颜色、文字可读、详情能关闭；占位 origin 不显示连接成功 |
+| Application runtime 唯一所有权 | Task 2 合同 §§2、5.2、5.3、9；架构合同 §§4、6 | Batch 2、5、6、7 | 复用现有 RuntimeCompositionTest 的 owner identity 断言，并增加 UI 导航循环回归；对 ui/** 做边界检查，禁止创建 AppRuntime/SnapshotStore/RealtimeController/MutationCoordinator/RealtimeConnection | 反复切换根页面和播放器目的地，确认共享状态/活动不会因为页面重建而清空 |
+| 非业务偏好与禁止创建第二套权威 | 产品总规格 §§4.1、7.4、8；架构合同 §§2–3、6 | Batch 1、7 | UiPreferencesRepositoryTest 与依赖/源码扫描：偏好不走 server API；禁止 Room/SQLite、WebView、Media3/ExoPlayer、业务 snapshot 持久化与假业务数据 | 重启后只保留主题等本地偏好；canonical server snapshot 不被还原成 fresh |
+| 可访问性与尺寸适配 | 产品总规格 §§3、8.4 | Batch 3–6 | Compose UI tests 检查导航/按钮语义、状态描述、触控目标至少 48dp、正文可滚动并尊重系统字体缩放 | 目标真机检查大字体、短屏、窄屏、键盘出现时的布局与点击目标 |
+| Task 3 不触发真实网络写入或连接 | Task 3 合同 §§2、5–6；Task 2 合同 §§5.2–5.3、9 | 所有 Batch；集中在 Batch 4、5、7 | UI 测试断言 Task 3 预留的播放控件 disabled；静态边界审查确认 UI 不调用 AppRuntime.start()、MutationCoordinator.submit()、retryUnknown() 或自行构造传输/owner | 用默认占位 origin 启动/浏览 UI，不把 DISCONNECTED/UNKNOWN 显示成服务可用，不执行真实 mutation |
 
 ## 4. 文件与模块边界
+
+### 4.1 冻结的共享 Runtime 只读接口
+
+Task 3 的 UI 只能消费 Task 2 已实现的公开状态流；此处冻结的是读取边界，不新增网络能力或领域状态。
+
+- **唯一 owner 获取方式：** `MainActivity` 从 `(application as MpdServerRemoteApplication).runtime` 取得唯一的 `AppRuntime`，再通过参数传给应用 UI 根节点/需要观察状态的组件。生产 UI 不调用 `AppRuntime.create()`，不使用页面级单例或新的 `CompositionLocal` owner。
+- **Canonical snapshot 与连接状态：** 只观察 `runtime.snapshots.state: StateFlow<SnapshotStoreState>`。读取 `snapshot`、`connectionStatus`、`freshness`、`readError`、`controlsEligible`、`actualPlaybackConfirmed`；状态枚举使用 `RuntimeConnectionStatus`（DISCONNECTED/CONNECTING/CONNECTED）和 `SnapshotFreshness`（UNKNOWN/FRESH/STALE）。不另建 UI 版连接/freshness 权威。
+- **歌曲与观察事实：** 可展示的业务字段从 `SnapshotStoreState.snapshot` 指向的 `FullStateSnapshot.wire` 派生。当前 DTO 的 `currentSong`、`playbackObservation`、`outputObservation` 等部分字段仍是 `JsonElement`；各 presentation mapper 必须显式处理缺失/类型错误，不将缺失字段补成真实业务数据，也不能只依据 `playback.state` 推断 actual playback。
+- **共享活动：** 只观察 `runtime.mutations.activities: StateFlow<List<OperationActivity>>`，将既有 `MutationStatus`（PENDING/SUCCESS/FAILED/UNKNOWN/SYNCING/INFO）映射为文案与语义。不得在页面内创建 activity/retry owner，也不得修改或复制协调器活动列表。
+- **生命周期与连接：** Compose 对 StateFlow 的订阅使用 lifecycle-aware collection（`collectAsStateWithLifecycle`）；页面/ViewModel 可被重建，但 owner 仍来自 Application。当前 `MpdServerRemoteApplication.onCreate` 只创建 runtime，不调用 `runtime.start()`，默认 origin 是未配置的 `http://localhost:18000`。Task 3 不得调用 `start()` 或 `changeOrigin()`，所以无已配置 origin 时应显示 DISCONNECTED/UNKNOWN，而非“已连接”或真实服务状态。
+- **写入边界：** Task 3 的播放/暂停 UI 只是 disabled 占位，不调用 `runtime.mutations.submit()`、`retryUnknown()` 或任何 repository 写 API。状态详情只展示已有活动与读取错误；不重试写入、不发起真实 mutation。
+- **测试 seam：** 复用已有 `AppRuntime.createForTesting()`、`SnapshotStore` 与 `RuntimeCompositionTest` 的 owner/state 测试；UI 根节点应允许测试注入同一个构造好的 runtime，但不得在 Composable/页面中构造 owner。StateFlow 的读取与 presentation mapping 应保持可在本地单测/Compose UI test 中确定性验证。
+
+### 4.2 文件路径与模块边界
 
 预计新增/修改均落在 `app/src/main/java/io/github/qyxx2/mpdserver/remote` 下，沿用单一 `app` 模块：
 - `MainActivity.kt`：应用 UI 启动入口，取得 Application 提供的 runtime，不负责构造 network owner。
@@ -50,10 +65,11 @@ Task 2 已具备可编译的网络 transport、严格 DTO、snapshot store、rea
 - `ui/screens/`：主页/搜索/音乐库/设置空状态和全屏播放器占位页面。非本 Task 功能必须明确为占位/未连接，不展示模拟的歌曲或服务端结果。
 - `ui/components/`：活动详情、状态环、加载/空/错误语义组件。
 - `ui/theme/`：颜色语义、主题映射、Theme composable。
-- `ui/preferences/`（或同等最小封装）：只保存非业务 UI 偏好。若现有版本目录没有可用的 DataStore，先评估与当前依赖兼容性并更新合同，不准偷偷添加无关库。
-- `app/src/test`：Compose UI/navigation test、主题/偏好测试与必要的共享状态投影单测。
+- `ui/preferences/`（或同等最小封装）：仅保存非业务 UI 偏好，使用 Batch 0 冻结并在 Batch 1 验证解析的 Preferences DataStore `1.1.7`；禁止扩展为业务数据持久层。
+- `app/src/test`：JUnit 单元测试，覆盖 theme preference、snapshot→presentation mapping、活动状态映射与边界规则。
+- `app/src/androidTest`：Compose UI instrumentation tests，覆盖四入口导航、Shell/Mini 显隐、全屏目的地进退、活动详情开合、语义节点与布局边界；需配置 AndroidJUnitRunner。UI test artifacts 由现有 Compose BOM 管理；目标设备/模拟器不可用时只能记录为未运行，不能用单元测试冒充实机/UI 验收。
 
-具体包路径和公开接口需在 Batch 0 映射后确定；不得为追求抽象提前拆 Gradle 模块。
+Batch 0 已冻结这些职责路径与共享 Runtime 只读接口；后续 Batch 可细化文件名和测试名称，但不能弱化上表的行为覆盖。不得为追求抽象提前拆 Gradle 模块。
 
 ## 5. 非目标与硬约束
 

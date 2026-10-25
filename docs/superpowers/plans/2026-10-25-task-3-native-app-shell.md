@@ -6,7 +6,7 @@
 
 **Architecture:** 单一 `app` 模块，Compose UI 按导航/壳/组件/主题分包。Application 创建唯一 `AppRuntime`；UI 只观察快照、连接状态和共享活动，不直接创建 transport，也不向 MPD-Server 发写请求。真实页面业务由 Task 4–7 完成。
 
-**Tech Stack:** Kotlin、当前 Gradle Wrapper 8.14.6、AGP 8.10.1、Kotlin/Compose plugin 2.0.21、Compose BOM 2025.06.00；沿用当前项目依赖，新增 Navigation Compose/Preferences DataStore/Compose UI Test 前须核对版本目录与当前已有测试设施，不无故升级版本。
+**Tech Stack:** Kotlin、当前 Gradle Wrapper 8.14.6、AGP 8.10.1、Kotlin/Compose plugin 2.0.21、Compose BOM 2025.06.00。Task 3 的依赖盘点结果与后续版本冻结如下：Navigation Compose `2.9.0`（Batch 2）；Preferences DataStore `1.1.7`（Batch 1）；Lifecycle Runtime Compose `2.9.1`（使用 `collectAsStateWithLifecycle`，Batch 1/2）；Compose UI Test (`ui-test-junit4`、`ui-test-manifest`) 由已有 Compose BOM `2025.06.00` 管理；AndroidX Test Ext JUnit `1.2.1`、Test Runner `1.6.2`（Batch 2 配置 instrumentation runner）。这些依赖当前均未在 catalog/应用模块直接声明；Batch 0 不改工程依赖，首次引入的 Batch 必须执行 Gradle 解析/编译验证，若不能解析则依据当前工具链作最小修订并记录 ruling，不得升级无关依赖。
 
 **Spec:** `docs/superpowers/specs/2026-10-25-task-3-native-app-shell.md`；同时遵守 `docs/superpowers/plans/2026-10-24-android-client-master-plan.md` 和四份权威产品/API/行为/边界规格。
 
@@ -38,19 +38,19 @@
 - 产品总规格 §§5–8、12–13；架构合同 §§2、4–7；Web 行为合同 §9；Task 2 合同 §§2、5.2、5.3、9
 - `MainActivity.kt`、`MpdServerRemoteApplication.kt`、`AppRuntime.kt`、`SnapshotStore.kt`、`RealtimeController.kt`、`MutationCoordinator.kt`、Gradle version catalog 和现有单测
 
-- [ ] 建立合同矩阵映射：每条合同对应实现 Batch、自动测试、人验项目。
-- [ ] 冻结 UI 对 runtime/snapshot/connection/activity 的读取接口；不得暴露网络创建权给页面。
-- [ ] 核对 Navigation Compose、Preferences DataStore、Compose UI test 是否已有；确认需新增依赖及兼容版本，必要时修订本合同/计划。
-- [ ] 记录当前分支 HEAD、Gradle 基线测试命令与已有测试数量到 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/progress.md`。
-- [ ] `git diff --check` 通过；提交 Batch 0 计划/合同映射。
+- [x] 建立合同矩阵映射：Task 3 合同 §3 的每一条不变量均对应具体 Batch、自动测试通过条件及目标真机验收项。
+- [x] 冻结 UI 只读接口：Application 的唯一 AppRuntime；SnapshotStore.state 提供 canonical snapshot/connection/freshness/error/controls eligibility，MutationCoordinator.activities 提供共享活动；UI 不创建 owner，不启动 runtime、不改 origin、不提交或重试 mutation。
+- [x] 完成依赖盘点：当前无 Navigation Compose、Preferences DataStore、Lifecycle Runtime Compose、Compose UI Test 或 AndroidX Test runner；版本决策与首次引入批次已写入本计划，实际解析/编译验证归各依赖引入 Batch。
+- [x] 记录分支 HEAD、SDK 工作区准备、基线命令、JUnit 数量、Lint 和 APK 结果到 .superpowers/sdd/2026-10-25-task-3-native-app-shell/progress.md。
+- [x] `git diff --check` 通过；计划/合同接口映射和 Batch 边界经复核后单独提交。
 
 ## Batch 1：主题 tokens 与本地主题偏好
 
 **目标：** 统一 Follow System / Light / Dark 主题行为，符合已冻结的浅/深色语义色与可读性要求。
 
-**Files (expected; finalize in Batch 0):**
+**Files (mapped and frozen in Batch 0):**
 - Create/Modify: `ui/theme/Color.kt`, `Theme.kt` 或当前主题文件
-- Create: 最小主题偏好模型/存储适配（优先复用可用 DataStore）
+- Create: 最小主题偏好模型/存储适配，使用 Preferences DataStore `1.1.7`；同时引入 Lifecycle Runtime Compose `2.9.1` 以 lifecycle-aware 收集共享 StateFlow
 - Test: theme mapping、默认跟随系统、显式浅/深色、偏好恢复
 
 - [ ] 先写主题映射与偏好行为测试并观察失败。
@@ -66,7 +66,7 @@
 **Files:**
 - Modify: `MainActivity.kt` 或专用导航宿主
 - Create: `ui/navigation/AppDestination.kt`、`AppNavHost.kt`（按 Batch 0 映射调整）
-- Create: 占位 screen composables 与导航 UI tests
+- Create: 占位 screen composables；在 app/src/androidTest 加入 Compose UI instrumentation tests，并配置 AndroidJUnitRunner 与已冻结的 AndroidX Test 依赖
 
 - [ ] 测试根入口顺序/label/selected state 和根入口互切。
 - [ ] 测试从任一根入口进入全屏播放器再返回，返回到原根入口，runtime owner identity 保持不变。
