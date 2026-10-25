@@ -155,10 +155,10 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - Consumes: Batch 1 transport/API、Batch 2 realtime events、Batch 3 Store/read coordinator。
 - Produces: 应用级共享 state flow 与受控的 runtime lifecycle；不得由 Composable/ViewModel 创建新 canonical owner。
 
-- [ ] 写 owner 复用和 ViewModel 重建测试，确认不会生成第二条 WebSocket/Store。
-- [ ] 写端点切换后旧连接、旧 GET、旧事件均无法写入当前 Store 的测试。
-- [ ] 将初始 snapshot、invalidate→GET、重连接纳串成 runtime 集成测试。
-- [ ] 运行目标测试、完整单测/Lint 和 `git diff --check`，提交本 Batch。
+- [x] 写 owner 复用和重复 start 测试，确认共享 Store/Controller 不变且不会生成第二条 WebSocket；UI/ViewModel 尚未存在，使用共享 owner API 重用验证其生命周期边界。
+- [x] 写端点切换后旧连接事件无法写入当前 Store 的测试；generation 在切换时递增，旧连接的事件被 controller generation/candidate 检查丢弃。
+- [x] 将初始 snapshot、invalidate→权威 GET、端点切换/新连接首帧接纳串成 runtime 集成测试。
+- [x] 运行目标测试、完整单测/Lint/Debug 构建和 `git diff --check`；结果与提交记录写入 SDD ledger。
 
 ## Batch 5：Mutation Coordinator、幂等与统一活动恢复
 
