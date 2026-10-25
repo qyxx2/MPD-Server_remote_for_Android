@@ -177,7 +177,7 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - [x] 写 204 不解析 body、写成功后读取失败仍保留成功回执的测试。
 - [x] 写 origin 变化时禁止旧 mutation 迁移/新 key 重放，以及新 runtime 不会恢复或重放旧 intent 的测试。
 - [x] 实现应用级共享 `MutationCoordinator` 与 StateFlow 活动记录；写请求固定 method/path/payload/origin/key，显式 retry 复用原 request，pending 不重复提交。
-- [ ] 运行最终完整单测/Lint/build 与 `git diff --check`；通过后提交本 Batch。
+- [x] 运行最终 clean 单测、Lint、Debug APK build 与 `git diff --check`；JUnit 15 suites / 62 tests / 0 failures / 0 errors / 0 skipped，Lint 0 errors（3 个既有依赖升级提示），APK 已生成；提交 `e608e58`。
 
 ## Batch 6：集成协议回归、真实服务验证与 Task 2 退出审查
 
