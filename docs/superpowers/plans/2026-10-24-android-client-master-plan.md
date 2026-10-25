@@ -94,7 +94,8 @@
 
 ### Task 2：网络协议、共享状态 Store 与操作协调器
 
-- [x] Batch 0–6 实施与机器验证已完成；Task 2 退出门仍为 **BLOCKED**：真实服务只读协议观察通过，但未执行真实 mutation/readback，也未在 Android APK 中配置真实 origin 联调。Task 3 继续阻塞，Task 2 未合并 main。
+- [x] Batch 0–6 实施与机器验证已完成；Task 2 最终集成退出门仍为 **BLOCKED**：真实服务只读协议观察通过，但未执行真实 mutation/readback，也未在 Android APK 中配置真实 origin 联调。Task 2 未合并 main。
+- [ ] Task 2 剩余实机/真实写验证是 Task 2 最终验收门；按 2026-10-25 Task 3 合同的受限并行决定，不再阻塞 UI-only Task 3 的开始。Task 3 不得发起真实 mutation、不将占位 origin 当作可用服务，也不得将 Task 2 重标为通过；Task 4/6 使用真实 API 写操作前必须补齐该验收或在对应合同中冻结安全可逆的验收场景。
 
 **Task 2 详细合同：** [网络协议、共享状态 Store 与操作协调器合同](../specs/2026-10-24-task-2-network-state-coordinator.md)；[分批实施计划](2026-10-24-task-2-network-state-coordinator.md)。服务端以 Task 2 合同中记录的固定基线为准；用户明确要求同步上游或告知服务端协议变化时才重新核对，不要求每个 Batch 重复检查。
 
@@ -110,7 +111,7 @@
 
 **限制：** 以上真实服务检查来自 Ubuntu 验证主机的只读 HTTP/WebSocket 探测，不等同于 APK 在 Android 设备上的实机联调；当前 Application origin 仍是 `http://localhost:18000` 占位值，用户配置 origin 的 UI 留给后续设置任务。
 
-**退出门：BLOCKED。** 机器验证和服务端只读协议观察通过；真实 mutation/readback 与 APK-level live-origin 联调尚未完成。不得开始 Task 3；未合并 main。待设置任务提供可配置 origin、并选定明确安全可逆的写场景后，补齐人工验收再关闭退出门。
+**退出门：BLOCKED。** 机器验证和服务端只读协议观察通过；真实 mutation/readback 与 APK-level live-origin 联调尚未完成。Task 2 仍未合并 main。按 2026-10-25 Task 3 合同，UI-only Task 3 可基于现有 runtime 接口并行推进，但不能把 Task 2 标记为通过；待真实 API 写操作纳入 Task 4/6 前，须补齐真实联调与安全可逆写入读回证据。
 
 ### Task 3：原生应用壳、导航、主题与通用状态 UI
 
@@ -126,7 +127,9 @@
 
 **人工验证：** 在目标设备检查浅色/深色、系统安全区、短屏、较窄屏幕、大字体、触摸目标、键盘出现时布局、状态环位置和活动详情可读性。
 
-**阻塞/退出门：** Task 2 的共享状态/连接接口稳定；根导航和共用组件规则冻结；关键布局无遮挡，控件禁用同时具备视觉与功能效果。
+**开始门与退出门分离（2026-10-25 冻结）：** Task 3 的 UI-only 工作可在 Task 2 的共享 runtime/store/controller/coordinator 实现存在且机器测试基线通过后开始；Task 2 尚未完成的真实 mutation/readback 与 APK live-origin 联调保留为 Task 2 最终集成验收，不作为本 Task UI 壳的硬性开始阻塞。详见 [Task 3 合同](../specs/2026-10-25-task-3-native-app-shell.md) 与 [Task 3 分批计划](2026-10-25-task-3-native-app-shell.md)。
+
+**本 Task 的阻塞/退出门：** 根导航和共用组件规则冻结；UI 自动化测试、构建/Lint、边界检查通过；目标设备的主题/导航/布局人工验收有记录。Task 3 不执行真实 mutation，不以占位 origin 代替联调；Task 2 仍应保持 BLOCKED。Task 4/6 开始真实 API 写入前，必须补齐 Task 2 遗留真实集成验收，或在对应合同中明确定义安全可逆的验证场景。
 
 ### Task 4：全屏正在播放、歌词、进度与 Queue
 
