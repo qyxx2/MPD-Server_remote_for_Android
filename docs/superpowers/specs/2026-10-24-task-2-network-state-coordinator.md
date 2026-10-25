@@ -117,9 +117,9 @@ Task 2 使用已记录的服务端基线 `2ad84454ceb70817bd996c92b590cfa2d9e9b1
 
 ## 9. Task 2 退出门
 
-- [ ] 所有合同矩阵条目均映射到实现、自动测试和可追溯证据。
-- [ ] 核心 DTO/wire、snapshot 水位、重连、并发读、旧响应隔离、幂等与 unknown mutation 负向测试通过。
-- [ ] 完整本地构建、单元测试、Lint 通过；警告有说明，不以增量编译替代完整验证。
-- [ ] 真实服务基本连通和完整快照读取有记录，至少完成一轮断线/恢复观察。
-- [ ] Diff 复审确认只涉及 Task 2，未引入业务 UI、业务数据库、客户端业务算法、CI 或上游改动。
-- [ ] 更新主计划 Task 2 状态与本计划结果；只有机器与人工门都通过才可进入 Task 3。
+- [x] 所有合同矩阵条目均映射到实现、自动测试和可追溯证据；真实 mutation/readback 条目标记为人工验收未完成。
+- [x] 核心 DTO/wire、snapshot 水位、重连、并发读、旧响应隔离、幂等与 unknown mutation 负向测试通过；新增同 origin 重连后新 epoch 接纳回归。
+- [x] 完整本地构建、单元测试、Lint 通过；15 suites / 66 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors，3 条既有依赖更新提示；Debug APK 10,968,597 bytes。日志：/tmp/task2-batch6-finalverify.log。
+- [x] 真实服务只读连通与完整快照读取已记录：HTTP state/health 均 200；两次 WebSocket 连接收到协议 v1 完整 snapshot 且外层/内层 epoch、sequence 一致。完成客户端断开后重新建立 WebSocket 连接的观察；未验证 Android APK 的 live-origin。
+- [x] Diff 复审确认只涉及 Task 2，未引入业务 UI、业务数据库、客户端业务算法、CI 或上游改动。
+- [ ] Task 2 退出门仍为 **BLOCKED**：未执行真实 mutation/readback，也未完成 APK-level live-origin 联调。由于当前 APK 仍使用 http://localhost:18000 占位 origin，且未找到明确安全、无播放/曲库扰动风险的真实写操作，不伪造通过证据；不得开始 Task 3。

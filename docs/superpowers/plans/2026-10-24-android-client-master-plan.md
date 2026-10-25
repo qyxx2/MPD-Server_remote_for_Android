@@ -94,21 +94,23 @@
 
 ### Task 2：网络协议、共享状态 Store 与操作协调器
 
-- [ ] 合同矩阵与 Batch 分解已冻结；尚未实施 Task 2 功能代码，机器/真实服务验证与退出门待后续 Batch 完成。
+- [x] Batch 0–6 实施与机器验证已完成；Task 2 退出门仍为 **BLOCKED**：真实服务只读协议观察通过，但未执行真实 mutation/readback，也未在 Android APK 中配置真实 origin 联调。Task 3 继续阻塞，Task 2 未合并 main。
 
-**Task 2 详细合同：** [网络协议、共享状态 Store 与操作协调器合同](../specs/2026-10-24-task-2-network-state-coordinator.md)；[分批实施计划](2026-10-24-task-2-network-state-coordinator.md)。本阶段先冻结 origin/HTTP/WS、严格 DTO、snapshot 水位、单一 realtime owner、mutation 幂等与 unknown 恢复合同。服务端以 Task 2 合同中记录的固定基线为准；用户明确要求同步上游或告知服务端协议变化时才重新核对，不要求每个 Batch 重复检查。
+**Task 2 详细合同：** [网络协议、共享状态 Store 与操作协调器合同](../specs/2026-10-24-task-2-network-state-coordinator.md)；[分批实施计划](2026-10-24-task-2-network-state-coordinator.md)。服务端以 Task 2 合同中记录的固定基线为准；用户明确要求同步上游或告知服务端协议变化时才重新核对，不要求每个 Batch 重复检查。
 
 **目标：** 建立后续页面唯一依赖的服务端连接、DTO 校验、完整状态快照、实时失效通知和 mutation 生命周期基础。
 
 **合同矩阵起点：** 后端 API 合同 §§2–5；Web 行为合同 §§1–5、§9；架构合同 §§2、4、6、8；产品规格 §§10、12、13.1。
 
-**主要交付：** 薄 API repositories、HTTP/WS 客户端、严格 DTO/wire 校验、共享状态 Store、单一 realtime controller、共享操作协调器、fresh/stale/unknown 和统一错误/活动模型。具体 DTO 与接口以最新上游代码和测试为准。
+**主要交付：** 薄 API repositories、HTTP/WS 客户端、严格 DTO/wire 校验、共享状态 Store、单一 realtime controller、共享操作协调器、fresh/stale/unknown 和统一错误/活动模型。
 
-**机器验证：** 使用协议测试覆盖初始 snapshot、invalidate 后重读、断线/重连、旧 epoch/sequence、并发读取乱序、旧连接迟到响应、HTTP 204/错误 DTO、幂等 key 和未知 mutation；本地构建与测试必须继续通过。
+**机器验证：** `./gradlew --no-daemon -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 clean testDebugUnitTest lintDebug assembleDebug` → PASS；15 suites / 66 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors，3 条既有依赖更新提示；Debug APK 10,968,597 bytes。完整日志：`/tmp/task2-batch6-finalverify.log`。新增回归验证同 origin 自动重连后服务端 epoch 改变时能重新接纳完整 snapshot 并恢复 fresh/controls eligibility。
 
-**人工验证：** 连到实际 MPD-Server 部署，核对初始快照、断网恢复、播放/输出观察状态和错误信息；不以 `/api/health` 成功代替播放状态验证。
+**真实服务验证：** `192.168.3.94:18000` 的 `/api/health` 与 `/api/state` 均返回 HTTP 200；两次独立 WebSocket 连接均收到 protocol v1 完整 snapshot，外层/内层 epoch 与 sequence 一致，playback/output observation freshness 为 fresh。未发送真实 mutation，避免对实际播放/曲库产生未明确授权的影响。
 
-**阻塞/退出门：** Task 1 可重复构建；核心协议不变量由自动测试覆盖；对真实服务的基本连通和快照读取有结果记录。未解决的协议/DTO 变化必须先更新权威合同。
+**限制：** 以上真实服务检查来自 Ubuntu 验证主机的只读 HTTP/WebSocket 探测，不等同于 APK 在 Android 设备上的实机联调；当前 Application origin 仍是 `http://localhost:18000` 占位值，用户配置 origin 的 UI 留给后续设置任务。
+
+**退出门：BLOCKED。** 机器验证和服务端只读协议观察通过；真实 mutation/readback 与 APK-level live-origin 联调尚未完成。不得开始 Task 3；未合并 main。待设置任务提供可配置 origin、并选定明确安全可逆的写场景后，补齐人工验收再关闭退出门。
 
 ### Task 3：原生应用壳、导航、主题与通用状态 UI
 

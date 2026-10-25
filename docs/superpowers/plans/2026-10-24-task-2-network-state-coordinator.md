@@ -189,22 +189,22 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - Create/Update: `.superpowers/sdd/2026-10-24-task-2-network-state-coordinator/progress.md`
 - Tests: 端到端 runtime fake-server/fixture tests，必要时补协议回归测试
 
-- [ ] 运行所有协议/状态/协调器测试，覆盖初始快照、断线恢复、旧 epoch/sequence、并发读取、旧连接迟到响应、204/错误 DTO、幂等 key 与 unknown mutation。
-- [ ] 执行 `./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug` 并检查退出码、测试报告、Lint warnings 和 APK 生成结果。
-- [ ] 对真实 MPD-Server 做只读初始快照与状态观察；在安全可恢复条件下完成断线/恢复；仅做明确安全的可逆 mutation 验证，避免破坏性操作。
-- [ ] 检查 diff/依赖，确认无 Room/SQLite、本地业务算法、UI 功能、媒体服务、CI 或服务端改动。
-- [ ] 逐项核对 Task 2 合同矩阵、退出门与主计划；记录未通过项，禁止用假数据或未执行的人工验证标为通过。
-- [ ] 进行独立 diff review（若当前环境没有 reviewer agent，明确记录为自审而非独立审查）；解决 Critical/Important 问题。
-- [ ] 提交 Task 2 文档/实现范围内最终验收记录，并推送当前 Task 分支；不合并 main、不启动 Task 3。
+- [x] 运行完整协议/状态/协调器回归，覆盖初始快照、断线恢复、旧 epoch/sequence、并发读取、旧连接迟到响应、204/错误 DTO、幂等 key 与 unknown mutation；新增同 origin 自动重连后接受新服务端 epoch 的 runtime 集成回归。
+- [x] 执行 `./gradlew --no-daemon -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 clean testDebugUnitTest lintDebug assembleDebug` → PASS，15 suites / 66 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors、3 条既有依赖更新提示；Debug APK 10,968,597 bytes。日志：`/tmp/task2-batch6-finalverify.log`。
+- [x] 真实服务只读验证：`http://192.168.3.94:18000/api/health` 和 `/api/state` 均 HTTP 200；完整 snapshot 含 epoch/sequence、revisions、playback/output observation 和 library_sync。两次独立 WS 连接均收到 protocol v1 完整 snapshot，外层/内层 epoch 与 sequence 一致，playback/output observation freshness 均为 fresh。未执行真实 mutation：没有找到足够明确且无播放/曲库扰动风险的可逆写操作，写入/204/unknown 路径由自动测试覆盖。
+- [x] 检查 diff/依赖，确认无 Room/SQLite、本地业务算法、UI 功能、媒体服务、CI 或服务端改动；`git diff --check` 通过。
+- [x] 逐项核对 Task 2 合同矩阵与退出门；不把真实服务 HTTP/WS 探测冒充 Android APK 实机测试。当前 Application origin 仍为 `http://localhost:18000` 占位值，用户配置 origin 的 UI 属于后续设置任务。
+- [x] 完成最终 diff 自审；当前环境没有独立 reviewer agent，故记录为作者自审，不冒称独立审查。未发现 Critical/Important 问题。
+- [x] 已提交 Batch 6 实现与最终验收记录，并推送当前 Task 分支；未合并 main、未启动 Task 3。
 
-## Task 2 完成报告模板
+## Task 2 完成报告
 
-- Android base HEAD / branch / final commit：
-- Fixed MPD-Server baseline used (no recheck unless user requests/announces a change)：
-- Implemented batches and commits：
-- `clean testDebugUnitTest lintDebug assembleDebug` result：
-- Protocol/state/mutation tests and counts：
-- Real-service snapshot/reconnect evidence：
-- Human/device checks and limitations：
-- Review result and remaining issues：
-- Task 2 exit gate: PASS / BLOCKED (list unmet evidence)：
+- Android base HEAD / branch / implementation commit：Task 2 branch `feature/task-2-network-state-coordinator`; pre-Batch 6 HEAD `abc0b48`; Batch 6 implementation commit `103ff2e`.
+- Fixed MPD-Server baseline used (no recheck unless user requests/announces a change)：`2ad84454ceb70817bd996c92b590cfa2d9e9b128` (unchanged).
+- Implemented batches and commits：Batch 0–5 and Batch 5 follow-up are present in branch history; Batch 6 adds same-origin reconnect/new-epoch acceptance regression and final evidence.
+- `clean testDebugUnitTest lintDebug assembleDebug` result：PASS, exit 0; 15 suites / 66 tests / 0 failures / 0 errors / 0 skipped; Lint 0 errors, 3 existing dependency update warnings; Debug APK 10,968,597 bytes. Log: `/tmp/task2-batch6-finalverify.log`.
+- Protocol/state/mutation tests and counts：66 total tests pass, including HTTP 204/error DTO, realtime initial frame/invalidate, state watermark/read coalescing, mutation idempotency/unknown handling, and same-origin reconnect after server epoch change.
+- Real-service snapshot/reconnect evidence：`192.168.3.94:18000/api/health` and `/api/state` HTTP 200; two independent `/api/realtime` WebSocket sessions received valid protocol v1 full snapshots with matching outer/inner epoch and sequence; playback/output observation freshness was `fresh`.
+- Human/device checks and limitations：Read-only Ubuntu host checks only; no real mutation/readback because no clearly safe reversible operation was selected. APK-level live-origin validation is pending because production origin remains `http://localhost:18000`.
+- Review result：Self-review only (no independent reviewer tool available); no Critical/Important issues found in the scoped diff.
+- Task 2 exit gate: **BLOCKED** — 未执行真实 mutation/readback；当前 APK origin 仍为 localhost 占位值，尚无 APK-level live-origin 联调证据。
