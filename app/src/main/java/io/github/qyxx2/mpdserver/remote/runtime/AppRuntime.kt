@@ -30,10 +30,39 @@ class AppRuntime private constructor(
         readState = stateReader,
         scope = scope,
     )
+    val mutations: MutationCoordinator by lazy { MutationCoordinator(
+        origin = initialOrigin,
+        send = { request ->
+            val transport = HttpTransport(request.origin, httpClient)
+            val httpRequest = transport.buildRequest(
+                method = request.method,
+                path = request.path,
+                body = request.payload,
+                headers = request.idempotencyKey?.let { mapOf("Idempotency-Key" to it) } ?: emptyMap(),
+            )
+            transport.execute(httpRequest)
+        },
+        synchronize = { intentId ->
+            scope.launch {
+                try {
+                    when (val result = stateReader(realtimeController.currentOrigin())) {
+                        is io.github.qyxx2.mpdserver.remote.protocol.ApiResult.Success ->
+                            snapshots.accept(result.value, realtimeController.generation.value, SnapshotSource.HTTP_READ)
+                        else -> mutations.recordSynchronizationFailure(intentId, "Authoritative snapshot read after mutation failed")
+                    }
+                } catch (error: Exception) {
+                    mutations.recordSynchronizationFailure(intentId, error.message ?: "Authoritative snapshot read after mutation failed")
+                }
+            }
+        },
+    ) }
 
     fun start() = realtimeController.start()
 
-    suspend fun changeOrigin(origin: ServerOrigin) = realtimeController.changeOrigin(origin)
+    suspend fun changeOrigin(origin: ServerOrigin) {
+        mutations.changeOrigin(origin)
+        realtimeController.changeOrigin(origin)
+    }
 
     override fun close() {
         // Stop owners before cancelling their shared scope so socket and collector cleanup can finish.

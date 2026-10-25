@@ -172,12 +172,12 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - 输入：调用方提交的明确 intent（method/path/payload 和策略化的影响范围）；协调器负责生成/保留 key 与恢复动作。
 - 输出：可观察的共享操作状态与活动记录；重试原 intent/key 或读取状态是显式恢复动作，不自动创造新意图。
 
-- [ ] 写同一 intent 重试保持 key/method/path/payload、pending 冲突操作受控的测试。
-- [ ] 写网络超时/断线/解码失败必须为 unknown，明确 HTTP 业务错误为 failed 的测试。
-- [ ] 写 204 不解析 body、写成功后读取失败仍保留成功回执的测试。
-- [ ] 写 origin 变化时禁止旧 mutation 迁移/新 key 重放，以及进程重启不自动重放的测试。
-- [ ] 实现共享 coordinator/activity model；任何业务 API 调用不得绕过 coordinator 自行 retry。
-- [ ] 运行目标测试、完整单测/Lint 和 `git diff --check`，提交本 Batch。
+- [x] 写同一 intent 重试保持 key/method/path/payload、pending 重复/冲突操作受控的测试（`MutationCoordinatorTest`）。
+- [x] 写网络超时/断线/解码失败为 unknown、明确 HTTP 业务错误为 failed 的测试。
+- [x] 写 204 不解析 body、写成功后读取失败仍保留成功回执的测试。
+- [x] 写 origin 变化时禁止旧 mutation 迁移/新 key 重放，以及新 runtime 不会恢复或重放旧 intent 的测试。
+- [x] 实现应用级共享 `MutationCoordinator` 与 StateFlow 活动记录；写请求固定 method/path/payload/origin/key，显式 retry 复用原 request，pending 不重复提交。
+- [ ] 运行最终完整单测/Lint/build 与 `git diff --check`；通过后提交本 Batch。
 
 ## Batch 6：集成协议回归、真实服务验证与 Task 2 退出审查
 

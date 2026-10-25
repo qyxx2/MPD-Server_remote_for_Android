@@ -36,6 +36,7 @@ class RealtimeController(
     private val _generation = MutableStateFlow(0L)
     val generation: StateFlow<Long> = _generation.asStateFlow()
     private var origin = initialOrigin
+    fun currentOrigin(): ServerOrigin = synchronized(lock) { origin }
     private var connection: RealtimeConnection? = null
     private var connectionStateJob: Job? = null
     private var eventJob: Job? = null
