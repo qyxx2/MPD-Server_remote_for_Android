@@ -68,11 +68,13 @@
 - Create: `ui/navigation/AppDestination.kt`、`AppNavHost.kt`（按 Batch 0 映射调整）
 - Create: 占位 screen composables；在 app/src/androidTest 加入 Compose UI instrumentation tests，并配置 AndroidJUnitRunner 与已冻结的 AndroidX Test 依赖
 
-- [ ] 测试根入口顺序/label/selected state 和根入口互切。
-- [ ] 测试从任一根入口进入全屏播放器再返回，返回到原根入口，runtime owner identity 保持不变。
-- [ ] 实现导航图；全屏 route 为独立目的地，不做第五个根入口。
-- [ ] 运行导航测试并确认未创建第二个 runtime/controller/store/coordinator。
-- [ ] 本 Batch 后运行完整单测、Lint、Debug 构建，diff-check 并提交。
+- [x] 编写根入口顺序/label/selected state、根入口互切、当前入口重复选择的 Compose UI 测试；测试源成功编译。真机/模拟器运行仍待执行。
+- [x] 编写从每个根入口进入全屏播放器再返回、恢复原根返回栈及 runtime owner identity 的 Compose UI 测试；测试源成功编译。真机/模拟器运行仍待执行。
+- [x] 实现导航图；全屏 route 为独立目的地，不做第五个根入口。
+- [ ] 在 Android 设备/模拟器运行导航 instrumentation tests。当前工作机 `adb devices -l` 无设备且未安装 `emulator`，因此未运行；不以单元测试或编译代替 UI 执行验收。
+- [x] 完整单测、Lint、Debug 构建、instrumentation test 编译和 `git diff --check` 已通过；保留固定依赖版本与其新版本提示，不升级无关依赖。提交后记录 Batch 2 本地提交。
+
+**Batch 2 设备验收阻塞（未冒充通过）：** 本工作机没有已连接的 ADB 设备/模拟器，且 `emulator` 可执行文件不存在。`AppNavigationUiTest` 已编写并通过 `compileDebugAndroidTestKotlin`，但没有执行 instrumentation tests 或人工真机验收；以上两项仍是本 Batch 未闭合的验证门。
 
 ## Batch 3：共享 App Shell 与根页面布局
 
