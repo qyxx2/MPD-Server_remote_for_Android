@@ -105,6 +105,36 @@ class RuntimeCompositionTest {
         }
     }
 
+    @Test fun sameOriginReconnectAcceptsNewServerEpochAfterDisconnect() = runBlocking {
+        val sockets = RecordingSocketFactory()
+        val runtime = AppRuntime.createForTesting(ServerOrigin.parse("http://music.example:18000"), sockets)
+        try {
+            runtime.start()
+            val firstSocket = sockets.awaitSocket(0)
+            firstSocket.open()
+            firstSocket.message(snapshot("e1", 8))
+            runtime.snapshots.state.first { it.snapshot?.epoch == "e1" && it.controlsEligible }
+
+            firstSocket.disconnect()
+            runtime.snapshots.state.first {
+                it.connectionStatus == RuntimeConnectionStatus.DISCONNECTED &&
+                    it.freshness == SnapshotFreshness.STALE && !it.controlsEligible
+            }
+
+            val reconnectedSocket = sockets.awaitSocket(1)
+            reconnectedSocket.open()
+            reconnectedSocket.message(snapshot("e2", 1))
+            val recovered = kotlinx.coroutines.withTimeout(2_000) {
+                runtime.snapshots.state.first {
+                    it.snapshot?.epoch == "e2" && it.freshness == SnapshotFreshness.FRESH && it.controlsEligible
+                }
+            }
+            assertEquals(1L, recovered.snapshot?.sequence)
+        } finally {
+            runtime.close()
+        }
+    }
+
     @Test fun originSwitchInvalidatesOldConnectionAndUsesNewOriginGeneration() = runBlocking {
         val sockets = RecordingSocketFactory()
         val runtime = AppRuntime.createForTesting(ServerOrigin.parse("http://music.example:18000"), sockets)
@@ -159,6 +189,7 @@ private class RecordingSocket(private val listener: RealtimeSocketListener) : Re
     override fun cancel() = Unit
     fun open() = listener.onOpen()
     fun message(text: String) = listener.onMessage(text)
+    fun disconnect() = listener.onClosed()
 }
 
 private fun snapshotDto(epoch: String, sequence: Long) = StateSnapshotDto(

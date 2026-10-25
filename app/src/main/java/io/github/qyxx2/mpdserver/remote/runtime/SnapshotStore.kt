@@ -80,12 +80,26 @@ class SnapshotStore(
             return@synchronized false
         }
         val previous = old.snapshot
-        val decision = acceptancePolicy.evaluate(
-            previous,
-            old.snapshotConnectionGeneration ?: old.connectionGeneration,
-            candidate,
-            connectionGeneration,
-        )
+        // A decoded REALTIME_INITIAL snapshot is guaranteed by RealtimeConnection to be the
+        // first complete frame of the currently owned socket. A server restart can change epoch
+        // during an automatic reconnect without changing the application/runtime generation.
+        // Treat that new epoch as a new snapshot session; stale socket events are filtered before
+        // they reach this Store by RealtimeConnection and RealtimeController.
+        val decision = if (
+            source == SnapshotSource.REALTIME_INITIAL &&
+            previous != null &&
+            candidate.epoch != previous.epoch &&
+            connectionGeneration == old.connectionGeneration
+        ) {
+            SnapshotRejection.ACCEPTED
+        } else {
+            acceptancePolicy.evaluate(
+                previous,
+                old.snapshotConnectionGeneration ?: old.connectionGeneration,
+                candidate,
+                connectionGeneration,
+            )
+        }
         if (decision != SnapshotRejection.ACCEPTED) return@synchronized false
         _state.value = old.copy(
             snapshot = candidate,
