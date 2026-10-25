@@ -53,11 +53,11 @@
 - Create: 最小主题偏好模型/存储适配，使用 Preferences DataStore `1.1.7`；同时引入 Lifecycle Runtime Compose `2.9.1` 以 lifecycle-aware 收集共享 StateFlow
 - Test: theme mapping、默认跟随系统、显式浅/深色、偏好恢复
 
-- [ ] 先写主题映射与偏好行为测试并观察失败。
-- [ ] 实现语义色 token 和 Follow System / Light / Dark 状态。
-- [ ] 让启动入口从共享 UI preference 读取主题；系统主题变化时 Follow System 正确更新。
-- [ ] 运行主题相关单测/必要 UI test，再运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug`。
-- [ ] `git diff --check` 并提交 Batch 1。
+- [x] 先写主题映射与偏好行为测试并观察失败。
+- [x] 实现语义色 token 和 Follow System / Light / Dark 状态。
+- [x] 让启动入口从共享 UI preference 读取主题；系统主题变化时 Follow System 正确更新。
+- [x] 运行主题相关单测/必要 UI test，再运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug`。
+- [x] `git diff --check` 并提交 Batch 1。
 
 ## Batch 2：四入口导航与返回栈
 
