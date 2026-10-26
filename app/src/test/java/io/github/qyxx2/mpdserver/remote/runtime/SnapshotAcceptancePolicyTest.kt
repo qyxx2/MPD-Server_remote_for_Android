@@ -50,6 +50,23 @@ class SnapshotAcceptancePolicyTest {
         assertFalse(store.state.value.controlsEligible)
     }
 
+    @Test fun lateConnectingStatusCannotDowngradeAnAcceptedRealtimeSnapshotInSameGeneration() {
+        val store = SnapshotStore()
+        store.onConnectionState(1, RuntimeConnectionStatus.CONNECTING)
+
+        assertTrue(store.accept(snapshot("e1", 1).wire, 1, SnapshotSource.REALTIME_INITIAL))
+        assertEquals(RuntimeConnectionStatus.CONNECTED, store.state.value.connectionStatus)
+        assertEquals(SnapshotFreshness.FRESH, store.state.value.freshness)
+
+        // RealtimeConnection emits the snapshot event before its Ready state; the state collector
+        // can deliver the intermediate AwaitingSnapshot/CONNECTING status just after acceptance.
+        store.onConnectionState(1, RuntimeConnectionStatus.CONNECTING)
+
+        assertEquals(RuntimeConnectionStatus.CONNECTED, store.state.value.connectionStatus)
+        assertEquals(SnapshotFreshness.FRESH, store.state.value.freshness)
+        assertTrue(store.state.value.controlsEligible)
+    }
+
     @Test fun doesNotInferActualPlaybackFromBusinessState() {
         val dto = snapshot("e1", 1).wire
         val store = SnapshotStore()

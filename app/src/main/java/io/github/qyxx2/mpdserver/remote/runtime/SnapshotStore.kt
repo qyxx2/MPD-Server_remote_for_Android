@@ -54,6 +54,21 @@ class SnapshotStore(
         val old = _state.value
         if (generation < old.connectionGeneration) return@synchronized
         val generationChanged = generation > old.connectionGeneration
+        val acceptedRealtimeSnapshotForGeneration =
+            !generationChanged &&
+                old.snapshot != null &&
+                old.snapshotConnectionGeneration == generation &&
+                old.connectionStatus == RuntimeConnectionStatus.CONNECTED
+        // The WebSocket callback can deliver its first complete snapshot before the separate
+        // connection-state collector processes the intermediate AwaitingSnapshot/CONNECTING phase.
+        // Once this generation's snapshot is accepted, ignore that late phase regression. A real
+        // reconnect first transitions through DISCONNECTED, which still marks the snapshot stale.
+        if (
+            acceptedRealtimeSnapshotForGeneration &&
+            status == RuntimeConnectionStatus.CONNECTING
+        ) {
+            return@synchronized
+        }
         _state.value = old.copy(
             connectionStatus = status,
             connectionGeneration = generation,
