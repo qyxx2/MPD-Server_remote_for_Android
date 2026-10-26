@@ -154,6 +154,24 @@ class AppNavigationUiTest {
     }
 
     @Test
+    fun globalStatusEntryOpensReadableEmptyActivitySheetAndCanCloseIt() {
+        launchNavigation()
+        composeRule.onNodeWithTag("global-status-entry").assertIsDisplayed()
+        composeRule.onNodeWithTag("global-status-entry").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("连接与活动").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-summary").assertIsDisplayed()
+        composeRule.onNodeWithText("当前状态：未连接").assertIsDisplayed()
+        composeRule.onNodeWithText("连接：未连接").assertIsDisplayed()
+        composeRule.onNodeWithText("快照：未确认").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-empty").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-close").performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag("activity-status-sheet").assertCountEquals(0)
+    }
+
+    @Test
     fun fullScreenPlayerHidesRootNavigationAndSystemBackRestoresEachRoot() {
         launchNavigation()
         val application = composeRule.activity.application as MpdServerRemoteApplication

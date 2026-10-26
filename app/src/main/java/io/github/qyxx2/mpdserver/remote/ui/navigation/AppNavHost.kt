@@ -5,6 +5,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -13,6 +16,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityPresentation
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusSheet
 import io.github.qyxx2.mpdserver.remote.ui.screens.FullScreenPlayerPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
@@ -33,7 +38,11 @@ fun AppNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
+    // Observe the existing shared coordinator; this does not start networking or submit a mutation.
+    val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
+    val statusPresentation = ActivityPresentation.from(snapshotState, activities)
     val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
+    var showActivityStatus by remember { mutableStateOf(false) }
     val fullScreen = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route
     val title = AppDestination.rootDestinations
         .firstOrNull { it.route == currentRoute }
@@ -49,6 +58,8 @@ fun AppNavHost(
         AppShell(
             title = title,
             modifier = modifier,
+            statusPresentation = statusPresentation,
+            onStatusClick = { showActivityStatus = true },
             miniPlayer = {
                 if (currentRoute != AppDestination.SETTINGS.route) {
                     MiniPlayer(
@@ -69,6 +80,12 @@ fun AppNavHost(
                 modifier = Modifier.fillMaxSize(),
             )
         }
+    }
+    if (showActivityStatus) {
+        ActivityStatusSheet(
+            presentation = statusPresentation,
+            onDismiss = { showActivityStatus = false },
+        )
     }
 }
 

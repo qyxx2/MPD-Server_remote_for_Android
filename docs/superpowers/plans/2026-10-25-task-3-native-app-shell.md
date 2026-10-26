@@ -107,16 +107,16 @@
 
 ## Batch 5：状态环、活动详情与共享 runtime 投影
 
-**目标：** 用统一 UI 呈现连接状态、snapshot freshness 与共享活动概览。
+**目标：** 用统一 UI 呈现连接状态、snapshot freshness 与共享活动概览。状态与活动必须只投影既有 runtime owner；不得启动连接或执行写操作。
 
 **Files:**
 - Create: `ui/components/PlaybackStatusRing.kt`、`ActivityStatusSheet.kt`（名称可按实现调整）
 - Test: empty/error/unknown activity mapping、open/close sheet、screen navigation owner stability
 
-- [ ] 先写模型映射和 Compose 详情面板开关测试。
-- [ ] 让单一全局状态入口读取 runtime 的连接/快照/活动事实；活动详情呈现 pending/syncing/unknown/failed/retired/success/info 的已存在状态，不复制活动 owner。
-- [ ] 仅提供详情/重新读取入口；本 Task 不实现未知写操作的 retry，也不提交真实 mutation。
-- [ ] 测试无连接与 stale 状态，不以绿色/成功视觉暗示服务端已联通；运行完整验证并提交。
+- [x] 先写 `ActivityPresentationTest` 映射测试并观察缺少 `ActivityVisualState`/`ActivityPresentation` 的预期编译失败；随后实现纯映射模型并通过 11 项状态/活动断言。
+- [x] 将 AppBar 的全局状态入口替换为 36dp 状态环（48dp 触控热区），读取唯一 runtime 的 SnapshotStore 与 MutationCoordinator activities；详情面板显示连接、freshness、读取错误及最近共享活动，不创建活动 owner。
+- [x] 详情面板可通过状态环打开、关闭按钮/完成按钮/系统返回关闭；不启动 runtime、不提交 mutation、不重试 UNKNOWN。DISCONNECTED、CONNECTING、UNKNOWN、STALE、PENDING、SYNCING、FAILED、SUCCESS、INFO、IDLE 使用不同的文字/符号/环形状态；活动列表最多展示最近 20 条并限制列表最大高度，避免活动较多时挤出详情面板的关闭入口。由于共享 `MutationStatus` 未定义 RETIRED，不伪造该状态。
+- [x] 运行完整单测、Lint、Debug APK、instrumentation 源编译和无线真机 Compose UI 测试；7/7 instrumentation tests、86/86 unit tests 通过，`git diff --check` 与 UI 业务边界扫描通过；真机截图保存在 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/device-evidence/batch5-*.png`。
 
 ## Batch 6：全屏播放器占位目的地与综合导航回归
 
