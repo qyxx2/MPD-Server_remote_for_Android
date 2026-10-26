@@ -5,12 +5,15 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
@@ -79,7 +82,7 @@ class AppNavigationUiTest {
     }
 
     @Test
-    fun rootPagesShowSharedAppBarScrollableContentAndNavigationWithoutMiniPlayerGap() {
+    fun rootPagesShowSharedAppBarScrollableContentMiniPlayerAndNavigation() {
         launchNavigation()
 
         composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
@@ -91,11 +94,15 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
         )
         composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
-        composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
+        composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
+        composeRule.onNodeWithText("暂无播放曲目").assertIsDisplayed()
+        composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled()
 
         val contentBounds = composeRule.onNodeWithTag("root-content").fetchSemanticsNode().boundsInRoot
+        val miniBounds = composeRule.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
         val navigationBounds = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
-        assertTrue("Root content must end above the fixed navigation", contentBounds.bottom <= navigationBounds.top + 1f)
+        assertTrue("Root content must end above the mini-player", contentBounds.bottom <= miniBounds.top + 1f)
+        assertTrue("Mini-player must end above the fixed navigation", miniBounds.bottom <= navigationBounds.top + 1f)
 
         val statusBounds = composeRule.onNodeWithTag("global-status-entry").fetchSemanticsNode().boundsInRoot
         val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
@@ -117,12 +124,31 @@ class AppNavigationUiTest {
                 composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
             )
             composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
-            composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
+            if (destination == AppDestination.SETTINGS) {
+                composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
+            } else {
+                composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
+                composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled()
+            }
             val navBounds = composeRule.onNodeWithTag("root-nav-${destination.route}").fetchSemanticsNode().boundsInRoot
             val minTarget = with(composeRule.density) { 48.dp.toPx() }
             assertTrue("Root navigation items must retain 48dp touch targets", navBounds.height >= minTarget)
             assertEquals(destination.route, navController.currentDestination?.route)
         }
+    }
+
+    @Test
+    fun miniPlayerActionIsDisabledWhileBodyOpensFullScreenPlayer() {
+        launchNavigation()
+        composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled().performTouchInput { click() }
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+
+        composeRule.onNodeWithTag("mini-player-body").performClick()
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        composeRule.onNodeWithText("全屏播放器占位").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
     }
 
     @Test

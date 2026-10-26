@@ -99,10 +99,10 @@
 - Create: `ui/shell/MiniPlayer.kt`、共享状态到 UI presentation mapper
 - Test: no snapshot、no current song、fresh/paused/playing、stale/unknown、settings hidden、button disabled
 
-- [ ] 先为空/current/stale/unknown 及设置显隐写投影/UI 测试。
-- [ ] 实现封面/内置占位、单行曲名（不显示艺术家）、单一播放/暂停视觉位置；不显示进度/上一首/下一首。尺寸遵循 Task 3 视觉设计规格 §6。
-- [ ] 由于 Task 4 尚未接入播放动作，此阶段所有播放/暂停动作保持不可执行，并显示简洁的暂未接入提示或将其作为明确 disabled 控件。
-- [ ] 验证状态只由 app-scoped runtime 提供；运行完整单测/Lint/Debug build，diff-check 并提交。
+- [x] 先为空/current/stale/unknown、fresh/playing/paused 及设置显隐写投影/UI 测试；覆盖缺失/畸形标题、last-known stale 状态和播放控件 disabled。
+- [x] 实现 64dp 固定高度迷你播放器、48dp 封面占位、16sp 单行曲名（不显示艺术家）与单一播放/暂停视觉位置；不显示进度/上一首/下一首。当前快照 DTO 未定义封面字段，因此使用原生占位图，不猜造 artwork URL。
+- [x] Task 4 尚未接入播放动作，播放/暂停控件明确 disabled 并标注暂未接入；按钮与进入全屏播放器的主体点击区域分离，避免禁用动作触发导航。
+- [x] 状态只从 Application 所有的 app-scoped runtime `SnapshotStore.state` 以 lifecycle-aware 方式读取；运行单测、Android instrumentation 源编译、Lint、Debug build 与 `git diff --check`。真机/模拟器无在线目标，UI instrumentation 未执行，保留为人工验收项。
 
 ## Batch 5：状态环、活动详情与共享 runtime 投影
 

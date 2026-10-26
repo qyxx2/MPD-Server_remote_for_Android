@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.testTag
 fun AppShell(
     title: String,
     modifier: Modifier = Modifier,
+    miniPlayer: @Composable () -> Unit = {},
     bottomBar: @Composable () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -26,6 +27,7 @@ fun AppShell(
                 .testTag("root-content"),
             content = content,
         )
+        miniPlayer()
         bottomBar()
     }
 }

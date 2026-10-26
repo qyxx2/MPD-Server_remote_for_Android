@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -18,13 +19,11 @@ import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SettingsPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.shell.AppShell
+import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayer
+import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.shell.RootNavigationBar
 
-/**
- * Navigation only: the runtime is supplied by MainActivity from the Application owner.
- * This UI shell observes no runtime state and does not start or replace the runtime.
- */
-@Suppress("UNUSED_PARAMETER")
+/** The app-scoped runtime is supplied by MainActivity; this shell observes it read-only. */
 @Composable
 fun AppNavHost(
     runtime: AppRuntime,
@@ -33,6 +32,8 @@ fun AppNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
+    val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
     val fullScreen = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route
     val title = AppDestination.rootDestinations
         .firstOrNull { it.route == currentRoute }
@@ -48,6 +49,14 @@ fun AppNavHost(
         AppShell(
             title = title,
             modifier = modifier,
+            miniPlayer = {
+                if (currentRoute != AppDestination.SETTINGS.route) {
+                    MiniPlayer(
+                        presentation = miniPlayerPresentation,
+                        onOpen = { navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) },
+                    )
+                }
+            },
             bottomBar = {
                 RootNavigationBar(
                     currentRoute = currentRoute,
