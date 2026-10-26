@@ -1,24 +1,11 @@
 package io.github.qyxx2.mpdserver.remote.ui.navigation
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.sp
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,10 +17,12 @@ import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SettingsPlaceholderScreen
+import io.github.qyxx2.mpdserver.remote.ui.shell.AppShell
+import io.github.qyxx2.mpdserver.remote.ui.shell.RootNavigationBar
 
 /**
  * Navigation only: the runtime is supplied by MainActivity from the Application owner.
- * This batch deliberately does not start, replace, or otherwise operate on that owner.
+ * This UI shell observes no runtime state and does not start or replace the runtime.
  */
 @Suppress("UNUSED_PARAMETER")
 @Composable
@@ -44,75 +33,57 @@ fun AppNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val fullScreen = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route
+    val title = AppDestination.rootDestinations
+        .firstOrNull { it.route == currentRoute }
+        ?.label
+        ?: AppDestination.HOME.label
 
-    Column(modifier = modifier.fillMaxSize()) {
-        NavHost(
+    if (fullScreen) {
+        AppNavigationGraph(
             navController = navController,
-            startDestination = AppDestination.HOME.route,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = modifier.fillMaxSize(),
+        )
+    } else {
+        AppShell(
+            title = title,
+            modifier = modifier,
+            bottomBar = {
+                RootNavigationBar(
+                    currentRoute = currentRoute,
+                    navController = navController,
+                )
+            },
         ) {
-            composable(AppDestination.HOME.route) { HomePlaceholderScreen() }
-            composable(AppDestination.SEARCH.route) { SearchPlaceholderScreen() }
-            composable(AppDestination.LIBRARY.route) { LibraryPlaceholderScreen() }
-            composable(AppDestination.SETTINGS.route) { SettingsPlaceholderScreen() }
-            composable(AppDestination.FULL_SCREEN_PLAYER.route) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    FullScreenPlayerPlaceholderScreen(onBack = { navController.popBackStack() })
-                }
-            }
-        }
-
-        if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route) {
-            RootNavigationBar(
-                currentRoute = currentRoute,
+            AppNavigationGraph(
                 navController = navController,
+                modifier = Modifier.fillMaxSize(),
             )
         }
     }
 }
 
 @Composable
-private fun RootNavigationBar(
-    currentRoute: String?,
+private fun AppNavigationGraph(
     navController: NavHostController,
+    modifier: Modifier = Modifier,
 ) {
-    NavigationBar(
-        modifier = Modifier.fillMaxWidth().testTag("root-navigation-bar"),
-        containerColor = MaterialTheme.colorScheme.surface,
+    NavHost(
+        navController = navController,
+        startDestination = AppDestination.HOME.route,
+        modifier = modifier,
     ) {
-        AppDestination.rootDestinations.forEach { destination ->
-            val selected = currentRoute == destination.route
-            NavigationBarItem(
-                modifier = Modifier.testTag("root-nav-${destination.route}"),
-                selected = selected,
-                onClick = {
-                    // Selecting the already-selected root is an intentional no-op. It preserves
-                    // the current entry and any state held by that root's destination.
-                    if (currentRoute != destination.route) {
-                        navController.navigate(destination.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                },
-                icon = {
-                    when (destination) {
-                        AppDestination.HOME -> Icon(Icons.Filled.Home, contentDescription = null)
-                        AppDestination.SEARCH -> Icon(Icons.Filled.Search, contentDescription = null)
-                        AppDestination.LIBRARY -> Text(text = "♫", fontSize = 24.sp)
-                        AppDestination.SETTINGS -> Icon(Icons.Filled.Settings, contentDescription = null)
-                        AppDestination.FULL_SCREEN_PLAYER -> Unit
-                    }
-                },
-                label = { Text(destination.label) },
-                alwaysShowLabel = true,
-            )
+        composable(AppDestination.HOME.route) { HomePlaceholderScreen() }
+        composable(AppDestination.SEARCH.route) { SearchPlaceholderScreen() }
+        composable(AppDestination.LIBRARY.route) { LibraryPlaceholderScreen() }
+        composable(AppDestination.SETTINGS.route) { SettingsPlaceholderScreen() }
+        composable(AppDestination.FULL_SCREEN_PLAYER.route) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+            ) {
+                FullScreenPlayerPlaceholderScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

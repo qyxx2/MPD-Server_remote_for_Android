@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.navigation
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
@@ -77,6 +79,53 @@ class AppNavigationUiTest {
     }
 
     @Test
+    fun rootPagesShowSharedAppBarScrollableContentAndNavigationWithoutMiniPlayerGap() {
+        launchNavigation()
+
+        composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
+        composeRule.onNodeWithTag("app-bar-title").assertIsDisplayed()
+        composeRule.onNodeWithTag("global-status-entry").assertIsDisplayed()
+        composeRule.onNodeWithTag("root-content").assertIsDisplayed()
+        assertTrue(
+            "Root placeholder content must expose scrolling semantics",
+            composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
+        )
+        composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
+
+        val contentBounds = composeRule.onNodeWithTag("root-content").fetchSemanticsNode().boundsInRoot
+        val navigationBounds = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
+        assertTrue("Root content must end above the fixed navigation", contentBounds.bottom <= navigationBounds.top + 1f)
+
+        val statusBounds = composeRule.onNodeWithTag("global-status-entry").fetchSemanticsNode().boundsInRoot
+        val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
+        assertTrue("Global status entry must preserve a 48dp touch target", statusBounds.width >= minimumTouchTargetPx)
+        assertTrue("Global status entry must preserve a 48dp touch target", statusBounds.height >= minimumTouchTargetPx)
+    }
+
+    @Test
+    fun allRootPagesUseTheSharedShellAndSettingsDoesNotAddMiniPlayerSpace() {
+        launchNavigation()
+        AppDestination.rootDestinations.forEach { destination ->
+            composeRule.onNodeWithTag("root-nav-${destination.route}").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
+            composeRule.onNodeWithTag("app-bar-title").assertIsDisplayed()
+            composeRule.onNodeWithTag("root-content").assertIsDisplayed()
+            assertTrue(
+                "Root placeholder content must expose scrolling semantics",
+                composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
+            )
+            composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
+            composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
+            val navBounds = composeRule.onNodeWithTag("root-nav-${destination.route}").fetchSemanticsNode().boundsInRoot
+            val minTarget = with(composeRule.density) { 48.dp.toPx() }
+            assertTrue("Root navigation items must retain 48dp touch targets", navBounds.height >= minTarget)
+            assertEquals(destination.route, navController.currentDestination?.route)
+        }
+    }
+
+    @Test
     fun fullScreenPlayerHidesRootNavigationAndSystemBackRestoresEachRoot() {
         launchNavigation()
         val application = composeRule.activity.application as MpdServerRemoteApplication
@@ -93,6 +142,8 @@ class AppNavigationUiTest {
             }
             composeRule.waitForIdle()
             composeRule.onNodeWithText("全屏播放器占位").assertIsDisplayed()
+            composeRule.onAllNodesWithTag("app-bar").assertCountEquals(0)
+            composeRule.onAllNodesWithTag("root-content").assertCountEquals(0)
             composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
 
             composeRule.runOnUiThread {

@@ -6,54 +6,51 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
 fun HomePlaceholderScreen() = RootPlaceholderScreen(
-    title = "主页",
     description = "主页内容将在后续任务接入。",
 )
 
 @Composable
 fun SearchPlaceholderScreen() = RootPlaceholderScreen(
-    title = "搜索",
     description = "搜索功能将在后续任务接入。",
 )
 
 @Composable
 fun LibraryPlaceholderScreen() = RootPlaceholderScreen(
-    title = "音乐库",
     description = "音乐库内容将在后续任务接入。",
 )
 
 @Composable
 fun SettingsPlaceholderScreen() = RootPlaceholderScreen(
-    title = "设置",
     description = "应用设置将在后续任务接入。",
 )
 
 @Composable
 private fun RootPlaceholderScreen(
-    title: String,
     description: String,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 20.dp)
+            .testTag("root-placeholder-content"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
         Text(
             text = description,
             style = MaterialTheme.typography.bodyLarge,

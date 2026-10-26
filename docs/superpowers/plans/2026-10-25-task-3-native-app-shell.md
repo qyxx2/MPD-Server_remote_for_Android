@@ -85,10 +85,11 @@
 - Create/Modify: 四个根页面空状态布局
 - Test: 页面层级、按钮语义、正文不被迷你播放器/导航覆盖
 
-- [ ] 先写 Compose UI tests：根页面有 AppBar 和根导航；正文在可布局范围；无迷你播放器时无额外空白。
-- [ ] 实现紧凑 app bar、根 navigation、正文 slot，确保 mini 由后续 Batch 作为正常布局节点插入。
-- [ ] 设置/搜索键盘预期行为按规格保留空间并让正文滚动，不改变系统字体缩放。
-- [ ] 验证导航 label、语义、48dp 触控目标基线和安全区；运行完整单测/Lint/Debug build，diff-check 并提交。
+- [x] 先写 Compose UI tests：根页面有 AppBar 和根导航；正文在可布局范围；无迷你播放器时无额外空白。增加共享壳、正文滚动语义、固定导航边界、48dp 目标和全屏隐藏断言。
+- [x] 实现紧凑 app bar、根 navigation、正文 slot，确保 mini 由后续 Batch 作为正常布局节点插入。
+- [x] 设置/搜索键盘预期行为按规格保留空间并让正文滚动，不改变系统字体缩放；四个根页面使用可滚动正文并保留系统字号缩放。
+- [ ] 真机/模拟器运行 Compose UI tests 并检查系统安全区、键盘、大字体、短屏和窄屏。当前 `adb devices -l` 无设备，且 `emulator` 不存在；不能用测试源编译替代运行验收。
+- [x] 完整单测、Lint、Debug build、instrumentation test 源编译和 `git diff --check` 通过并提交。最终验证日志与未完成的设备门记录于 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/progress.md`。
 
 ## Batch 4：迷你播放器展示投影
 
