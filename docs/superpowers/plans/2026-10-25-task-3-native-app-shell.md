@@ -126,9 +126,9 @@
 - Create/Modify: FullPlayerPlaceholder route/screen
 - Test: full-screen hides root nav/mini, back returns previous root, runtime identity unchanged
 
-- [ ] 先写目的地进退与根壳显隐测试。
-- [ ] 实现简洁明确的“播放器界面将在后续阶段接入”占位内容，不显示假的专辑/歌词/进度/队列。
-- [ ] 对四入口逐一覆盖 full-screen 进入/返回，运行完整验证并提交。
+- [x] 先写目的地进退与根壳显隐测试。
+- [x] 实现简洁明确的“播放器界面将在后续阶段接入”占位内容，不显示假的专辑/歌词/进度/队列。
+- [x] 对四入口逐一覆盖 full-screen 进入/返回，运行完整验证并提交。
 
 ## Batch 7：Task 3 集成验证与验收记录
 

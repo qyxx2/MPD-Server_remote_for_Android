@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -275,7 +276,14 @@ class AppNavigationUiTest {
                 navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route)
             }
             composeRule.waitForIdle()
+            composeRule.onNodeWithTag("full-screen-player-placeholder").assertIsDisplayed()
             composeRule.onNodeWithText("全屏播放器占位").assertIsDisplayed()
+            composeRule.onNodeWithText("播放器界面将在后续阶段接入。").assertIsDisplayed()
+            composeRule.onAllNodesWithText("专辑封面").assertCountEquals(0)
+            composeRule.onAllNodesWithText("暂无歌词").assertCountEquals(0)
+            composeRule.onAllNodesWithText("播放队列").assertCountEquals(0)
+            composeRule.onAllNodesWithText("00:00").assertCountEquals(0)
+            composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
             composeRule.onAllNodesWithTag("app-bar").assertCountEquals(0)
             composeRule.onAllNodesWithTag("root-content").assertCountEquals(0)
             composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)

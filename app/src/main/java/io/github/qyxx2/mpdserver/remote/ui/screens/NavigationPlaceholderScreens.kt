@@ -57,7 +57,10 @@ private fun RootPlaceholderScreen(
 @Composable
 fun FullScreenPlayerPlaceholderScreen(onBack: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .testTag("full-screen-player-placeholder"),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -72,7 +75,7 @@ fun FullScreenPlayerPlaceholderScreen(onBack: () -> Unit) {
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = "播放器界面将在后续任务实现。",
+            text = "播放器界面将在后续阶段接入。",
             modifier = Modifier.padding(top = 8.dp),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
