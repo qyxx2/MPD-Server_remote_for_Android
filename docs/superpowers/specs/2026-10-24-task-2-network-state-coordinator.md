@@ -55,6 +55,7 @@ Task 2 使用已记录的服务端基线 `2ad84454ceb70817bd996c92b590cfa2d9e9b1
 ### 5.1 HTTP/DTO
 
 - DTO 对必需字段、可空字段、enum、snake_case/camelCase 映射、时间/数值类型执行明确验证；不能把缺失字段默认为空列表、0、STOPPED 或 success。
+- `GET /api/playlists` 的当前 wire 响应是 `{items: PlaylistDto[], count: number}`；使用 `PlaylistListDto` 解码包装结构，不按裸数组解码。由 `PlaylistListDtoTest` 验证空列表和非空列表响应。
 - 统一错误外形按 `error.code/message/details` 解码。错误响应无法解码时保留 HTTP 状态和协议错误上下文，不泄漏凭据或原始敏感请求内容。
 - 二进制封面不属于 Task 2 的 UI 资源实现；网络抽象不得把非 JSON 响应一律送入 JSON 解码。完整封面加载/缓存行为留给播放器/曲库 Task 冻结。
 - 所有写 API 的幂等规则按当前后端合同处理，唯一已记录豁免为 `POST /api/library/collections`。本 Task 不实施业务操作菜单。
@@ -117,9 +118,12 @@ Task 2 使用已记录的服务端基线 `2ad84454ceb70817bd996c92b590cfa2d9e9b1
 
 ## 9. Task 2 退出门
 
-- [x] 所有合同矩阵条目均映射到实现、自动测试和可追溯证据；真实 mutation/readback 条目标记为人工验收未完成。
+- [x] 所有合同矩阵条目均映射到实现、自动测试和可追溯证据；2026-10-27 已完成真实 mutation/readback 的人工/实机验收，详见最终验证报告。
 - [x] 核心 DTO/wire、snapshot 水位、重连、并发读、旧响应隔离、幂等与 unknown mutation 负向测试通过；新增同 origin 重连后新 epoch 接纳回归。
-- [x] 完整本地构建、单元测试、Lint 通过；15 suites / 66 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors，3 条既有依赖更新提示；Debug APK 10,968,597 bytes。日志：/tmp/task2-batch6-finalverify.log。
-- [x] 真实服务只读连通与完整快照读取已记录：HTTP state/health 均 200；两次 WebSocket 连接收到协议 v1 完整 snapshot 且外层/内层 epoch、sequence 一致。完成客户端断开后重新建立 WebSocket 连接的观察；未验证 Android APK 的 live-origin。
+- [x] Batch 6（2026-10-25）原始完整验证通过：15 suites / 66 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors，3 条既有依赖更新提示；Debug APK 10,968,597 bytes。日志：/tmp/task2-batch6-finalverify.log。2026-10-27 最终重新验证的测试数和 Lint 结果见下方新记录。
+- [x] Batch 6（2026-10-25）阶段的只读观察：HTTP state/health 均 200；两次 WebSocket 连接收到协议 v1 完整 snapshot 且外层/内层 epoch、sequence 一致。当时未完成 APK live-origin；此历史缺口已由 2026-10-27 真机 instrumentation/live-write 验收补齐，见下方最终验收记录。
 - [x] Diff 复审确认只涉及 Task 2，未引入业务 UI、业务数据库、客户端业务算法、CI 或上游改动。
-- [ ] Task 2 退出门仍为 **BLOCKED**：未执行真实 mutation/readback，也未完成 APK-level live-origin 联调。由于当前 APK 仍使用 http://localhost:18000 占位 origin，且未找到明确安全、无播放/曲库扰动风险的真实写操作，不伪造通过证据；不得开始 Task 3。
+- [x] 2026-10-27 Task 2 最终真实写验收：SM-G986N / Android 13 上安装本地构建的 app APK 与 instrumentation APK；通过 instrumentation 参数把真实 MS origin 注入应用内既有 AppRuntime，成功接纳 fresh 完整 snapshot；经共享 MutationCoordinator 创建唯一命名的临时用户歌单、经 GET `/api/playlists` 读回确认、DELETE 指定歌单得到成功回执，再 GET 确认已消失。测试 1/1 通过，测试后服务器歌单列表为 `{items:[], count:0}`。不涉及播放、Queue、曲库或收藏。详见 `docs/superpowers/reports/2026-10-27-task-2-live-write-verification.md`。
+- [x] 真实服务返回结构与 DTO 的差异已修正：`GET /api/playlists` 使用 `{items, count}` 包装；新增 `PlaylistListDto` 和两个 RED→GREEN 单元测试。
+- [x] 2026-10-27 完整重新验证：`clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin assembleDebugAndroidTest` 成功；23 suites / 108 tests / 0 failures / 0 errors / 0 skipped，Lint/build/Android-test 编译均通过；`git diff --check` 通过。
+- [x] Task 2 的 runtime/coordinator 真机联调与真实 mutation/readback 退出门已通过。边界说明：验证使用 instrumentation 的 `liveOrigin` 参数，而不是生产设置 UI；普通 app 仍以 localhost 为默认占位值，用户可配置的 server-origin UI 仍归后续设置任务，本报告不将其宣称为已交付。

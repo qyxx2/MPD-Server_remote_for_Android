@@ -2,8 +2,8 @@ package io.github.qyxx2.mpdserver.remote.data
 
 import io.github.qyxx2.mpdserver.remote.network.HttpTransport
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
-import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistListDto
 
 class PlaylistRepository(transport: HttpTransport) : ApiRepository(transport) {
-    fun getPlaylists(): ApiResult<List<PlaylistDto>> = get("/api/playlists")
+    fun getPlaylists(): ApiResult<PlaylistListDto> = get("/api/playlists")
 }

@@ -12,3 +12,10 @@ data class PlaylistDto(
     @SerialName("is_system") val isSystem: Boolean,
     @SerialName("song_ids") val songIds: List<String>,
 )
+
+/** Actual GET /api/playlists response envelope returned by MPD-Server. */
+@Serializable
+data class PlaylistListDto(
+    val items: List<PlaylistDto>,
+    val count: Int,
+)

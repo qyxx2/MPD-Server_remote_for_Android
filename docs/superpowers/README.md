@@ -32,7 +32,7 @@
 - [Task 1 原生工程骨架合同](specs/2026-10-24-task-1-native-project-baseline.md)：冻结工程身份、工具链、统一签名、范围边界与退出门。
 - [Task 1 执行计划](plans/2026-10-24-task-1-native-project-baseline.md)：本地原生工程实施步骤、TDD、验证和交付记录。
 - [Task 2 网络协议、共享状态 Store 与操作协调器合同](specs/2026-10-24-task-2-network-state-coordinator.md)：冻结服务端 origin/HTTP/WS、严格 DTO、完整快照、单一 realtime owner、mutation 幂等/unknown 恢复边界与合同矩阵。
-- [Task 2 分批实施计划](plans/2026-10-24-task-2-network-state-coordinator.md)：按固定服务端基线、HTTP/DTO、Realtime、Snapshot Store、单一 Runtime、Mutation Coordinator 和整体验收拆分 Batch；实现/机器测试已完成，但真实 mutation/readback 与 APK live-origin 仍为 BLOCKED。
+- [Task 2 分批实施计划](plans/2026-10-24-task-2-network-state-coordinator.md)：按固定服务端基线、HTTP/DTO、Realtime、Snapshot Store、单一 Runtime、Mutation Coordinator 和整体验收拆分 Batch；2026-10-27 已通过实机 runtime/coordinator 真实 mutation/readback 验收。生产服务器地址设置 UI 仍归后续设置任务；最终证据见 [Task 2 实机真实写验证报告](reports/2026-10-27-task-2-live-write-verification.md)。
 - [Task 3 原生应用壳合同](specs/2026-10-25-task-3-native-app-shell.md)：冻结四入口、mini 显隐、主题、状态环/活动详情、runtime 所有权、Task 2 残余门槛与退出条件。
 - [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结 AppBar/导航/迷你播放器/资料库/状态环的视觉参数，并将集合播放、随机播放、歌曲排序与单曲菜单的行为映射到现有 Web/API 合同。
 - [Task 3 分批实施计划](plans/2026-10-25-task-3-native-app-shell.md)：拆分为合同映射、主题、导航、App Shell、mini 投影、活动状态、播放器占位和集成验收共 8 个 Batch。

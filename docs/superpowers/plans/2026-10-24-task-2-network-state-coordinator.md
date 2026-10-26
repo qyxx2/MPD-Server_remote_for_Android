@@ -207,4 +207,18 @@ Package root: `io.github.qyxx2.mpdserver.remote`; all files remain in the existi
 - Real-service snapshot/reconnect evidence：`192.168.3.94:18000/api/health` and `/api/state` HTTP 200; two independent `/api/realtime` WebSocket sessions received valid protocol v1 full snapshots with matching outer/inner epoch and sequence; playback/output observation freshness was `fresh`.
 - Human/device checks and limitations：Read-only Ubuntu host checks only; no real mutation/readback because no clearly safe reversible operation was selected. APK-level live-origin validation is pending because production origin remains `http://localhost:18000`.
 - Review result：Self-review only (no independent reviewer tool available); no Critical/Important issues found in the scoped diff.
-- Task 2 exit gate: **BLOCKED** — 未执行真实 mutation/readback；当前 APK origin 仍为 localhost 占位值，尚无 APK-level live-origin 联调证据。
+- Task 2 exit gate: **BLOCKED as of 2026-10-25; superseded by the 2026-10-27 follow-up below.** At that point no real mutation/readback or APK-level live-origin evidence existed. The follow-up documents completion of both checks through the installed app runtime and an isolated reversible playlist mutation.
+
+
+## 2026-10-27 final real-device/live-write follow-up
+
+The Batch 6 entry above records the state as of 2026-10-25; the remaining gate was completed on 2026-10-27 without changing branches.
+
+- Live service discovery: `GET /api/health`, `GET /api/state`, and `GET /api/playlists` returned HTTP 200. The actual `/api/playlists` response is an `items` + `count` envelope, not a bare array.
+- Contract fix: added `PlaylistListDto` and updated `PlaylistRepository.getPlaylists()`. TDD RED: `/tmp/task2-playlist-list-red.log` failed because the response DTO was absent. GREEN: `/tmp/task2-playlist-list-green.log` passed both empty and non-empty envelope tests.
+- Physical device: Samsung SM-G986N / Android 13. Installed the freshly built app and instrumentation APKs. The opt-in `LiveMsMutationCoordinatorTest` passed 1/1 on `http://192.168.3.94:18000`; it accepted a fresh live snapshot, created a uniquely named temporary user playlist through the app's shared MutationCoordinator, independently read it back, deleted only that playlist with an explicit success activity, and independently confirmed its absence. The route contract specifies 204 and unit tests cover the 204 branch; the live activity model does not expose numeric HTTP status.
+- Server cleanup verification: a separate GET after instrumentation returned `{"items":[],"count":0}`. No playback, Queue, library-file, or favorite state was changed.
+- Fresh full validation: `clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin assembleDebugAndroidTest` → BUILD SUCCESSFUL; 23 suites / 108 tests / 0 failures / 0 errors / 0 skipped; Lint, app APK assembly and instrumentation APK compilation/assembly passed. Log: `/tmp/task2-live-write-build-verify.log`. `git diff --check` passed.
+- Report: `docs/superpowers/reports/2026-10-27-task-2-live-write-verification.md`.
+- Remaining product boundary: the test supplied `liveOrigin` through the instrumentation arguments and used the existing runtime API. It verified the installed APK's runtime/network/coordinator, not a user-facing server-address setting. The normal app's default origin remains `http://localhost:18000`; configurable origin UI remains assigned to the settings task.
+- Review: self-review of scoped source/test/documentation changes; no programming/reviewer agent was used. No merge or push.
