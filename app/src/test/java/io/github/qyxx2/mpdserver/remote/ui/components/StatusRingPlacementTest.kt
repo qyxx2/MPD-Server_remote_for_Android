@@ -1,5 +1,6 @@
 package io.github.qyxx2.mpdserver.remote.ui.components
 
+import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,6 +52,27 @@ class StatusRingPlacementTest {
             assertEquals(540f, placement.centerXpx, 0.01f)
             assertEquals(72f, placement.centerYpx, 0.01f)
         }
+    }
+
+    @Test
+    fun storedOffsetsAndScaleStillCalibrateWhenNoReliableCutoutExists() {
+        val placement = StatusRingPlacementCalculator.calculate(
+            screenWidthPx = 1080,
+            screenHeightPx = 2400,
+            safeInsets = StatusRingInsets(left = 0, top = 144, right = 0, bottom = 90),
+            cutoutBounds = emptyList(),
+            density = 3f,
+            settings = StatusRingPlacementSettings(
+                sizeScale = StatusRingPreferences.SIZE_SCALE_MAX,
+                horizontalOffsetDp = 12f,
+                verticalOffsetDp = -8f,
+            ),
+        )
+
+        assertEquals(StatusRingAnchorSource.MANUAL_FALLBACK, placement.anchorSource)
+        assertEquals(576f, placement.centerXpx, 0.01f)
+        assertEquals(48f, placement.centerYpx, 0.01f)
+        assertEquals(36f * 3f * StatusRingPreferences.SIZE_SCALE_MAX, placement.diameterPx, 0.01f)
     }
 
     @Test

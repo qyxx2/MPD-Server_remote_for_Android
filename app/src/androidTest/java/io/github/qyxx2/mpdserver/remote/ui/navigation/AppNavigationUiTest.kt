@@ -3,6 +3,9 @@ package io.github.qyxx2.mpdserver.remote.ui.navigation
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -26,6 +29,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
 class AppNavigationUiTest {
@@ -36,11 +40,18 @@ class AppNavigationUiTest {
     private lateinit var runtime: AppRuntime
 
     private fun launchNavigation() {
-        runtime = (composeRule.activity.application as MpdServerRemoteApplication).runtime
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        runBlocking { application.uiPreferences.resetStatusRingPreferences() }
+        runtime = application.runtime
         composeRule.setContent {
             val controller = rememberNavController()
             SideEffect { navController = controller }
-            AppNavHost(runtime = runtime, navController = controller)
+            AppNavHost(
+                runtime = runtime,
+                navController = controller,
+                uiPreferences = application.uiPreferences,
+                preferenceWriteScope = application.uiPreferencesWriteScope,
+            )
         }
         composeRule.waitForIdle()
     }
@@ -122,14 +133,19 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
             composeRule.onNodeWithTag("app-bar-title").assertIsDisplayed()
             composeRule.onNodeWithTag("root-content").assertIsDisplayed()
-            assertTrue(
-                "Root placeholder content must expose scrolling semantics",
-                composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
-            )
             composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
             if (destination == AppDestination.SETTINGS) {
+                composeRule.onNodeWithTag("status-ring-settings-content").assertIsDisplayed()
+                composeRule.onNodeWithTag("status-ring-size-slider").assertIsDisplayed()
+                composeRule.onNodeWithTag("status-ring-line-width-slider").assertIsDisplayed()
+                composeRule.onNodeWithTag("status-ring-horizontal-offset-slider").assertIsDisplayed()
+                composeRule.onNodeWithTag("status-ring-vertical-offset-slider").assertIsDisplayed()
                 composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
             } else {
+                assertTrue(
+                    "Root placeholder content must expose scrolling semantics",
+                    composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
+                )
                 composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
                 composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled()
             }
@@ -138,6 +154,76 @@ class AppNavigationUiTest {
             assertTrue("Root navigation items must retain 48dp touch targets", navBounds.height >= minTarget)
             assertEquals(destination.route, navController.currentDestination?.route)
         }
+    }
+
+    @Test
+    fun settingsShowsFourRingControlsPreviewAndNoMiniPlayer() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("状态环").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-size-slider").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-line-width-slider").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-slider").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-vertical-offset-slider").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-preview").assertIsDisplayed()
+        composeRule.onNodeWithText("1.00×").assertIsDisplayed()
+        composeRule.onNodeWithText("3.0dp").assertIsDisplayed()
+        composeRule.onNodeWithText("恢复默认值").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
+    }
+
+    @Test
+    fun allRingSlidersUpdateTheLocalPreviewWithoutChangingRuntimeAndResetRestoresDefaults() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+        val originalSnapshot = runtime.snapshots.state.value
+        val originalActivities = runtime.mutations.activities.value
+
+        composeRule.onNodeWithTag("status-ring-size-slider")
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(1.20f) }
+        composeRule.onNodeWithTag("status-ring-line-width-slider")
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(4.5f) }
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-slider")
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(12f) }
+        composeRule.onNodeWithTag("status-ring-vertical-offset-slider")
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(-8f) }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("status-ring-size-value").assertTextEquals("1.20×")
+        composeRule.onNodeWithTag("status-ring-line-width-value").assertTextEquals("4.5dp")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").assertTextEquals("12dp")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-value").assertTextEquals("-8dp")
+        composeRule.onNodeWithContentDescription(
+            "状态环预览；尺寸 1.20×；线宽 4.5dp；水平偏移 12dp；垂直偏移 -8dp",
+        ).assertIsDisplayed()
+        assertEquals("Preview must not mutate the canonical snapshot", originalSnapshot, runtime.snapshots.state.value)
+        assertEquals("Preview must not mutate shared activity history", originalActivities, runtime.mutations.activities.value)
+        assertSame(runtime, (composeRule.activity.application as MpdServerRemoteApplication).runtime)
+
+        // Leaving and re-entering Settings must retain the persisted local values.
+        composeRule.onNodeWithTag("root-nav-${AppDestination.HOME.route}").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("status-ring-size-value").assertTextEquals("1.20×")
+        composeRule.onNodeWithTag("status-ring-line-width-value").assertTextEquals("4.5dp")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").assertTextEquals("12dp")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-value").assertTextEquals("-8dp")
+
+        composeRule.onNodeWithText("恢复默认值").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("status-ring-size-value").assertTextEquals("1.00×")
+        composeRule.onNodeWithTag("status-ring-line-width-value").assertTextEquals("3.0dp")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").assertTextEquals("0dp")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-value").assertTextEquals("0dp")
+        composeRule.onNodeWithContentDescription(
+            "状态环预览；尺寸 1.00×；线宽 3.0dp；水平偏移 0dp；垂直偏移 0dp",
+        ).assertIsDisplayed()
+        assertEquals("Settings controls must never mutate the snapshot", originalSnapshot, runtime.snapshots.state.value)
+        assertEquals("Settings controls must never mutate activities", originalActivities, runtime.mutations.activities.value)
     }
 
     @Test

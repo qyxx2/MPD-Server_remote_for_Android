@@ -91,6 +91,8 @@ class MainActivity : ComponentActivity() {
                     AppNavHost(
                         runtime = runtime,
                         windowGeometry = statusRingWindowGeometry,
+                        uiPreferences = application.uiPreferences,
+                        preferenceWriteScope = application.uiPreferencesWriteScope,
                     )
                 }
             }

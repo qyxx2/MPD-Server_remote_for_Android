@@ -23,11 +23,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -38,6 +41,7 @@ import kotlin.math.roundToInt
 fun GlobalStatusRingOverlay(
     presentation: ActivityPresentation,
     geometry: StatusRingWindowGeometry,
+    preferences: StatusRingPreferences = StatusRingPreferences.DEFAULT,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
@@ -50,6 +54,7 @@ fun GlobalStatusRingOverlay(
             safeInsets = geometry.safeInsets,
             cutoutBounds = geometry.cutoutBounds,
             density = density.density,
+            settings = preferences.toPlacementSettings(),
         )
         val diameter = with(density) { placement.diameterPx.toDp() }
         val ringLabel = "状态环：${presentation.statusLabel}；定位方式：${
@@ -57,6 +62,7 @@ fun GlobalStatusRingOverlay(
         }"
         StatusRingVisual(
             presentation = presentation,
+            lineWidthDp = preferences.lineWidthDp,
             modifier = Modifier
                 .offset {
                     IntOffset(
@@ -71,9 +77,90 @@ fun GlobalStatusRingOverlay(
     }
 }
 
+/**
+ * Uses the same placement calculator and drawing code as the real overlay, scaled into a miniature
+ * top-of-window preview. The INFO sample is local to this composable and never enters Runtime.
+ */
+@Composable
+fun StatusRingSettingsPreview(
+    geometry: StatusRingWindowGeometry,
+    preferences: StatusRingPreferences,
+    previewDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    val previewPresentation = androidx.compose.runtime.remember {
+        ActivityPresentation(
+            visualState = ActivityVisualState.INFO,
+            statusLabel = "预览示意",
+            connectionLabel = "预览",
+            freshnessLabel = "预览",
+            readError = null,
+            activities = emptyList(),
+            isConfirmedAvailable = false,
+        )
+    }
+    BoxWithConstraints(
+        modifier = modifier
+            .clipToBounds()
+            .semantics { contentDescription = previewDescription }
+            .testTag("status-ring-preview"),
+    ) {
+        val density = LocalDensity.current
+        val configuration = LocalConfiguration.current
+        val windowWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }.roundToInt().coerceAtLeast(1)
+        val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.roundToInt().coerceAtLeast(1)
+        val scale = min(1f, constraints.maxWidth.toFloat() / windowWidthPx)
+        val previewGeometry = StatusRingWindowGeometry(
+            cutoutBounds = geometry.cutoutBounds.map { rect ->
+                StatusRingRect(
+                    left = (rect.left * scale).roundToInt(),
+                    top = (rect.top * scale).roundToInt(),
+                    right = (rect.right * scale).roundToInt(),
+                    bottom = (rect.bottom * scale).roundToInt(),
+                )
+            },
+            safeInsets = StatusRingInsets(
+                left = (geometry.safeInsets.left * scale).roundToInt(),
+                top = (geometry.safeInsets.top * scale).roundToInt(),
+                right = (geometry.safeInsets.right * scale).roundToInt(),
+                bottom = (geometry.safeInsets.bottom * scale).roundToInt(),
+            ),
+        )
+        val placement = StatusRingPlacementCalculator.calculate(
+            screenWidthPx = constraints.maxWidth,
+            screenHeightPx = (windowHeightPx * scale).roundToInt().coerceAtLeast(constraints.maxHeight),
+            safeInsets = previewGeometry.safeInsets,
+            cutoutBounds = previewGeometry.cutoutBounds,
+            density = density.density * scale,
+            settings = preferences.toPlacementSettings(),
+        )
+        val diameter = with(density) { placement.diameterPx.toDp() }
+        StatusRingVisual(
+            presentation = previewPresentation,
+            lineWidthDp = preferences.lineWidthDp * scale,
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (placement.centerXpx - placement.diameterPx / 2f).roundToInt(),
+                        (placement.centerYpx - placement.diameterPx / 2f).roundToInt(),
+                    )
+                }
+                .size(diameter)
+                .testTag("status-ring-preview-visual"),
+        )
+    }
+}
+
+private fun StatusRingPreferences.toPlacementSettings() = StatusRingPlacementSettings(
+    sizeScale = sizeScale,
+    horizontalOffsetDp = horizontalOffsetDp,
+    verticalOffsetDp = verticalOffsetDp,
+)
+
 @Composable
 private fun StatusRingVisual(
     presentation: ActivityPresentation,
+    lineWidthDp: Float,
     modifier: Modifier,
 ) {
     val pending = presentation.visualState == ActivityVisualState.PENDING ||
@@ -91,9 +178,9 @@ private fun StatusRingVisual(
         contentAlignment = Alignment.Center,
     ) {
         if (pending) {
-            AnimatedStatusRingGraphic(presentation = presentation, color = color)
+            AnimatedStatusRingGraphic(presentation = presentation, color = color, lineWidthDp = lineWidthDp)
         } else {
-            StatusRingGraphic(presentation = presentation, color = color, rotation = 0f)
+            StatusRingGraphic(presentation = presentation, color = color, rotation = 0f, lineWidthDp = lineWidthDp)
         }
         Text(
             text = when (presentation.visualState) {
@@ -117,6 +204,7 @@ private fun StatusRingVisual(
 private fun AnimatedStatusRingGraphic(
     presentation: ActivityPresentation,
     color: Color,
+    lineWidthDp: Float,
 ) {
     val transition = rememberInfiniteTransition(label = "status-ring")
     val rotation by transition.animateFloat(
@@ -125,7 +213,7 @@ private fun AnimatedStatusRingGraphic(
         animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart),
         label = "status-ring-rotation",
     )
-    StatusRingGraphic(presentation = presentation, color = color, rotation = rotation)
+    StatusRingGraphic(presentation = presentation, color = color, rotation = rotation, lineWidthDp = lineWidthDp)
 }
 
 @Composable
@@ -133,9 +221,10 @@ private fun StatusRingGraphic(
     presentation: ActivityPresentation,
     color: Color,
     rotation: Float,
+    lineWidthDp: Float,
 ) {
     Canvas(Modifier.fillMaxSize().testTag("status-ring-graphic")) {
-        val stroke = 3.dp.toPx()
+        val stroke = lineWidthDp.dp.toPx()
         drawCircle(
             color = color.copy(alpha = 0.24f),
             radius = size.minDimension / 2f - stroke / 2f,

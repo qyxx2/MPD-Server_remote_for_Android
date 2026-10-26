@@ -64,6 +64,60 @@ class UiPreferencesRepositoryTest {
         }
     }
 
+    @Test
+    fun missingStatusRingPreferencesUseSpecificationDefaults() = runBlocking {
+        val file = newPreferencesFile()
+        val (store, scope) = newStore(file)
+        try {
+            assertEquals(StatusRingPreferences.DEFAULT, UiPreferencesRepository(store).statusRingPreferences.first())
+        } finally {
+            scope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun allStatusRingPreferencesSurviveRepositoryAndStoreRecreation() = runBlocking {
+        val file = newPreferencesFile()
+        val (initialStore, initialScope) = newStore(file)
+        val selected = StatusRingPreferences(
+            sizeScale = 1.25f,
+            lineWidthDp = 4.5f,
+            horizontalOffsetDp = -10f,
+            verticalOffsetDp = 8f,
+        )
+        try {
+            UiPreferencesRepository(initialStore).setStatusRingPreferences(selected)
+        } finally {
+            initialScope.cancel()
+        }
+
+        val (restoredStore, restoredScope) = newStore(file)
+        try {
+            assertEquals(selected, UiPreferencesRepository(restoredStore).statusRingPreferences.first())
+        } finally {
+            restoredScope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun resettingStatusRingPreferencesPersistsEveryDefault() = runBlocking {
+        val file = newPreferencesFile()
+        val (store, scope) = newStore(file)
+        try {
+            val repository = UiPreferencesRepository(store)
+            repository.setStatusRingPreferences(
+                StatusRingPreferences(1.35f, 5f, 24f, -24f),
+            )
+            repository.resetStatusRingPreferences()
+            assertEquals(StatusRingPreferences.DEFAULT, repository.statusRingPreferences.first())
+        } finally {
+            scope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
     private fun newPreferencesFile(): File =
         Files.createTempDirectory("mpd-remote-ui-preferences").resolve("ui.preferences_pb").toFile()
 

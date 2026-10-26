@@ -35,11 +35,6 @@ fun LibraryPlaceholderScreen() = RootPlaceholderScreen(
 )
 
 @Composable
-fun SettingsPlaceholderScreen() = RootPlaceholderScreen(
-    description = "应用设置将在后续任务接入。",
-)
-
-@Composable
 private fun RootPlaceholderScreen(
     description: String,
 ) {

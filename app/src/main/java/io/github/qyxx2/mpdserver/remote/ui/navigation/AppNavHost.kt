@@ -32,11 +32,14 @@ import io.github.qyxx2.mpdserver.remote.ui.screens.FullScreenPlayerPlaceholderSc
 import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
-import io.github.qyxx2.mpdserver.remote.ui.screens.SettingsPlaceholderScreen
+import io.github.qyxx2.mpdserver.remote.ui.screens.StatusRingSettingsScreen
 import io.github.qyxx2.mpdserver.remote.ui.shell.AppShell
 import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayer
 import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.shell.RootNavigationBar
+import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
+import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 
 /** The app-scoped runtime is supplied by MainActivity; this shell observes it read-only. */
@@ -46,6 +49,8 @@ fun AppNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
     windowGeometry: StatusRingWindowGeometry = StatusRingWindowGeometry(),
+    uiPreferences: UiPreferencesRepository,
+    preferenceWriteScope: CoroutineScope,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -54,6 +59,9 @@ fun AppNavHost(
     val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
     val statusPresentation = ActivityPresentation.from(snapshotState, activities)
     val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
+    val ringPreferences by uiPreferences.statusRingPreferences.collectAsStateWithLifecycle(
+        initialValue = StatusRingPreferences.DEFAULT,
+    )
     var showActivityStatus by remember { mutableStateOf(false) }
 
     val visibilityController = remember { StatusRingVisibilityController() }
@@ -92,6 +100,9 @@ fun AppNavHost(
             if (fullScreen) {
                 AppNavigationGraph(
                     navController = navController,
+                    uiPreferences = uiPreferences,
+                    preferenceWriteScope = preferenceWriteScope,
+                    windowGeometry = windowGeometry,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -115,6 +126,9 @@ fun AppNavHost(
                 ) {
                     AppNavigationGraph(
                         navController = navController,
+                        uiPreferences = uiPreferences,
+                        preferenceWriteScope = preferenceWriteScope,
+                        windowGeometry = windowGeometry,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -125,6 +139,7 @@ fun AppNavHost(
             GlobalStatusRingOverlay(
                 presentation = statusPresentation,
                 geometry = windowGeometry,
+                preferences = ringPreferences,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -141,6 +156,9 @@ fun AppNavHost(
 @Composable
 private fun AppNavigationGraph(
     navController: NavHostController,
+    uiPreferences: UiPreferencesRepository,
+    preferenceWriteScope: CoroutineScope,
+    windowGeometry: StatusRingWindowGeometry,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -151,7 +169,13 @@ private fun AppNavigationGraph(
         composable(AppDestination.HOME.route) { HomePlaceholderScreen() }
         composable(AppDestination.SEARCH.route) { SearchPlaceholderScreen() }
         composable(AppDestination.LIBRARY.route) { LibraryPlaceholderScreen() }
-        composable(AppDestination.SETTINGS.route) { SettingsPlaceholderScreen() }
+        composable(AppDestination.SETTINGS.route) {
+            StatusRingSettingsScreen(
+                preferencesRepository = uiPreferences,
+                preferenceWriteScope = preferenceWriteScope,
+                windowGeometry = windowGeometry,
+            )
+        }
         composable(AppDestination.FULL_SCREEN_PLAYER.route) {
             Surface(
                 modifier = Modifier.fillMaxSize(),

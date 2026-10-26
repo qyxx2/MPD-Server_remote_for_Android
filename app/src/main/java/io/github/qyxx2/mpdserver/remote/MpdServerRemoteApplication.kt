@@ -5,6 +5,9 @@ import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
 import io.github.qyxx2.mpdserver.remote.ui.preferences.uiPreferencesDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /** Process-wide owners for networking and local UI preferences. */
 class MpdServerRemoteApplication : Application() {
@@ -13,6 +16,9 @@ class MpdServerRemoteApplication : Application() {
 
     lateinit var uiPreferences: UiPreferencesRepository
         private set
+
+    /** Keeps local preference writes alive when the Settings destination leaves composition. */
+    val uiPreferencesWriteScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()

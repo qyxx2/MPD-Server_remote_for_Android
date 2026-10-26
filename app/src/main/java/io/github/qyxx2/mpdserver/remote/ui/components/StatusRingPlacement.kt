@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
+import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 
 /** Integer-pixel rectangle reported by Android for a display cutout. */
 data class StatusRingRect(
@@ -38,9 +39,9 @@ enum class StatusRingAnchorSource {
 
 /** Defaults are also the hand-off contract consumed by the later settings batch. */
 data class StatusRingPlacementSettings(
-    val sizeScale: Float = 1f,
-    val horizontalOffsetDp: Float = 0f,
-    val verticalOffsetDp: Float = 0f,
+    val sizeScale: Float = StatusRingPreferences.SIZE_SCALE_DEFAULT,
+    val horizontalOffsetDp: Float = StatusRingPreferences.POSITION_OFFSET_DEFAULT_DP,
+    val verticalOffsetDp: Float = StatusRingPreferences.POSITION_OFFSET_DEFAULT_DP,
 )
 
 data class StatusRingPlacement(
@@ -57,7 +58,6 @@ data class StatusRingPlacement(
 object StatusRingPlacementCalculator {
     private const val MIN_DIAMETER_DP = 36f
     private const val CUTOUT_GAP_DP = 4f
-    private const val MAX_OFFSET_DP = 24f
 
     fun calculate(
         screenWidthPx: Int,
@@ -96,11 +96,19 @@ object StatusRingPlacementCalculator {
             StatusRingAnchorSource.DISPLAY_CUTOUT
         }
 
-        val requestedScale = settings.sizeScale.takeIf { it.isFinite() }?.coerceIn(0.70f, 1.40f) ?: 1f
+        val requestedScale = settings.sizeScale.takeIf { it.isFinite() }?.coerceIn(
+            StatusRingPreferences.SIZE_SCALE_MIN, StatusRingPreferences.SIZE_SCALE_MAX,
+        ) ?: StatusRingPreferences.SIZE_SCALE_DEFAULT
         val requestedHorizontalOffset = settings.horizontalOffsetDp
-            .takeIf { it.isFinite() }?.coerceIn(-MAX_OFFSET_DP, MAX_OFFSET_DP) ?: 0f
+            .takeIf { it.isFinite() }?.coerceIn(
+                StatusRingPreferences.POSITION_OFFSET_MIN_DP,
+                StatusRingPreferences.POSITION_OFFSET_MAX_DP,
+            ) ?: StatusRingPreferences.POSITION_OFFSET_DEFAULT_DP
         val requestedVerticalOffset = settings.verticalOffsetDp
-            .takeIf { it.isFinite() }?.coerceIn(-MAX_OFFSET_DP, MAX_OFFSET_DP) ?: 0f
+            .takeIf { it.isFinite() }?.coerceIn(
+                StatusRingPreferences.POSITION_OFFSET_MIN_DP,
+                StatusRingPreferences.POSITION_OFFSET_MAX_DP,
+            ) ?: StatusRingPreferences.POSITION_OFFSET_DEFAULT_DP
 
         val baseDiameter = if (reliableCutout != null) {
             max(
