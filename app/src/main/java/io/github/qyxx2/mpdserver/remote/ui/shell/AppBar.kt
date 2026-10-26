@@ -5,9 +5,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,14 +15,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.qyxx2.mpdserver.remote.ui.components.ActivityPresentation
-import io.github.qyxx2.mpdserver.remote.ui.components.PlaybackStatusRing
 
-/** Compact shared app bar with a read-only projection of the app-scoped runtime status. */
+/** Compact shared app bar; the status ring itself is anchored to window cutout geometry, not here. */
 @Composable
 fun AppBar(
     title: String,
-    statusPresentation: ActivityPresentation,
     onStatusClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -38,6 +35,11 @@ fun AppBar(
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.weight(1f))
-        PlaybackStatusRing(presentation = statusPresentation, onClick = onStatusClick, modifier = Modifier.size(48.dp))
+        TextButton(
+            onClick = onStatusClick,
+            modifier = Modifier.height(48.dp).testTag("activity-details-entry"),
+        ) {
+            Text("活动")
+        }
     }
 }

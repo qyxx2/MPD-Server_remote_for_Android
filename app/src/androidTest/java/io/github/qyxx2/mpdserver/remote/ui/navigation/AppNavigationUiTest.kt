@@ -89,7 +89,8 @@ class AppNavigationUiTest {
 
         composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
         composeRule.onNodeWithTag("app-bar-title").assertIsDisplayed()
-        composeRule.onNodeWithTag("global-status-entry").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-details-entry").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("status-ring-overlay").assertCountEquals(0)
         composeRule.onNodeWithTag("root-content").assertIsDisplayed()
         assertTrue(
             "Root placeholder content must expose scrolling semantics",
@@ -106,10 +107,10 @@ class AppNavigationUiTest {
         assertTrue("Root content must end above the mini-player", contentBounds.bottom <= miniBounds.top + 1f)
         assertTrue("Mini-player must end above the fixed navigation", miniBounds.bottom <= navigationBounds.top + 1f)
 
-        val statusBounds = composeRule.onNodeWithTag("global-status-entry").fetchSemanticsNode().boundsInRoot
+        val detailsBounds = composeRule.onNodeWithTag("activity-details-entry").fetchSemanticsNode().boundsInRoot
         val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
-        assertTrue("Global status entry must preserve a 48dp touch target", statusBounds.width >= minimumTouchTargetPx)
-        assertTrue("Global status entry must preserve a 48dp touch target", statusBounds.height >= minimumTouchTargetPx)
+        assertTrue("Independent activity details entry must preserve a 48dp touch target", detailsBounds.width >= minimumTouchTargetPx)
+        assertTrue("Independent activity details entry must preserve a 48dp touch target", detailsBounds.height >= minimumTouchTargetPx)
     }
 
     @Test
@@ -154,10 +155,11 @@ class AppNavigationUiTest {
     }
 
     @Test
-    fun globalStatusEntryOpensReadableEmptyActivitySheetAndCanCloseIt() {
+    fun independentActivityEntryOpensReadableEmptySheetWhileRingRemainsHiddenWhenIdle() {
         launchNavigation()
-        composeRule.onNodeWithTag("global-status-entry").assertIsDisplayed()
-        composeRule.onNodeWithTag("global-status-entry").performClick()
+        composeRule.onNodeWithTag("activity-details-entry").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("status-ring-overlay").assertCountEquals(0)
+        composeRule.onNodeWithTag("activity-details-entry").performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("连接与活动").assertIsDisplayed()
