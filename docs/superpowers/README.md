@@ -36,6 +36,7 @@
 - [Task 3 原生应用壳合同](specs/2026-10-25-task-3-native-app-shell.md)：冻结四入口、mini 显隐、主题、状态环/活动详情、runtime 所有权、Task 2 残余门槛与退出条件。
 - [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结 AppBar/导航/迷你播放器/资料库/状态环的视觉参数，并将集合播放、随机播放、歌曲排序与单曲菜单的行为映射到现有 Web/API 合同。
 - [Task 3 分批实施计划](plans/2026-10-25-task-3-native-app-shell.md)：拆分为合同映射、主题、导航、App Shell、mini 投影、活动状态、播放器占位和集成验收共 8 个 Batch。
+- [Task 3 Batch 7 集成验证报告](reports/2026-10-26-task-3-batch7-verification.md)：记录 clean 构建、105 项单测、10 项真机 instrumentation、边界审查及尚未关闭的人工验收门。机器验证通过不代表 Task 3 整体退出门或 Task 2 真实联调门已通过。
 - [初步实现路线图](plans/2026-10-23-android-client-roadmap.md)：早期阶段概览，仅作背景参考；若与主计划的 Task 顺序或退出门冲突，以主计划为准。
 - 每个 Task 开始时，另行细化该 Task 的权威合同、冻结边界、验收标准和 Batch 执行计划。Task 3 的根导航、AppBar、迷你播放器、音乐库列表与状态环精确参数由其视觉设计规格冻结；主页真实模块数据规则和后续业务页面细节仍在对应业务阶段冻结。
 

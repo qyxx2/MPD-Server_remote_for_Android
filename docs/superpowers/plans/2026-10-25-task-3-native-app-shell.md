@@ -107,16 +107,40 @@
 
 ## Batch 5：状态环、活动详情与共享 runtime 投影
 
-**目标：** 用统一 UI 呈现连接状态、snapshot freshness 与共享活动概览。状态与活动必须只投影既有 runtime owner；不得启动连接或执行写操作。
+**目标：** 用统一 UI 呈现连接状态、snapshot freshness 与共享活动概览。状态与活动必须只投影既有 runtime owner；不得启动连接或执行写操作。**注意：本 Batch 最初按旧视觉规格将状态环放在 AppBar 右侧；2026-10-26 用户已明确改为 edge-to-edge 透明状态栏并围绕居中挖孔显示，故本 Batch 原交付不能代表新视觉要求已完成，须由后续明确批次修正。**
 
 **Files:**
 - Create: `ui/components/PlaybackStatusRing.kt`、`ActivityStatusSheet.kt`（名称可按实现调整）
 - Test: empty/error/unknown activity mapping、open/close sheet、screen navigation owner stability
 
 - [x] 先写 `ActivityPresentationTest` 映射测试并观察缺少 `ActivityVisualState`/`ActivityPresentation` 的预期编译失败；随后实现纯映射模型并通过 11 项状态/活动断言。
-- [x] 将 AppBar 的全局状态入口替换为 36dp 状态环（48dp 触控热区），读取唯一 runtime 的 SnapshotStore 与 MutationCoordinator activities；详情面板显示连接、freshness、读取错误及最近共享活动，不创建活动 owner。
+- [x] （旧方案，待替换）将 AppBar 的全局状态入口替换为 36dp 状态环；该位置决策已被 2026-10-26 用户新要求取代，不得作为最终视觉验收结果。共享 runtime 投影和活动详情的只读边界仍然有效。
 - [x] 详情面板可通过状态环打开、关闭按钮/完成按钮/系统返回关闭；不启动 runtime、不提交 mutation、不重试 UNKNOWN。DISCONNECTED、CONNECTING、UNKNOWN、STALE、PENDING、SYNCING、FAILED、SUCCESS、INFO、IDLE 使用不同的文字/符号/环形状态；活动列表最多展示最近 20 条并限制列表最大高度，避免活动较多时挤出详情面板的关闭入口。由于共享 `MutationStatus` 未定义 RETIRED，不伪造该状态。
-- [x] 运行完整单测、Lint、Debug APK、instrumentation 源编译和无线真机 Compose UI 测试；7/7 instrumentation tests、86/86 unit tests 通过，`git diff --check` 与 UI 业务边界扫描通过；真机截图保存在 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/device-evidence/batch5-*.png`。
+- [x] 已按旧 AppBar 方案运行完整单测、Lint、Debug APK、instrumentation 源编译和无线真机 Compose UI 测试；7/7 instrumentation tests、86/86 unit tests 通过。上述结果只证明旧方案代码/行为测试通过，不证明新要求的挖孔定位、edge-to-edge 或活动结束 5 秒隐藏已实现。
+- [x] **后续专门修正批次 A（状态环定位与生命周期；先于 B）：代码与自动化门完成；实际活动环的真机视觉检查有明确阻塞项，见下方执行记录。**
+  - **范围/流程：** 先核对当前 Window/Compose 布局与共享活动投影；先写失败测试，再实现 edge-to-edge、透明状态栏、WindowInsets/DisplayCutout 几何解析、锚点与安全边界计算、活动显示/隐藏生命周期和独立活动详情入口。不得顺手实现设置 UI 或持久化偏好。
+  - **定位纯逻辑必须可独立测试：** 将 DisplayCutout 几何到锚点/环形布局参数的计算与 Android Window 读取、Composable 渲染分离。即使设置页尚未实现，也必须以纯单元测试覆盖：有效几何的居中锚点；缺失/空/不适用/不可靠几何进入手动校准回退；水平/垂直偏移正确叠加；偏移或尺寸超界时受安全边界约束；不得把屏幕中心猜测值伪装成系统挖孔锚点。测试输入中的偏移可用规格默认值及边界代表值，不依赖 B 的设置控件。
+  - **生命周期：** 活动存在时显示；所有可自动结束的活动/短暂结果提示结束后计时 5 秒隐藏；计时期间新活动到来须取消旧计时并重置 5 秒；未解决 UNKNOWN/FAILED 不得因定时器清除或伪装成解决；后台时不创建跨应用覆盖层。活动详情必须有独立可访问的 App 内入口，不能依赖会隐藏的环。
+  - **自动化通过条件：** 几何映射、回退分支、偏移叠加/边界裁剪、5 秒计时边界、计时取消与重置、UNKNOWN/FAILED 保留语义均有确定性单测；edge-to-edge/insets 的窗口行为有可运行的 Android/UI 测试或明确记录为设备专属门；运行相关单测、Lint、Debug 构建和 instrumentation 测试（无法运行时如实标 BLOCKED，不以编译代替）。
+  - **A 的实机基线验收：** 在目标真机截图/检查透明状态栏、内容延伸到状态栏背景、系统图标与挖孔安全避让、默认可用锚点位置、活动显示/结束 5 秒隐藏/新活动重置、UNKNOWN/FAILED 不消失、独立详情入口可访问。设备没有可靠 DisplayCutout 时，应确认进入安全手动回退且仍可调整，而非要求自动定位凭空成功。
+  - A 只有在代码、自动化测试及其机器验证结果记录完成，且实机基线项通过或逐项明确阻塞原因后才可标记完成；不得把旧 Batch 5 的完成声明当作 A 的证据。
+  - **A 执行结果（2026-10-26）：** 已完成代码、TDD、97/97 单测、Lint、Debug APK、instrumentation 源编译与 SM-G986N Android 13 真机 8/8 UI 测试。edge-to-edge/Insets、活动详情独立入口和 idle 不显示状态环已验证，截图及完整细节见 `docs/superpowers/reports/2026-10-26-task-3-batch5a-verification.md`。**阻塞项：** 当前共享 Runtime 没有真实活动且测试设备未连接可用 MS 服务，故真实活动期间环的物理挖孔周边视觉、5 秒后的真机消失、新活动重置及 UNKNOWN/FAILED 持续显示未做真机视觉验收；由确定性单测覆盖逻辑，不冒充已实机验证。设置 UI/偏好持久化留给 B。
+- [x] **后续专门修正批次 B（状态环设置；依赖 A 的定位/渲染接口）：**
+  - **范围/流程：** 在设置页增加“状态环”分组，按视觉规格 §10.4 提供尺寸缩放、线宽、水平偏移、垂直偏移、实时预览与恢复默认值。先写偏好仓库/状态模型和 Compose 交互测试，再接入本地 Preferences DataStore；仅存储这四项外观参数，不写服务端，不创建业务状态副本，不更改共享 Runtime/OperationActivity/snapshot。
+  - **参数权威：** 默认值、范围、步进、锚点语义与安全限制一律引用 `docs/superpowers/specs/2026-10-25-task-3-visual-design-specification.md` §10.4；不在计划/合同或实现中维护第二套数字定义。B 通过 A 暴露的定位/渲染接口应用设置，不复制一套几何/生命周期逻辑。
+  - **预览边界：** 预览明确标注为预览，仅改变环的外观/位置参数；不得伪造活动、调用 Runtime mutation、改变 canonical snapshot、连接状态、活动历史或真实环的生命周期计时。预览与真实共享状态使用相同的绘制/参数转换规则，但预览活动样例只能是 UI 本地固定展示状态，不能写入共享状态。
+  - **自动化通过条件：** 覆盖首次默认值、每项合法范围/步进映射、偏好重启/重建后的持久化、恢复默认值写回与 UI 更新、预览随控件实时更新、预览不修改 Runtime/活动集合、A 的自动锚点叠加用户偏移、无可靠几何时手动校准仍生效，以及尺寸/偏移不越过安全边界。运行相关单测、Compose UI/instrumentation、Lint、Debug 构建；未实际运行的测试不得写成通过。
+  - **B 的实机基线验收：** 四项控件可操作、数值/步进与 §10.4 一致、拖动时预览即时更新、恢复默认值立即回到默认预览、退出重进设置或重启应用后偏好保留；检查状态环仍避让摄像头/系统图标且详情入口可用。
+  - B 只能在 A 的接口与基线行为稳定后实施；若 A 的自动化或设备安全边界尚未通过，B 可以实现独立偏好层测试，但不得宣称整体状态环验收通过。
+
+
+  - **B 执行结果（2026-10-26）：** 已实现四项外观偏好、Preferences DataStore 持久化、共享定位/绘制接口预览、恢复默认值；预览不修改 Runtime、canonical snapshot 或共享活动集合。105/105 单测通过，Lint、Debug APK、instrumentation 编译通过，SM-G986N / Android 13 真机 10/10 UI 测试通过。四项滑块在实机上均可操作；`1.15× / 4.5dp / 10dp / −6dp` 在强制停止并重启应用后保留，重置后回到 `1.00× / 3.0dp / 0dp / 0dp`。证据与命令日志见 `docs/superpowers/reports/2026-10-26-task-3-batch5b-verification.md` 和 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/device-evidence/`。**完整校准验收仍阻塞：** 没有真实活动/MS 服务进行生产环视觉验收，也没有物理无可靠挖孔场景；回退路径目前由确定性单测覆盖，不宣称完整物理校准验收通过。
+
+**分层验收定义（A/B 均适用）：**
+1. **自动化门：** 纯逻辑单测、相关 Compose UI/instrumentation、Lint、Debug 构建与 `git diff --check`；按上面每批明确的覆盖点逐项报告，测试源编译不等于测试执行通过。
+2. **实机基线门：** 在目标设备检查窗口/系统栏安全、默认定位、活动生命周期、控件交互与偏好持久化；记录设备型号/系统版本、测试步骤、实际结果及截图证据。无法执行时保留 BLOCKED，不得用模拟器或静态审查冒充真机结果。
+3. **完整手动校准门：** 至少在 DisplayCutout 缺失/不可靠的设备或可控测试条件下验证回退路径；确认水平/垂直偏移能实际校准、尺寸/线宽设置生效、重启后设置保留、环不遮挡摄像头/系统图标。若当前设备无法构造缺失/不可靠几何场景，记录未覆盖的条件和理由，不能宣称完整校准验收通过。
+4. **旧 Batch 5 隔离：** Batch 5 的 86 个单测、7 个 instrumentation 测试和旧 AppBar 状态环截图仅是旧方案基线；无论这些结果是否复用，都不能替代 A/B 的新增测试、edge-to-edge/挖孔定位/5 秒生命周期/偏好预览与持久化验收。
 
 ## Batch 6：全屏播放器占位目的地与综合导航回归
 
@@ -139,11 +163,13 @@
 - Modify: 本合同、本计划、`docs/superpowers/plans/2026-10-24-android-client-master-plan.md`、`docs/superpowers/README.md`
 - Create/Update: `.superpowers/sdd/2026-10-25-task-3-native-app-shell/progress.md`
 
-- [ ] 运行 `./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug` 和 `git diff --check`，保留日志/退出码。
-- [ ] 审查无 Room/SQLite、WebView、本地播放引擎、第二个 runtime/socket、真实 mutation、假业务数据或 CI 修改。
-- [ ] 更新主计划：Task 3 UI 退出门与 Task 2 真实集成状态分开表述，不伪造 Task 2 通过。
-- [ ] 按用户真机反馈记录 UI/导航/主题人工验收；没有用户验收反馈则保留未完成，不宣称通过。
-- [ ] 完成代码审查与提交；Task 3 不合并 main，不开始 Task 4。
+- [x] 执行 clean 单测/Lint/Debug 构建，并额外编译、运行 Android instrumentation：`./gradlew --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin connectedDebugAndroidTest`；105/105 单测、SM-G986N Android 13 instrumentation 10/10，退出码 0。日志见 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/task-3-batch7-finalverify.log`。最终文档修改后的 `git diff --check` 在提交前再次执行。
+- [x] 边界审查：app 源码/构建声明未发现 Room/SQLite、WebView、Media3/ExoPlayer；UI 源码未发现新增 runtime/store/controller/coordinator/socket owner、连接启动/origin 修改、mutation submit 或 retryUnknown；未修改 CI workflow。最终文档差异的 `git diff --check` 已于提交前通过（退出码 0）。
+- [x] 更新主计划：Task 3 机器验证结果与未完成的 UI 人工验收单独记录；Task 2 的真实 mutation/readback 与 APK live-origin 继续保持 BLOCKED，不将其伪装为通过。
+- [x] 记录已有用户真机反馈及边界：启动/默认主页、四入口切换、重复选择当前入口、返回原根页面和系统返回已由用户报告通过；用户当时明确“全屏播放器显示：未测”，后续 10/10 instrumentation 覆盖其导航行为但不冒充用户手动验收。主题模式全覆盖、真实活动状态环视觉/生命周期和无可靠挖孔时的物理校准没有完整用户验收反馈，故仍保持未完成。
+- [x] 完成自审、验证报告与 Batch 7 本地提交；遵守用户边界，不调用其他编程代理、不合并 main、不 push、不开始 Task 4。自审不等同于独立审查。
+
+**Batch 7 执行结果（2026-10-26）：** 全量 clean Gradle 命令 BUILD SUCCESSFUL，105/105 单测、SM-G986N / Android 13 真机 instrumentation 10/10 通过；Lint、Debug APK、Android-test 编译和边界审查通过。APK 为 12,040,311 bytes；完整日志与 SHA-256、warning、未完成人工验收项见 [Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。**退出门区分：** Batch 7 机器验证完成；Task 3 整体仍待用户完整主题/布局验收及真实活动状态环视觉/物理校准验证；Task 2 的真实 mutation/readback 与 APK live-origin 继续 BLOCKED。
 
 ---
 

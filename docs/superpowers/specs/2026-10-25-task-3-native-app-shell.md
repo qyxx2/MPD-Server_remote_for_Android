@@ -1,10 +1,12 @@
 # Task 3：原生应用壳、导航、主题与通用状态 UI 合同
 
-> 状态：**Task 3 实施前冻结合同草案，待用户审阅本轮交付结果**。本 Task 仅定义/实现原生 UI 壳与其对 Task 2 共享运行时的投影，不替代 Task 2 的未完成实机验收。
+> 状态：**Batch 7 机器验证完成；Task 3 整体退出门仍开放，待完整人工验收确认**。当前 UI 自动化/构建验证已通过；用户报告的实机验收只覆盖部分导航。主题模式全覆盖、真实活动状态环视觉/生命周期和缺少可靠 DisplayCutout 时的物理校准仍未完整验收。Task 2 的真实 mutation/readback 与 APK live-origin 联调继续单独保持 BLOCKED。
 >
 > Android 仓库实施基线：Task 2 分支最终证据提交 `6ced024`；对应本地分支 `feature/task-2-network-state-coordinator`。
 >
 > 固定服务端规格基线：`qyxx2/MPD-Server/main` commit `2ad84454ceb70817bd996c92b590cfa2d9e9b128`。按现行项目决定，不逐 Batch 重新查询上游 HEAD；只有用户要求同步或告知服务端协议变化时才核对受影响合同。
+
+> **视觉变更补充（2026-10-26）：** 状态环位置/显示规则以 `2026-10-25-task-3-visual-design-specification.md` 第 3、5.2、10 节为准：edge-to-edge 透明状态栏，优先依据真实 DisplayCutout 几何环绕居中挖孔，仅有活动/短暂结果提示时显示，活动结束后延迟 5 秒隐藏。此前“AppBar 右侧状态环”属于旧方案；后续修正批次 A/B 已实现定位/生命周期和四项本地偏好，但真实活动期间的挖孔周边视觉、定时隐藏/重置、未解决 UNKNOWN/FAILED 的真机可视状态及无可靠挖孔几何时的物理手动校准仍未完整验收，不能以自动化测试替代这些人工门。
 
 ## 1. 目标
 
@@ -32,11 +34,11 @@ Task 2 已具备可编译的网络 transport、严格 DTO、snapshot store、rea
 | 需求 / 不变量 | 权威来源 | 实现 Batch | 自动化测试与通过条件 | 人工验收 |
 |---|---|---|---|---|
 | 四个根入口、固定顺序与选中态 | 产品总规格 §§5、7；架构合同 §5 | Batch 2、6 | AppNavigationUiTest：主页→搜索→音乐库→设置的标签/顺序/selected state 正确；重复选择当前根入口不清空 back stack 或重建 runtime | 真机逐一点击四入口，核对顺序、选中态和系统返回行为 |
-| App Shell 层级、安全区与 Mini 显隐 | 产品总规格 §§3、5.2、6；架构合同 §5 | Batch 3、4 | AppShellUiTest：AppBar、正文和底部导航同时存在；Mini 作为独立布局节点不覆盖正文；主页/搜索/音乐库显示 Mini，设置隐藏 Mini 但保留导航和状态入口 | 真机检查状态栏/挖孔 inset、键盘、大字体、短屏和窄屏；确认正文不被底部区域遮住 |
+| App Shell 层级、安全区与 Mini 显隐 | 产品总规格 §§3、5.2、6；架构合同 §5 | Batch 3、4 及状态栏布局修正批次 | Compose 测试覆盖 edge-to-edge/insets、正文与底部固定区域；Mini 显隐符合规格 | 真机确认透明状态栏、内容绘制至状态栏下方、挖孔安全区、键盘/大字体/短屏/窄屏布局 |
 | Mini 的曲目投影与禁用动作 | 产品总规格 §6；Task 3 视觉设计规格 §6；Web 行为合同 §§3–5 | Batch 4 | MiniPlayerPresentationTest：snapshot 缺失/无 current 时使用明确占位；只从当前 canonical snapshot 映射 title/artwork（不显示 artist）；stale/unknown 被明确标记；Task 3 的播放/暂停始终 disabled，点击不能提交 mutation；不得生成推荐/假曲目 | 真机检查无服务端时无假曲目、无假成功，播放按钮明确不可用 |
 | 独立全屏播放器目的地 | 产品总规格 §5.2、§7.5 | Batch 2、6 | AppNavigationUiTest：从每个根入口进入全屏占位目的地时隐藏 Mini/根导航；返回恢复原根入口；占位页不显示伪造封面、歌词、进度或 Queue | 真机用返回按钮和系统返回手势进退，确认返回原页面 |
 | 跟随系统/浅色/深色主题与本地偏好 | 产品总规格 §8；架构合同 §§2–3 | Batch 1 | ThemePreferenceTest：默认 Follow System；系统主题改变时跟随；显式 Light/Dark 不随系统覆盖；偏好重建后恢复；验证偏好仅本地存储 | 真机检查跟随系统、浅色、深色、状态栏图标与文本对比度，并重启应用检查主题保持 |
-| 状态环与统一活动详情 | 产品总规格 §5.3；Task 3 视觉设计规格 §10；Web 行为合同 §9；架构合同 §7 | Batch 5 | ActivityPresentationTest：MutationStatus 与连接/freshness 的映射无伪成功；ActivityStatusSheetUiTest：详情开合、空状态、pending/syncing/unknown/failed/success/info 显示；导航不丢失共享活动 owner | 真机确认信息不仅依靠颜色、文字可读、详情能关闭；占位 origin 不显示连接成功 |
+| 状态环与统一活动详情 | 产品总规格 §5.3；Task 3 视觉设计规格 §10（尤其 §10.4）；Web 行为合同 §9；架构合同 §7 | Batch 5（旧方案基线，不算新要求验收）、修正批次 A（定位/生命周期）、修正批次 B（设置，依赖 A） | A：纯单测覆盖 DisplayCutout 有效/缺失/不适用/不可靠几何、手动回退、偏移叠加与安全边界、5 秒隐藏/新活动重置、UNKNOWN/FAILED 保留；B：DataStore 默认值/持久化/恢复默认、实时预览、预览不改 Runtime、A 的锚点与偏移组合。编译不等于测试执行 | 分层记录自动化、真机基线和完整手动校准结果；检查 edge-to-edge、系统图标/摄像头避让、活动生命周期、四项设置及重启持久化。缺失/不可靠几何回退未实际验证时不得宣称完整校准通过；旧 AppBar 方案不能作为 A/B 验收证据 |
 | Application runtime 唯一所有权 | Task 2 合同 §§2、5.2、5.3、9；架构合同 §§4、6 | Batch 2、5、6、7 | 复用现有 RuntimeCompositionTest 的 owner identity 断言，并增加 UI 导航循环回归；对 ui/** 做边界检查，禁止创建 AppRuntime/SnapshotStore/RealtimeController/MutationCoordinator/RealtimeConnection | 反复切换根页面和播放器目的地，确认共享状态/活动不会因为页面重建而清空 |
 | 非业务偏好与禁止创建第二套权威 | 产品总规格 §§4.1、7.4、8；架构合同 §§2–3、6 | Batch 1、7 | UiPreferencesRepositoryTest 与依赖/源码扫描：偏好不走 server API；禁止 Room/SQLite、WebView、Media3/ExoPlayer、业务 snapshot 持久化与假业务数据 | 重启后只保留主题等本地偏好；canonical server snapshot 不被还原成 fresh |
 | 可访问性与尺寸适配 | 产品总规格 §§3、8.4 | Batch 3–6 | Compose UI tests 检查导航/按钮语义、状态描述、触控目标至少 48dp、正文可滚动并尊重系统字体缩放 | 目标真机检查大字体、短屏、窄屏、键盘出现时的布局与点击目标 |
@@ -98,11 +100,13 @@ Batch 0 已冻结这些职责路径与共享 Runtime 只读接口；后续 Batch
 - Batch 2：四入口路由、导航宿主与返回栈/状态保存。
 - Batch 3：共享 App Shell（AppBar、根正文布局、底部导航、安全区）。
 - Batch 4：迷你播放器纯展示投影、空/stale 状态、不可执行的预留控制与测试。
-- Batch 5：全局状态环、统一活动详情与 runtime observation 集成。
+- Batch 5：全局状态环、统一活动详情与 runtime observation 集成；现有 AppBar 右侧方案仅为旧方案基线。
+- Batch 5 后置修正 A：状态环 edge-to-edge/DisplayCutout 定位、无可靠几何时安全手动回退、活动显示/5 秒隐藏生命周期与独立详情入口。A 必须先于 B。
+- Batch 5 后置修正 B：设置页状态环四项本地外观偏好、实时预览、Preferences DataStore 持久化与恢复默认；依赖 A 暴露的定位/绘制接口，不重写定位或活动状态逻辑。
 - Batch 6：全屏播放器占位目的地、壳集成与导航恢复回归。
-- Batch 7：完整机器回归、代码边界审查、目标设备人工 UI 验收记录。
+- Batch 7：完整机器回归、代码边界审查、目标设备人工 UI 验收记录；A/B 验收证据需单独列项。
 
-每个 Batch 必须独立测试、写入 Task 专用进度账本、形成单独提交；本轮只冻结计划，不开始实施 UI 功能。
+A/B 的顺序、范围、自动化门、实机基线门和完整手动校准门以实现计划中的“后续专门修正批次 A/B”及其分层验收定义为准。每个 Batch/修正批次必须独立测试、写入 Task 专用进度账本、形成单独提交；本轮只冻结计划，不开始实施 UI 功能。
 
 ## 8. 验证与退出门
 
@@ -120,10 +124,10 @@ Batch 0 已冻结这些职责路径与共享 Runtime 只读接口；后续 Batch
 - 只验收 UI 与导航，不以缺少真实 MPD-Server 联调判失败，也不把 UI 展示正常当作 Task 2 API/mutation 通过证据。
 
 ### Task 3 退出门
-- [ ] 合同矩阵均映射到 Batch、测试和验收证据。
-- [ ] 自动化测试、Lint、构建、边界扫描和 diff review 通过。
-- [ ] 用户报告真实设备 UI/主题/导航人工验收通过，结果写入文档。
-- [ ] Task 2 仍以单独状态记录：真实 mutation/readback 与 APK live-origin 未完成时保持 BLOCKED；不把此项重命名为 Task 3 的 UI 失败，也不据此声称整个客户端可真实遥控服务端。
+- [x] 合同矩阵均映射到 Batch、自动测试和人工验收证据；未完成的人工门单独标明。
+- [x] 自动化测试、Lint、clean Debug 构建、UI instrumentation 和源码边界扫描通过；最新证据见 [Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。
+- [ ] 用户报告完整真实设备 UI/主题/导航人工验收通过。已有反馈只确认启动/主页、四入口切换/重复选择、返回原根及系统返回；全屏导航已有设备 instrumentation 覆盖，但不能替代用户手动确认。主题模式全覆盖、真实活动状态环视觉/生命周期和物理手动校准仍未确认。
+- [x] Task 2 单独保持 BLOCKED：真实 mutation/readback 与 APK live-origin 未完成；不把该项重命名为 Task 3 UI 失败，也不声称整个客户端可真实遥控服务端。
 - [ ] Task 4/6 开始实际服务集成前，完成 Task 2 遗留真实联调，或在该业务 task 合同中明确安全可逆的补验操作及退出门；不得无记录地跳过。
 
 ## 9. 执行约定

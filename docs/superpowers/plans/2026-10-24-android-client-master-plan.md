@@ -125,11 +125,13 @@
 
 **机器验证：** Compose UI 测试验证四入口导航、页面切换不重建 realtime owner、迷你播放器显示规则、全屏目的地进入/返回、主题状态及关键控件的真实禁用。
 
-**人工验证：** 在目标设备检查浅色/深色、系统安全区、短屏、较窄屏幕、大字体、触摸目标、键盘出现时布局、状态环位置和活动详情可读性。
+**人工验证：** 在目标设备检查浅色/深色、edge-to-edge 透明状态栏、应用内容延伸至状态栏下方、居中挖孔周围状态环的实际定位、活动结束后 5 秒隐藏、短屏/窄屏/大字体/键盘布局及独立活动详情入口。旧的 AppBar 右侧状态环截图不作为新规格验收证据。
 
 **开始门与退出门分离（2026-10-25 冻结）：** Task 3 的 UI-only 工作可在 Task 2 的共享 runtime/store/controller/coordinator 实现存在且机器测试基线通过后开始；Task 2 尚未完成的真实 mutation/readback 与 APK live-origin 联调保留为 Task 2 最终集成验收，不作为本 Task UI 壳的硬性开始阻塞。详见 [Task 3 合同](../specs/2026-10-25-task-3-native-app-shell.md) 与 [Task 3 分批计划](2026-10-25-task-3-native-app-shell.md)。
 
-**本 Task 的阻塞/退出门：** 根导航和共用组件规则冻结；UI 自动化测试、构建/Lint、边界检查通过；目标设备的主题/导航/布局人工验收有记录。Task 3 不执行真实 mutation，不以占位 origin 代替联调；Task 2 仍应保持 BLOCKED。Task 4/6 开始真实 API 写入前，必须补齐 Task 2 遗留真实集成验收，或在对应合同中明确定义安全可逆的验证场景。
+**本 Task 的阻塞/退出门：** 根导航和共用组件规则冻结；UI 自动化测试、clean 构建/Lint、边界检查通过；目标设备的完整主题/导航/布局人工验收有记录。Task 3 不执行真实 mutation，不以占位 origin 代替联调；Task 2 仍保持 BLOCKED。Task 4/6 开始真实 API 写入前，必须补齐 Task 2 遗留真实集成验收，或在对应合同中明确定义安全可逆的验证场景。
+
+**Batch 7 机器验证记录（2026-10-26）：** clean Gradle 回归 BUILD SUCCESSFUL；22 个单测报告共 105/105 通过，SM-G986N / Android 13 真机 instrumentation 10/10 通过，Lint、Debug APK 和 Android-test 编译通过，源码边界扫描通过。报告见 [Task 3 Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。**Task 3 整体退出仍未完成：** 目前只有部分导航人工反馈；用户尚未确认完整主题/布局验收，真实活动状态环视觉/生命周期与物理手动校准也未完整验证。Task 2 的真实 mutation/readback 与 APK live-origin 状态独立保持 BLOCKED。
 
 ### Task 4：全屏正在播放、歌词、进度与 Queue
 
