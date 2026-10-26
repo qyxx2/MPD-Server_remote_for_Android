@@ -102,7 +102,8 @@
 - [x] 先为空/current/stale/unknown、fresh/playing/paused 及设置显隐写投影/UI 测试；覆盖缺失/畸形标题、last-known stale 状态和播放控件 disabled。
 - [x] 实现 64dp 固定高度迷你播放器、48dp 封面占位、16sp 单行曲名（不显示艺术家）与单一播放/暂停视觉位置；不显示进度/上一首/下一首。当前快照 DTO 未定义封面字段，因此使用原生占位图，不猜造 artwork URL。
 - [x] Task 4 尚未接入播放动作，播放/暂停控件明确 disabled 并标注暂未接入；按钮与进入全屏播放器的主体点击区域分离，避免禁用动作触发导航。
-- [x] 状态只从 Application 所有的 app-scoped runtime `SnapshotStore.state` 以 lifecycle-aware 方式读取；运行单测、Android instrumentation 源编译、Lint、Debug build 与 `git diff --check`。真机/模拟器无在线目标，UI instrumentation 未执行，保留为人工验收项。
+- [x] 状态只从 Application 所有的 app-scoped runtime `SnapshotStore.state` 以 lifecycle-aware 方式读取；运行单测、Android instrumentation 源编译、Lint、Debug build 与 `git diff --check`。
+- [x] 无需 MS 服务即可完成的真机验证：无线调试 Samsung SM-G986N，安装并启动 Debug APK；instrumentation `AppNavigationUiTest` 6/6 通过。手工核验主页显示空曲目/状态未确认及禁用播放键、设置页隐藏 mini、进入全屏后 mini/根导航隐藏、系统返回恢复主页与 mini。证据保存于 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/device-evidence/`。
 
 ## Batch 5：状态环、活动详情与共享 runtime 投影
 

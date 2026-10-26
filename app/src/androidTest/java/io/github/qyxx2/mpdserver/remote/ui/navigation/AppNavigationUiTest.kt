@@ -57,7 +57,9 @@ class AppNavigationUiTest {
 
         destinations.forEach { destination ->
             val tag = "root-nav-${destination.route}"
-            composeRule.onNodeWithText(destination.label).assertIsDisplayed()
+            // The app bar and navigation can legitimately repeat the root label (e.g. “主页”).
+            // Assert the uniquely tagged navigation item instead of an ambiguous text query.
+            composeRule.onNodeWithTag(tag).assertIsDisplayed()
             composeRule.onNodeWithTag(tag).performClick()
             composeRule.waitForIdle()
             assertEquals(destination.route, navController.currentDestination?.route)
