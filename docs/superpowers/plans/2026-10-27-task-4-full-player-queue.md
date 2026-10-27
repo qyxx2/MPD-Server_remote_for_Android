@@ -197,6 +197,16 @@
 - [x] TDD RED 真实设备日志 `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-edge-to-edge-red.log` 证实旧层范围 `Rect.fromLTRB(0.0, 73.0, 1080.0, 2400.0)`，状态栏下面那段被排除；第一次布局 GREEN 为 `b2-edge-to-edge-green.log`，含短拖与恢复断言的最终设备测试为 `b2-edge-to-edge-gesture-final.log`（SM-G986N / Android 13，2 tests passed）。
 - [x] 完成全量 unit/Lint/AndroidTest 编译、既有 Player/Queue 手势回归、debug APK 安装与 Insets preference 保留检查；结果已写入 B2 report 和 progress ledger。设备回归 `b2-edge-to-edge-device-regression.log`（10/10 通过）；完整本地验证 `b2-edge-to-edge-finalverify-rerun.log`（163 单测通过，Lint/AndroidTest 编译通过）。Android 系统图标/通知栏手势仍归系统管理；移动的是透明系统栏下方的完整应用画布。
 
+### Batch 2 corrective follow-up — eager in-memory current artwork (2026-10-27)
+
+**范围仅修复 mini-player 展开时封面与模糊背景迟到的问题；不启动新 Batch，不改变播放/API/Web/Queue 合同。**
+
+- [x] 保留现有 `AppRuntime.reads.getArtwork()` 作为唯一图片读取入口，新增 AppNavHost 生命周期内的单项内存缓存；仅在共享 snapshot 投影出 fresh/confirmed 的当前 Song、有效 artwork 引用及当前连接 generation 时预加载。未确认/缺失封面不产生缓存键。
+- [x] 前景封面与高斯模糊背景一起在后台解码/生成，再作为同一个资源身份的 `Ready` 状态发布。缓存键绑定 server-owned `song_id`、文件资源身份、server epoch、library revision 与 connection generation；切歌/重连/库版本变化时取消或废弃旧请求，并对迟到结果使用 request token 隔离，不能把上一曲图像展示为当前曲目。
+- [x] mini-player 点击仍同步进入 NavController，避免异步导航破坏 back-stack lifecycle；全屏画布先保持在 mini-player 的折叠尺寸，route effect 等当前 artwork 进入 `Ready`/`Failed` 后才启动现有 250ms 展开动画。成功时展开帧之前已同时有清晰封面与模糊背景。读取失败在一次预热后回落到既有缺图占位；同一资源身份失败后保持缺图占位，不在点击路径重复阻塞请求；曲目/库版本/连接身份改变后才会重新预载。
+- [x] 增加设备 instrumentation：覆盖应用导航前预加载、前景与模糊位图共同 ready、同身份复用与同身份失败去重、未确认/缺封面不预载、旧曲迟到结果不能覆盖新曲，以及全屏读取预热缓存。TDD RED 见 `.superpowers/sdd/2026-10-27-task-4-full-player-queue/artwork-preload-red.log`；最终本地与设备结果记录于 `.superpowers/sdd/2026-10-27-task-4-full-player-queue/artwork-preload-finalverify.log` 和 `artwork-preload-device-tests.log`。
+- [x] 全程只读现有 artwork endpoint，不创建第二个 Runtime、HTTP client、WebSocket、SnapshotStore 或 mutation owner；没有新增依赖、持久化业务图像或服务端行为。
+
 ## Batch 3：共享播放时钟、进度草稿和播放操作
 
 **目标：** 在 Batch 2 的播放器布局中接入真实播放 controls、服务器观察驱动的显示时钟、seek 草稿、共享 MutationCoordinator 状态与未知结果恢复。

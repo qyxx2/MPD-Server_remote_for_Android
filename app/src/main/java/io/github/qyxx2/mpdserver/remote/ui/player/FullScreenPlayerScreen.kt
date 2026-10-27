@@ -1,6 +1,5 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
@@ -26,7 +25,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,8 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
@@ -45,13 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
-import io.github.qyxx2.mpdserver.remote.network.HttpResult
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
-import kotlin.math.max
 
 /**
  * Native presentation of the same app-scoped canonical snapshot as Web. This screen never creates
@@ -70,53 +61,28 @@ fun FullScreenPlayerScreen(
     onDismissGestureEnd: (Float) -> Unit = { distance -> if (distance >= 120f) onExit() },
     onDismissGestureCancel: () -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(),
+    artworkCacheKey: PlayerArtworkCacheKey? = null,
+    artworkCache: PlayerArtworkMemoryCache? = null,
 ) {
     val currentOnDismissDragDelta = rememberUpdatedState(onDismissDragDelta)
     val currentOnDismissGestureEnd = rememberUpdatedState(onDismissGestureEnd)
     val currentOnDismissGestureCancel = rememberUpdatedState(onDismissGestureCancel)
     val song = presentation.song
     var showOutputDetails by remember { mutableStateOf(false) }
-    var artworkBitmap by remember(song?.songId, presentation.artworkReferenceStatus) {
-        mutableStateOf<ImageBitmap?>(null)
+    // Never let a previously cached track survive a canonical identity/connection change.
+    // Subscribe only inside this screen so background preload state changes never tear down or
+    // replace the root NavHost before a delayed mini-player open completes.
+    val artworkCacheState = artworkCache?.state?.collectAsStateWithLifecycle()?.value
+        ?: PlayerArtworkCacheState.Empty
+    val currentArtworkKey = artworkCacheKey?.takeIf { it.matches(presentation) }
+    val currentArtworkState = artworkCacheState.takeIf {
+        currentArtworkKey != null && it.key == currentArtworkKey
     }
-    var blurredArtworkBitmap by remember(song?.songId, presentation.artworkReferenceStatus) {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-    var artworkLoading by remember(song?.songId, presentation.artworkReferenceStatus) {
-        mutableStateOf(false)
-    }
-
-    LaunchedEffect(runtime, song?.songId, presentation.artworkReferenceStatus) {
-        artworkBitmap = null
-        blurredArtworkBitmap = null
-        artworkLoading = false
-        val currentSong = song?.takeIf {
-            presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
-                presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED
-        } ?: return@LaunchedEffect
-        artworkLoading = true
-        try {
-            val result = runtime.reads.getArtwork(currentSong.songId)
-            if (result is HttpResult.Body) {
-                val decoded = withContext(Dispatchers.Default) {
-                    decodeArtworkBitmap(result.bytes)?.let { foreground ->
-                        foreground to createBlurredArtworkBitmap(foreground)
-                    }
-                }
-                currentCoroutineContext().ensureActive()
-                // Bind foreground and blurred background atomically to this confirmed song identity.
-                if (song?.songId == currentSong.songId &&
-                    presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
-                    presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED
-                ) {
-                    artworkBitmap = decoded?.first
-                    blurredArtworkBitmap = decoded?.second
-                }
-            }
-        } finally {
-            artworkLoading = false
-        }
-    }
+    val artworkBitmap = (currentArtworkState as? PlayerArtworkCacheState.Ready)?.foreground
+    val blurredArtworkBitmap = (currentArtworkState as? PlayerArtworkCacheState.Ready)?.blurred
+    val artworkLoading = currentArtworkKey != null &&
+        currentArtworkState !is PlayerArtworkCacheState.Ready &&
+        currentArtworkState !is PlayerArtworkCacheState.Failed
 
     Box(
         modifier = Modifier
@@ -535,13 +501,3 @@ internal fun OutputDetailsDialog(
         modifier = Modifier.testTag("player-output-details"),
     )
 }
-
-private fun decodeArtworkBitmap(bytes: ByteArray): ImageBitmap? = runCatching {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    val maxDimension = max(bounds.outWidth, bounds.outHeight)
-    var sampleSize = 1
-    while (maxDimension / sampleSize > 1600) sampleSize *= 2
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
-}.getOrNull()

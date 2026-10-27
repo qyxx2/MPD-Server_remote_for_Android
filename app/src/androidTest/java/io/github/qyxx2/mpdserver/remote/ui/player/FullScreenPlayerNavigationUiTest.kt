@@ -48,14 +48,27 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.waitForIdle()
     }
 
+    private fun openPlayerAndWaitForArtwork() {
+        composeRule.onNodeWithTag("mini-player-body").performClick()
+        val minimumTouchPx = with(composeRule.density) { 48.dp.toPx() }
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            val playerVisible = composeRule.onAllNodesWithTag("full-screen-player-root")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+            val outputNode = composeRule.onAllNodesWithTag("player-bottom-output")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).firstOrNull()
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                playerVisible && outputNode != null && outputNode.boundsInRoot.height >= minimumTouchPx
+        }
+        composeRule.waitForIdle()
+    }
+
     @Test
     fun playerAndQueueAreSecondaryFullScreenDestinationsWithSharedRuntime() {
         launchNavigation()
         val application = composeRule.activity.application as MpdServerRemoteApplication
         val runtime = application.runtime
 
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndWaitForArtwork()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
@@ -78,6 +91,11 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
 
         composeRule.onNodeWithTag("player-bottom-queue").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.QUEUE.route &&
+                composeRule.onAllNodesWithTag("queue-destination-placeholder")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
         composeRule.waitForIdle()
         assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)
         composeRule.onNodeWithTag("queue-destination-placeholder").assertIsDisplayed()
@@ -86,6 +104,11 @@ class FullScreenPlayerNavigationUiTest {
         assertSame(runtime, application.runtime)
 
         composeRule.onNodeWithTag("player-bottom-now-playing").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                composeRule.onAllNodesWithTag("full-screen-player-root")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
         composeRule.waitForIdle()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
@@ -95,8 +118,7 @@ class FullScreenPlayerNavigationUiTest {
     @Test
     fun downwardSwipeStartingOnArtworkDismissesPlayerToPreviousRoot() {
         launchNavigation()
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndWaitForArtwork()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         composeRule.onNodeWithTag("player-artwork-stage").assertIsDisplayed()
 
@@ -113,8 +135,7 @@ class FullScreenPlayerNavigationUiTest {
     @Test
     fun aShortDownwardDragOnArtworkRestoresThePlayerInsteadOfDismissing() {
         launchNavigation()
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndWaitForArtwork()
 
         // A plain press/release on artwork must remain a tap, not a dismiss gesture.
         composeRule.onNodeWithTag("player-artwork-stage").performTouchInput {
@@ -140,8 +161,7 @@ class FullScreenPlayerNavigationUiTest {
         launchNavigation()
         val application = composeRule.activity.application as MpdServerRemoteApplication
         val runtime = application.runtime
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndWaitForArtwork()
 
         val swipeDistancePx = with(composeRule.density) { 280.dp.toPx() }
         composeRule.onNodeWithTag("full-screen-exit-gesture-band").performTouchInput {
@@ -157,8 +177,7 @@ class FullScreenPlayerNavigationUiTest {
     @Test
     fun downwardSwipeFromQueueExitsToThePreviousRootInsteadOfStoppingOnPlayer() {
         launchNavigation()
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndWaitForArtwork()
         composeRule.onNodeWithTag("player-bottom-queue").performClick()
         composeRule.waitForIdle()
         assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)

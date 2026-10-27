@@ -53,6 +53,9 @@ import io.github.qyxx2.mpdserver.remote.ui.components.GlobalStatusRingOverlay
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingVisibilityController
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerScreen
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerDismissPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
@@ -99,6 +102,19 @@ fun AppNavHost(
         initialValue = StatusRingPreferences.DEFAULT,
     )
     val navigationScope = rememberCoroutineScope()
+    // App-scoped for the lifetime of this navigation shell: preload once when the canonical
+    // current-song identity becomes confirmed, independently of whether Player is open.
+    val artworkCache = remember(navigationScope) { PlayerArtworkMemoryCache(navigationScope) }
+    val artworkCacheKey = PlayerArtworkCacheKey.from(
+        playerPresentation,
+        connectionGeneration = snapshotState.connectionGeneration,
+        epoch = snapshotState.snapshot?.epoch.orEmpty(),
+        libraryRevision = snapshotState.snapshot?.libraryRevision ?: 0L,
+    )
+    LaunchedEffect(runtime, artworkCacheKey) {
+        if (artworkCacheKey == null) artworkCache.clear()
+        else artworkCache.preload(runtime, artworkCacheKey)
+    }
     var showActivityStatus by remember { mutableStateOf(false) }
     var rootBeforeFullScreen by remember { mutableStateOf(AppDestination.HOME.route) }
     var playerEntryProgress by remember { mutableFloatStateOf(1f) }
@@ -108,9 +124,42 @@ fun AppNavHost(
     val dismissDistancePx = with(LocalDensity.current) { 120.dp.toPx() }
     val collapsedMiniHeightPx = with(LocalDensity.current) { 63.dp.toPx() }
 
+    suspend fun awaitCurrentArtworkWarmup() {
+        // Ordinarily the shell has already warmed the art. If the user opens immediately after
+        // connection, finish the in-flight decode before expansion so the cover and backdrop do
+        // not pop in after the full-screen route appears.
+        while (true) {
+            val latest = runtime.snapshots.state.value
+            val latestPresentation = PlayerPresentation.from(latest)
+            val key = PlayerArtworkCacheKey.from(
+                latestPresentation,
+                connectionGeneration = latest.connectionGeneration,
+                epoch = latest.snapshot?.epoch.orEmpty(),
+                libraryRevision = latest.snapshot?.libraryRevision ?: 0L,
+            ) ?: return
+            artworkCache.preload(runtime, key)
+            val settled = artworkCache.awaitSettled(key)
+            val after = runtime.snapshots.state.value
+            val afterKey = PlayerArtworkCacheKey.from(
+                PlayerPresentation.from(after),
+                connectionGeneration = after.connectionGeneration,
+                epoch = after.snapshot?.epoch.orEmpty(),
+                libraryRevision = after.snapshot?.libraryRevision ?: 0L,
+            )
+            if (afterKey == null ||
+                (afterKey == key && settled.key == key && settled !is PlayerArtworkCacheState.Loading)
+            ) return
+        }
+    }
+
+
     LaunchedEffect(currentRoute) {
         if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route && enterPlayerFromMini) {
             playerEntryProgress = 0f
+            awaitCurrentArtworkWarmup()
+            if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route || !enterPlayerFromMini) {
+                return@LaunchedEffect
+            }
             animate(
                 initialValue = 0f,
                 targetValue = 1f,
@@ -161,17 +210,20 @@ fun AppNavHost(
         )
     }
 
+
     fun openFullScreenPlayer() {
+        if (navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route) return
         if (AppDestination.rootDestinations.any { it.route == currentRoute }) {
             rootBeforeFullScreen = currentRoute!!
             playerDragOffsetPx = 0f
             playerEntryProgress = 0f
             enterPlayerFromMini = true
         }
-        if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route) {
-            navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
-                launchSingleTop = true
-            }
+        // Keep NavController navigation synchronous so Navigation owns the destination lifecycle.
+        // The lifecycle-bound route effect below holds the Player at mini-player size until both
+        // artwork bitmaps are ready, then starts the existing expansion animation.
+        navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
+            launchSingleTop = true
         }
     }
 
@@ -325,6 +377,8 @@ fun AppNavHost(
                     runtime = runtime,
                     snapshotState = snapshotState,
                     playerPresentation = playerPresentation,
+                    playerArtworkCacheKey = artworkCacheKey,
+                    playerArtworkCache = artworkCache,
                     uiPreferences = uiPreferences,
                     preferenceWriteScope = preferenceWriteScope,
                     windowGeometry = windowGeometry,
@@ -356,6 +410,8 @@ fun AppNavHost(
                         runtime = runtime,
                         snapshotState = snapshotState,
                         playerPresentation = playerPresentation,
+                        playerArtworkCacheKey = artworkCacheKey,
+                        playerArtworkCache = artworkCache,
                         uiPreferences = uiPreferences,
                         preferenceWriteScope = preferenceWriteScope,
                         windowGeometry = windowGeometry,
@@ -390,6 +446,8 @@ fun AppNavHost(
                             runtime = runtime,
                             snapshotState = snapshotState,
                             playerPresentation = playerPresentation,
+                            playerArtworkCacheKey = artworkCacheKey,
+                            playerArtworkCache = artworkCache,
                             uiPreferences = uiPreferences,
                             preferenceWriteScope = preferenceWriteScope,
                             windowGeometry = windowGeometry,
@@ -479,6 +537,8 @@ private fun AppNavigationGraph(
     runtime: AppRuntime,
     snapshotState: SnapshotStoreState,
     playerPresentation: PlayerPresentation,
+    playerArtworkCacheKey: PlayerArtworkCacheKey?,
+    playerArtworkCache: PlayerArtworkMemoryCache,
     uiPreferences: UiPreferencesRepository,
     preferenceWriteScope: CoroutineScope,
     windowGeometry: StatusRingWindowGeometry,
@@ -523,6 +583,8 @@ private fun AppNavigationGraph(
                 FullScreenPlayerScreen(
                     runtime = runtime,
                     presentation = playerPresentation,
+                    artworkCacheKey = playerArtworkCacheKey,
+                    artworkCache = playerArtworkCache,
                     onExit = onExitFullScreen,
                     onOpenQueue = {
                         navController.navigate(AppDestination.QUEUE.route) {
