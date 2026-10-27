@@ -23,7 +23,7 @@ Task 3 的代码、自动化回归和本轮可执行的真机 UI 验收完成，
 - Task 2 安全可逆 playlist mutation/readback 已在单独报告中通过：`2026-10-27-task-2-live-write-verification.md`（该报告使用测试显式注入 origin；不等于普通 APK 的服务器地址设置 UI 已交付）。
 - 实机目视确认：导航选中态无紫色胶囊；设置页能切换深浅主题并恢复跟随系统；状态环生产组件在设备原生分辨率上定位于屏幕顶部居中区域。截图曾保存于设备工作目录的临时文件，非正式资产。
 - Debug APK：`app/build/outputs/apk/debug/app-debug.apk`，12,040,852 bytes，SHA-256 `039f3499b03c6652d95bac11b33573971f2471d7da7b445df35fa1c2e97ab09b`。
-- `git diff --check` 与源码边界审查需在提交前/合并后再执行。Gradle 提醒两个 native libraries 未能 strip、并有 Gradle deprecated features；已按原样打包，任务退出码为 0。Lint task 成功，报告包含 11 条 warning，未阻断构建。
+- Git 提交前检查：`git diff --check` 和 `git diff --cached --check` 均通过；源码边界扫描未发现 Room/SQLite/WebView/Media3/ExoPlayer，也未发现 UI 创建第二个 Runtime/transport 或调用 mutation/retry API。Task 3 已 fast-forward 合并到 `main` 并推送；fetch 后 `origin/main` 与本地 `main` 的提交哈希完全一致，工作区干净。Gradle 提醒两个 native libraries 未能 strip、并有 Gradle deprecated features；已按原样打包，任务退出码为 0。Lint task 成功，报告包含 11 条 warning，未阻断构建。
 
 ## 验收边界
 
