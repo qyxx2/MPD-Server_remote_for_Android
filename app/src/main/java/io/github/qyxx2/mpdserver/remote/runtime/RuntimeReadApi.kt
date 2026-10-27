@@ -6,6 +6,7 @@ import io.github.qyxx2.mpdserver.remote.network.HttpTransport
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.decodeJson
+import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtistListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,6 +24,9 @@ class RuntimeReadApi(
     private val execute: (HttpTransport, Request) -> HttpResult = { transport, request -> transport.execute(request) },
 ) {
     suspend fun getSong(songId: String): ApiResult<SongDto> = jsonGet("/api/library/songs/${pathSegment(songId)}")
+
+    /** Existing Web navigation lookup: artist IDs are resolved by exact server-returned display name. */
+    suspend fun getArtists(): ApiResult<ArtistListDto> = jsonGet("/api/library/artists")
 
     suspend fun getPlayed(): ApiResult<QueueListDto> = jsonGet("/api/history/played")
 

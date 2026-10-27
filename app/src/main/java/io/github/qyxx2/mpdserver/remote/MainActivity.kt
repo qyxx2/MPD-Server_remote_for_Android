@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
                         windowGeometry = statusRingWindowGeometry,
                         uiPreferences = application.uiPreferences,
                         preferenceWriteScope = application.uiPreferencesWriteScope,
+                        applyServerOrigin = application::saveAndApplyServerOrigin,
                     )
                 }
             }

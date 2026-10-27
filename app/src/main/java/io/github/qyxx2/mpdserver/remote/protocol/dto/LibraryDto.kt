@@ -10,6 +10,19 @@ enum class AvailabilityStatus { AVAILABLE, MISSING, UNREADABLE }
 enum class ArtworkSourceDto { EMBEDDED }
 
 @Serializable
+data class ArtistSummaryDto(
+    @SerialName("artist_id") val artistId: String,
+    val name: String,
+    @SerialName("song_count") val songCount: Int,
+)
+
+@Serializable
+data class ArtistListDto(
+    val items: List<ArtistSummaryDto> = emptyList(),
+    val count: Int = 0,
+)
+
+@Serializable
 data class ArtworkDto(
     @SerialName("artwork_id") val artworkId: String,
     val source: ArtworkSourceDto,

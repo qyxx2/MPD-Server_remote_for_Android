@@ -65,10 +65,15 @@
 ## 8. 歌词与展示时钟
 
 - 全屏播放器通过原生 Compose 展示封面和歌词。点击封面切换两种模式；禁止 WebView。
-- 继承当前解析行为：LRC/text 标签、`[mm:ss]`、分数秒及 `[offset:...]`；无有效时间戳的普通文本不能伪造逐句同步。
+- **解析算法基准为固定 Web 实现**（`web/src/components/player/lyrics.ts`）。仅在 `lyrics_format` 为 `lrc` / `text`（大小写不敏感）时解析 cue；即使旧资源被标成 `text`，只要内容含有效时间戳仍需解析。时间戳形态为 `[mm:ss]`、`[mm:ss.f]`、`[mm:ss:fff]`，秒必须为 00–59、分钟不限位；小数部分严格沿用 Web 的 `Number("0." + digits)` 语义（`.5` = 0.5 秒、`.05` = 0.05 秒、`.005` = 0.005 秒），不重新解释小数位数。支持同一行多个时间戳、稳定排序、相同 timestamp 与 `[offset:+/-整数毫秒]`。不支持的 format 不产生同步 cue；无有效时间戳的普通文本不能伪造逐句同步。
+- offset 以毫秒计。当前高亮使用 `freshPlaybackPosition + offsetMs / 1000` 找出不晚于该时间的最新 cue；点击 cue 的 seek 秒数为 `cue.seconds - offsetMs / 1000`。首条 cue 之前没有 active cue；同一最新时间戳的多条 cue 按 Web 行为共同标记。没有 fresh/有效播放位置时不伪造高亮。
+- 歌词资源直接使用服务端 SongResponse 的 `lyrics`、`lyrics_format`、`lyrics_source`、`lyrics_status`。服务器负责读取嵌入歌词/sidecar 并决定来源；当前固定扫描器从 FLAC 的 lyrics/LYRICS/unsyncedlyrics comment 或 MP3 ID3 USLT 帧提取嵌入文本。Android 不直接解析音频文件 tag、不扫描 sidecar，也不覆写服务器已选出的文本/状态；服务器返回的 embedded 文本只要含合法时间戳，就按相同 cue parser 识别。sidecar 可读时按服务器返回的 sidecar 内容展示；sidecar 读取失败时，服务器可能返回可显示的 embedded fallback，同时将 `lyrics_status=read_error`，此时仍必须显示错误提示。`missing`、`read_error`、普通文本、unsupported format 与同步时间轴歌词是不同状态。
 - seekbar 与同步歌词共享同一个展示时钟。可对 fresh 服务端样本做展示性插值，但不能借本地时钟修改 canonical state、触发 next 或断言歌曲已自然结束。
-- 手动滚动歌词时暂停自动跟随；当前 Web 在用户停止操作约 3 秒后尝试恢复。文本选择不得意外 seek；点歌词只有在 target 和 seek 能力有效时才提交。
-- 歌词读取失败但有可显示文本时可以显示，同时保留失败提示。没有歌词、普通文本、不能同步、进度未确认应分别表达。
+- **带时间轴歌词的跟随规则：** 初始自动跟随 active playback cue。手动向上/下滚动时立即暂停自动跟随；以最后一次手势结束/有效滚动为计时起点，之后连续 3 秒无新操作且没有仍在进行的手势或文本选择时，回到 timeout 时最新 playback clock 对应的 active cue 并恢复跟随。继续滚动会重置 3 秒计时，不能回到手势开始时缓存的旧行。
+- **点击歌词与拖动查看规则：** 只有当前有效且位于可 seek 范围内的时间轴歌词行是可点击的；点击具体歌词行通过共享 PlayerActions 提交 offset-corrected seek，使用当前有效的 target/capability。写回执不代表已跳转完成，后续高亮仍以服务端观察/读回为准。Drag/scroll、长按、文本选择与 pointer cancel 不得误判为 cue tap 或触发 seek。
+- **普通无时间轴文本规则：** 原文可在歌词视口内自由上下滚动；没有 active playback cue，不做当前行高亮、歌词行 seek，也不执行 3 秒自动回位。静止超过 3 秒后仍留在用户查看的位置。纯文本点击无写操作；文本选择不能意外 seek。
+- 歌词资源、当前 Song/occurrence、epoch/generation 或歌词内容发生变化时，旧的 scroll timer/gesture/cue state 必须取消，不能将上一首的当前行或迟到资源显示到新曲目。长句/大字号/窄屏必须保持可读；五行是视觉目标而非压缩字体的理由。
+- 歌词读取失败但有可显示文本时可以显示，同时保留失败提示。没有歌词、普通文本、未知格式、不能同步、进度未确认与 read_error 应分别表达。
 - 源文件 codec/bit-depth/sample-rate 与实际输出观察分开显示。输出 ACTIVE 只代表后端观察到启用，不证明硬件实际发声或 bit-perfect。
 
 ## 9. 统一活动与应用内状态环

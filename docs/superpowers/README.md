@@ -32,10 +32,15 @@
 - [Task 1 原生工程骨架合同](specs/2026-10-24-task-1-native-project-baseline.md)：冻结工程身份、工具链、统一签名、范围边界与退出门。
 - [Task 1 执行计划](plans/2026-10-24-task-1-native-project-baseline.md)：本地原生工程实施步骤、TDD、验证和交付记录。
 - [Task 2 网络协议、共享状态 Store 与操作协调器合同](specs/2026-10-24-task-2-network-state-coordinator.md)：冻结服务端 origin/HTTP/WS、严格 DTO、完整快照、单一 realtime owner、mutation 幂等/unknown 恢复边界与合同矩阵。
-- [Task 2 分批实施计划](plans/2026-10-24-task-2-network-state-coordinator.md)：按固定服务端基线、HTTP/DTO、Realtime、Snapshot Store、单一 Runtime、Mutation Coordinator 和整体验收拆分 Batch；2026-10-27 已通过实机 runtime/coordinator 真实 mutation/readback 验收。生产服务器地址设置 UI 仍归后续设置任务；最终证据见 [Task 2 实机真实写验证报告](reports/2026-10-27-task-2-live-write-verification.md)。
+- [Task 2 分批实施计划](plans/2026-10-24-task-2-network-state-coordinator.md)：按固定服务端基线、HTTP/DTO、Realtime、Snapshot Store、单一 Runtime、Mutation Coordinator 和整体验收拆分 Batch；2026-10-27 已通过实机 runtime/coordinator 真实 mutation/readback 验收。随后增加了有限的 server-origin 输入/校验/本地保存与恢复入口，但未验证 MS 连通性；完整服务器系统设置仍归后续任务。真实写验收见 [Task 2 实机报告](reports/2026-10-27-task-2-live-write-verification.md)，地址入口验证见 [MS 地址设置报告](reports/2026-10-27-ms-server-address-settings-verification.md)。
 - [Task 3 原生应用壳合同](specs/2026-10-25-task-3-native-app-shell.md)：冻结四入口、mini 显隐、主题、状态环/活动详情、runtime 所有权、Task 2 残余门槛与退出条件。
 - [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结 AppBar/导航/迷你播放器/资料库/状态环的视觉参数，并将集合播放、随机播放、歌曲排序与单曲菜单的行为映射到现有 Web/API 合同。
 - [Task 3 分批实施计划](plans/2026-10-25-task-3-native-app-shell.md)：拆分为合同映射、主题、导航、App Shell、mini 投影、活动状态、播放器占位和集成验收共 8 个 Batch。
+- [Task 4 合同矩阵与分析](specs/2026-10-27-task-4-contract-matrix.md)：全屏播放器、歌词、进度、Queue/Played 的权威来源、实现约束、机器/人工验收映射与风险。B0–B2 已实施；B2 设备验证证据见 [Batch 2 验证报告](reports/2026-10-27-task-4-batch2-verification.md)，后续批次仍按计划推进。
+- [Task 4 全屏播放器与 Queue 视觉/交互设计规格](specs/2026-10-27-task-4-full-player-queue-visual-design.md)：记录用户确认的 B 大封面方向、干净顶部、歌词替换主内容区、无重框布局、下滑退出、Queue 连续历史展开及拖拽/菜单约束。
+- [Task 4 Implementation Plan](plans/2026-10-27-task-4-full-player-queue.md)：按合同矩阵拆分 B0–B9，明确文件/接口、测试先行、逐批验证、实现边界与退出门；各批次完成状态与验证证据以计划勾选项及独立报告为准。
+- [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
+- [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。
 - [Task 3 Batch 7 集成验证报告](reports/2026-10-26-task-3-batch7-verification.md)：记录 clean 构建、105 项单测、10 项真机 instrumentation、边界审查及尚未关闭的人工验收门。机器验证通过不代表 Task 3 整体退出门或 Task 2 真实联调门已通过。
 - [Task 3 状态环真实 MS 联调与真机复验报告](reports/2026-10-27-task-3-status-ring-live-ms-verification.md)：记录只读 HTTP/WS 联通、Android opt-in live smoke、状态环视觉 instrumentation、DisplayCutout 回退观察及修复的快照状态竞态；不包含任何真实服务写操作。
 - [初步实现路线图](plans/2026-10-23-android-client-roadmap.md)：早期阶段概览，仅作背景参考；若与主计划的 Task 顺序或退出门冲突，以主计划为准。

@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -22,6 +23,17 @@ class UiPreferencesRepository(
     val themePreference: Flow<ThemePreference> = dataStore.data.map { preferences ->
         ThemePreference.entries.firstOrNull { it.name == preferences[THEME_PREFERENCE_KEY] }
             ?: ThemePreference.FOLLOW_SYSTEM
+    }
+
+    /** Local configured origin only; this is not evidence that the server is reachable. */
+    val serverOrigin: Flow<String> = dataStore.data.map { preferences ->
+        preferences[SERVER_ORIGIN_KEY] ?: ServerOrigin.DEFAULT_ADDRESS
+    }
+
+    suspend fun setServerOrigin(origin: ServerOrigin) {
+        dataStore.edit { preferences ->
+            preferences[SERVER_ORIGIN_KEY] = origin.address
+        }
     }
 
     val statusRingPreferences: Flow<StatusRingPreferences> = dataStore.data.map { preferences ->
@@ -55,6 +67,7 @@ class UiPreferencesRepository(
     suspend fun resetStatusRingPreferences() = setStatusRingPreferences(StatusRingPreferences.DEFAULT)
 
     private companion object {
+        val SERVER_ORIGIN_KEY = stringPreferencesKey("server_origin")
         val THEME_PREFERENCE_KEY = stringPreferencesKey("theme_preference")
         val STATUS_RING_SIZE_SCALE_KEY = floatPreferencesKey("status_ring_size_scale")
         val STATUS_RING_LINE_WIDTH_KEY = floatPreferencesKey("status_ring_line_width_dp")

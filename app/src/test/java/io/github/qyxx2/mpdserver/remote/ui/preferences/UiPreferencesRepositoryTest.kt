@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -114,6 +115,40 @@ class UiPreferencesRepositoryTest {
             assertEquals(StatusRingPreferences.DEFAULT, repository.statusRingPreferences.first())
         } finally {
             scope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingServerOriginUsesLocalPlaceholder() = runBlocking {
+        val file = newPreferencesFile()
+        val (store, scope) = newStore(file)
+        try {
+            assertEquals(ServerOrigin.DEFAULT_ADDRESS, UiPreferencesRepository(store).serverOrigin.first())
+        } finally {
+            scope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun serverOriginSurvivesRepositoryAndStoreRecreation() = runBlocking {
+        val file = newPreferencesFile()
+        val (initialStore, initialScope) = newStore(file)
+        try {
+            UiPreferencesRepository(initialStore).setServerOrigin(ServerOrigin.parseAddress("ms.example.com"))
+        } finally {
+            initialScope.cancel()
+        }
+
+        val (restoredStore, restoredScope) = newStore(file)
+        try {
+            assertEquals(
+                "http://ms.example.com:18000",
+                UiPreferencesRepository(restoredStore).serverOrigin.first(),
+            )
+        } finally {
+            restoredScope.cancel()
             file.parentFile?.deleteRecursively()
         }
     }

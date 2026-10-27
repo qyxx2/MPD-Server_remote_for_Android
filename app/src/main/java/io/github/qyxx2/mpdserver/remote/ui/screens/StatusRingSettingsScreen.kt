@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -24,15 +25,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingSettingsPreview
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
@@ -47,7 +53,21 @@ fun StatusRingSettingsScreen(
     preferencesRepository: UiPreferencesRepository,
     preferenceWriteScope: CoroutineScope,
     windowGeometry: StatusRingWindowGeometry,
+    onApplyServerOrigin: suspend (ServerOrigin) -> Unit,
 ) {
+    val savedServerOrigin by preferencesRepository.serverOrigin.collectAsStateWithLifecycle(
+        initialValue = ServerOrigin.DEFAULT_ADDRESS,
+    )
+    var serverAddressDraft by remember { mutableStateOf(ServerOrigin.DEFAULT_ADDRESS) }
+    var serverAddressEdited by remember { mutableStateOf(false) }
+    var serverAddressError by remember { mutableStateOf<String?>(null) }
+    var serverAddressStatus by remember { mutableStateOf<String?>(null) }
+    var isSavingServerAddress by remember { mutableStateOf(false) }
+    val screenScope = rememberCoroutineScope()
+    LaunchedEffect(savedServerOrigin) {
+        if (!serverAddressEdited) serverAddressDraft = savedServerOrigin
+    }
+
     val themePreference by preferencesRepository.themePreference.collectAsStateWithLifecycle(
         initialValue = ThemePreference.FOLLOW_SYSTEM,
     )
@@ -74,6 +94,83 @@ fun StatusRingSettingsScreen(
             .testTag("status-ring-settings-content"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Text(
+            text = "MS 服务器",
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.testTag("server-origin-settings-title"),
+        )
+        OutlinedTextField(
+            value = serverAddressDraft,
+            onValueChange = {
+                serverAddressDraft = it
+                serverAddressEdited = true
+                serverAddressError = null
+                serverAddressStatus = null
+            },
+            label = { Text("服务器地址") },
+            placeholder = { Text("192.168.1.20:18000") },
+            singleLine = true,
+            isError = serverAddressError != null,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Uri,
+                imeAction = ImeAction.Done,
+            ),
+            supportingText = {
+                Text(
+                    serverAddressError
+                        ?: "支持 IPv4、IPv6 和域名；可输入完整 http(s):// 地址。省略协议使用 HTTP，省略端口默认 18000；IPv6 自定义端口请写成 [地址]:端口。",
+                    modifier = Modifier.testTag("server-origin-supporting-text"),
+                )
+            },
+            modifier = Modifier.fillMaxWidth().testTag("server-origin-input"),
+        )
+        Button(
+            onClick = {
+                val parsed = try {
+                    ServerOrigin.parseAddress(serverAddressDraft)
+                } catch (error: IllegalArgumentException) {
+                    serverAddressError = "地址格式不正确：请检查主机、端口、协议和路径。"
+                    null
+                }
+                if (parsed != null) {
+                    screenScope.launch {
+                        isSavingServerAddress = true
+                        serverAddressError = null
+                        serverAddressStatus = null
+                        try {
+                            onApplyServerOrigin(parsed)
+                            serverAddressDraft = parsed.address
+                            serverAddressEdited = false
+                            serverAddressStatus = "已保存并应用；尚未检测服务器连通性"
+                        } catch (error: Exception) {
+                            serverAddressStatus = "保存失败：${error.message ?: "请重试"}"
+                        } finally {
+                            isSavingServerAddress = false
+                        }
+                    }
+                }
+            },
+            enabled = !isSavingServerAddress,
+            modifier = Modifier.fillMaxWidth().testTag("server-origin-save"),
+        ) {
+            Text(if (isSavingServerAddress) "正在保存…" else "保存服务器地址")
+        }
+        Text(
+            text = "当前配置：$savedServerOrigin",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("server-origin-current"),
+        )
+        serverAddressStatus?.let { status ->
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status.startsWith("保存失败")) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("server-origin-status"),
+            )
+        }
+
         Text(
             text = "主题",
             style = MaterialTheme.typography.titleMedium,

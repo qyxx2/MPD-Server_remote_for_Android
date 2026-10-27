@@ -131,11 +131,14 @@
 
 **本 Task 的阻塞/退出门：** 根导航和共用组件规则冻结；UI 自动化测试、clean 构建/Lint、边界检查通过；目标设备的完整主题/导航/布局人工验收有记录。Task 3 不执行真实 mutation，不以占位 origin 代替联调。Task 2 的 runtime/coordinator 实机真实写/读回验收已于 2026-10-27 通过；Task 4/6 仍须在各自合同中为业务写操作定义适当场景与验证，不得将本次临时歌单验证视为播放/Queue 等业务操作已经验收。
 
-**Batch 7 机器验证记录（2026-10-26）：** clean Gradle 回归 BUILD SUCCESSFUL；22 个单测报告共 105/105 通过，SM-G986N / Android 13 真机 instrumentation 10/10 通过，Lint、Debug APK 和 Android-test 编译通过，源码边界扫描通过。报告见 [Task 3 Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。**Task 3 整体退出仍未完成：** 目前只有部分导航人工反馈；用户尚未确认完整主题/布局验收，真实活动状态环视觉/生命周期与物理手动校准也未完整验证。Task 2 另行遗留的 runtime/coordinator 真实 mutation/readback 与 APK live-origin 验收已于 2026-10-27 通过；生产地址设置 UI 仍归后续设置任务。
+**Batch 7 机器验证记录（2026-10-26）：** clean Gradle 回归 BUILD SUCCESSFUL；22 个单测报告共 105/105 通过，SM-G986N / Android 13 真机 instrumentation 10/10 通过，Lint、Debug APK 和 Android-test 编译通过，源码边界扫描通过。报告见 [Task 3 Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。**Task 3 整体退出仍未完成：** 目前只有部分导航人工反馈；用户尚未确认完整主题/布局验收，真实活动状态环视觉/生命周期与物理手动校准也未完整验证。Task 2 另行遗留的 runtime/coordinator 真实 mutation/readback 与 APK live-origin 验收已于 2026-10-27 通过。随后用户单独授权的最小 MS 地址设置入口已实现，详见 [地址设置验证报告](../reports/2026-10-27-ms-server-address-settings-verification.md)。
 
 ### Task 4：全屏正在播放、歌词、进度与 Queue
 
 - [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+- [x] 创建 `task4` 分支，并记录用户已确认的 B 大封面方向、干净顶部、底部三个无框入口、歌词替换主内容区、Queue 六点拖拽柄/三点菜单及连续历史展开合同。
+- [x] 完成视觉规格、合同矩阵及逐 Batch 实施计划（[Task 4 Implementation Plan](2026-10-27-task-4-full-player-queue.md)）。
+- [x] 完成 B0、B1、B2；B2 已通过单元测试、Lint、真机 UI instrumentation 与只读 MS 连通/权威快照 smoke。播放器交互写操作、歌词及 Queue/Played 主体仍由后续批次完成。
 
 **目标：** 完成核心遥控体验，并完整继承服务端播放观察、target、幂等和 Queue occurrence 语义。
 

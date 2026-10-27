@@ -16,6 +16,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
+import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -55,6 +58,7 @@ class AppNavigationUiTest {
                 navController = controller,
                 uiPreferences = application.uiPreferences,
                 preferenceWriteScope = application.uiPreferencesWriteScope,
+                applyServerOrigin = application::saveAndApplyServerOrigin,
             )
         }
         composeRule.waitForIdle()
@@ -187,6 +191,46 @@ class AppNavigationUiTest {
     }
 
     @Test
+    fun serverOriginSettingsRejectsInvalidInputAndAppliesValidAddressToSharedRuntime() {
+        launchNavigation()
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val defaultOrigin = ServerOrigin.parseAddress(ServerOrigin.DEFAULT_ADDRESS)
+        runBlocking { application.saveAndApplyServerOrigin(defaultOrigin) }
+
+        try {
+            composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("server-origin-settings-title").assertIsDisplayed()
+            composeRule.onNodeWithTag("server-origin-input").performScrollTo()
+            val serverOriginField = composeRule.onNodeWithTag("server-origin-input")
+            serverOriginField.performTextClearance()
+            serverOriginField.performTextInput("ms.example.com/api")
+            composeRule.onNodeWithTag("server-origin-save").performScrollTo().performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onNodeWithTag("server-origin-supporting-text", useUnmergedTree = true)
+                .assertTextEquals("地址格式不正确：请检查主机、端口、协议和路径。")
+            assertEquals(
+                ServerOrigin.DEFAULT_ADDRESS,
+                runBlocking { application.uiPreferences.serverOrigin.first() },
+            )
+            assertEquals(ServerOrigin.DEFAULT_ADDRESS, application.runtime.realtimeController.currentOrigin().address)
+
+            serverOriginField.performTextClearance()
+            serverOriginField.performTextInput("192.168.1.20")
+            composeRule.onNodeWithTag("server-origin-save").performScrollTo().performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                runBlocking { application.uiPreferences.serverOrigin.first() } == "http://192.168.1.20:18000" &&
+                    application.runtime.realtimeController.currentOrigin().address == "http://192.168.1.20:18000"
+            }
+            composeRule.onNodeWithTag("server-origin-status")
+                .assertTextEquals("已保存并应用；尚未检测服务器连通性")
+        } finally {
+            runBlocking { application.saveAndApplyServerOrigin(defaultOrigin) }
+        }
+    }
+
+    @Test
     fun settingsShowsFourRingControlsPreviewAndNoMiniPlayer() {
         launchNavigation()
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
@@ -307,12 +351,18 @@ class AppNavigationUiTest {
                 navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route)
             }
             composeRule.waitForIdle()
-            composeRule.onNodeWithTag("full-screen-player-placeholder").assertIsDisplayed()
-            composeRule.onNodeWithText("全屏播放器占位").assertIsDisplayed()
-            composeRule.onNodeWithText("播放器界面将在后续阶段接入。").assertIsDisplayed()
+            composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+            composeRule.onNodeWithTag("full-screen-exit-gesture-band").assertIsDisplayed()
+            composeRule.onNodeWithTag("player-progress-track").assertIsDisplayed()
+            composeRule.onNodeWithTag("player-source-format").assertIsDisplayed()
+            composeRule.onNodeWithTag("player-playback-controls").assertIsDisplayed()
+            composeRule.onNodeWithTag("player-play-pause").assertIsNotEnabled()
+            composeRule.onNodeWithTag("player-bottom-now-playing").assertIsSelected()
+            composeRule.onNodeWithTag("player-bottom-queue").assertIsDisplayed()
+            composeRule.onAllNodesWithTag("full-screen-top-back").assertCountEquals(0)
+            composeRule.onAllNodesWithTag("full-screen-top-queue-toggle").assertCountEquals(0)
             composeRule.onAllNodesWithText("专辑封面").assertCountEquals(0)
             composeRule.onAllNodesWithText("暂无歌词").assertCountEquals(0)
-            composeRule.onAllNodesWithText("播放队列").assertCountEquals(0)
             composeRule.onAllNodesWithText("00:00").assertCountEquals(0)
             composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
             composeRule.onAllNodesWithTag("app-bar").assertCountEquals(0)

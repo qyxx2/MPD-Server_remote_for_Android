@@ -64,7 +64,7 @@ fun RootNavigationBar(
                         AppDestination.SEARCH -> Icon(Icons.Filled.Search, contentDescription = null)
                         AppDestination.LIBRARY -> Text(text = "♫", fontSize = 24.sp)
                         AppDestination.SETTINGS -> Icon(Icons.Filled.Settings, contentDescription = null)
-                        AppDestination.FULL_SCREEN_PLAYER -> Unit
+                        AppDestination.FULL_SCREEN_PLAYER, AppDestination.QUEUE -> Unit
                     }
                 },
                 label = { Text(destination.label, fontSize = 12.sp) },
