@@ -7,13 +7,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,8 +25,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -31,6 +37,7 @@ import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingSettingsPreview
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
+import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -41,6 +48,9 @@ fun StatusRingSettingsScreen(
     preferenceWriteScope: CoroutineScope,
     windowGeometry: StatusRingWindowGeometry,
 ) {
+    val themePreference by preferencesRepository.themePreference.collectAsStateWithLifecycle(
+        initialValue = ThemePreference.FOLLOW_SYSTEM,
+    )
     val savedPreferences by preferencesRepository.statusRingPreferences.collectAsStateWithLifecycle(
         initialValue = StatusRingPreferences.DEFAULT,
     )
@@ -64,6 +74,38 @@ fun StatusRingSettingsScreen(
             .testTag("status-ring-settings-content"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Text(
+            text = "主题",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        ThemePreferenceOption(
+            label = "跟随系统",
+            tag = "theme-option-follow-system",
+            preference = ThemePreference.FOLLOW_SYSTEM,
+            selectedPreference = themePreference,
+            onSelected = { preference ->
+                preferenceWriteScope.launch { preferencesRepository.setThemePreference(preference) }
+            },
+        )
+        ThemePreferenceOption(
+            label = "浅色",
+            tag = "theme-option-light",
+            preference = ThemePreference.LIGHT,
+            selectedPreference = themePreference,
+            onSelected = { preference ->
+                preferenceWriteScope.launch { preferencesRepository.setThemePreference(preference) }
+            },
+        )
+        ThemePreferenceOption(
+            label = "深色",
+            tag = "theme-option-dark",
+            preference = ThemePreference.DARK,
+            selectedPreference = themePreference,
+            onSelected = { preference ->
+                preferenceWriteScope.launch { preferencesRepository.setThemePreference(preference) }
+            },
+        )
+
         Text(
             text = "状态环",
             style = MaterialTheme.typography.titleLarge,
@@ -159,6 +201,35 @@ fun StatusRingSettingsScreen(
 }
 
 @Composable
+private fun ThemePreferenceOption(
+    label: String,
+    tag: String,
+    preference: ThemePreference,
+    selectedPreference: ThemePreference,
+    onSelected: (ThemePreference) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .selectable(
+                selected = preference == selectedPreference,
+                role = Role.RadioButton,
+                onClick = { onSelected(preference) },
+            )
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        RadioButton(
+            selected = preference == selectedPreference,
+            onClick = null,
+        )
+        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
 private fun RingSettingSlider(
     title: String,
     currentValue: String,
@@ -183,6 +254,9 @@ private fun RingSettingSlider(
             onValueChangeFinished = onValueChangeFinished,
             valueRange = valueRange,
             steps = steps,
+            colors = SliderDefaults.colors(
+                inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant,
+            ),
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics { contentDescription = label }

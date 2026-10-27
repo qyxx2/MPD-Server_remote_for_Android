@@ -1,6 +1,6 @@
 # Task 3：原生应用壳、导航、主题与通用状态 UI 合同
 
-> 状态：**Batch 7 机器验证完成；Task 3 整体退出门仍开放，待完整人工验收确认**。当前 UI 自动化/构建验证已通过；用户报告的实机验收只覆盖部分导航。主题模式全覆盖、真实活动状态环视觉/生命周期和缺少可靠 DisplayCutout 时的物理校准仍未完整验收。Task 2 的真实 mutation/readback 与 APK live-origin 联调继续单独保持 BLOCKED。
+> 状态：**Task 3 代码与全量机器验证完成；主题选择和导航选中态已在 SM-G986N / Android 13 实机确认。** 状态环在设备原生分辨率下的挖孔锚定已通过实机视觉检查；无可靠 DisplayCutout 的另一种物理设备/条件仍未覆盖，详见 [Task 3 最终验收报告](../reports/2026-10-27-task-3-final-acceptance.md)。Task 2 的真实 mutation/readback 已通过真机 create→readback→delete→readback 验证；普通 APK 的服务器地址设置 UI 仍属于后续 Task 6，不得因此宣称已配置生产服务 origin。
 >
 > Android 仓库实施基线：Task 2 分支最终证据提交 `6ced024`；对应本地分支 `feature/task-2-network-state-coordinator`。
 >
@@ -16,18 +16,16 @@
 
 ## 2. 前置判断：Task 2 的残余验收如何处理
 
-Task 2 已具备可编译的网络 transport、严格 DTO、snapshot store、realtime controller、mutation coordinator 与 app-scoped runtime。当前未完成项是：
-- 对真实部署进行安全可逆的 mutation/readback；
-- 将实际 origin 配置给 Android APK 并完成 APK 级 live-origin 联调。
+Task 2 已具备网络 transport、严格 DTO、snapshot store、realtime controller、mutation coordinator 与 app-scoped runtime。根据 [2026-10-27 Task 2 真机写入/读回报告](../reports/2026-10-27-task-2-live-write-verification.md)，安全可逆的 playlist create→权威读回→delete→权威缺席读回已通过真机验证。尚未实现的是普通生产 APK 的服务器地址设置 UI与用户配置 origin 的端到端流程，该项属于后续 Task 6，不影响本 Task 的 UI-only 边界。
 
-以上均是 Task 2 **最终集成退出门**，并非 Task 3 UI 壳的硬性技术前置。Task 3 可基于已存在的类型/接口和测试替身推进，不触发真实写操作，不依赖 localhost 占位地址能够连通，也不把 fake/empty 内容表现为真实业务数据。Task 3 首轮根导航、主题、空状态及状态 UI 必须能在无可用服务端时运行。
+Task 3 基于既有类型/接口与测试替身实施，不依赖默认 localhost 能够连通，也不把 fake/empty 内容表现为真实业务数据。Task 3 不新增服务器地址流程、不启用默认 app runtime 网络连接、不改变真实业务数据；UI 继续在无可用服务端时安全运行。
 
 为避免绕过验收，设置以下门控：
 1. Task 3 开始门要求 Task 2 的代码接口、应用级 owner 与机器测试基线存在；此条件当前满足。
 2. Task 3 的 UI-only Batch 可按本合同继续完成。不得借机实现真实播放操作、配置服务地址流程、完整业务页面或媒体会话。
-3. Task 3 最终退出门要求 Compose/UI 自动测试、构建/Lint、静态边界检查、目标设备的 UI 人工验收完成；Task 2 仍需单独保留 BLOCKED 状态。
+3. Task 3 最终验收要求 Compose/UI 自动测试、构建/Lint、静态边界检查和能在目标设备执行的 UI 人工验收有明确结果；物理无可靠 DisplayCutout 的回退校准须作为单独硬件覆盖项记录，不能用其它设备的结果冒充。Task 2 的 mutation/readback 已有真机通过证据；生产 origin 设置 UI 仍留在 Task 6。
 4. 任何 UI 动作一旦需要执行写 API，必须留待对应业务 Task；不能因 App Shell 有播放/暂停图标就发起真实 mutation。
-5. 完成 Task 3 后，Task 4/6 依赖真实 API 的工作仍以 Task 2 未完成的 live-origin/mutation readback 为风险/集成门。到首次真实写场景之前必须确定安全、可逆并有读回证据的测试动作；不可选择破坏曲库或造成意外播放的操作。
+5. Task 4/6 接入真实 API 前，普通 APK 的服务器地址设置与端到端连接流程仍需实现/验证（Task 6）。Task 2 的安全可逆 mutation/readback 已有真机证据；以后若新增真实写场景，仍须选择安全、可逆且有权威读回的测试动作，不能破坏曲库或造成意外播放。
 
 ## 3. 权威合同矩阵
 
@@ -126,13 +124,13 @@ A/B 的顺序、范围、自动化门、实机基线门和完整手动校准门�
 ### Task 3 退出门
 - [x] 合同矩阵均映射到 Batch、自动测试和人工验收证据；未完成的人工门单独标明。
 - [x] 自动化测试、Lint、clean Debug 构建、UI instrumentation 和源码边界扫描通过；最新证据见 [Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。
-- [ ] 用户报告完整真实设备 UI/主题/导航人工验收通过。已有反馈只确认启动/主页、四入口切换/重复选择、返回原根及系统返回；全屏导航已有设备 instrumentation 覆盖，但不能替代用户手动确认。主题模式全覆盖、真实活动状态环视觉/生命周期和物理手动校准仍未确认。
-- [x] Task 2 单独保持 BLOCKED：真实 mutation/readback 与 APK live-origin 未完成；不把该项重命名为 Task 3 UI 失败，也不声称整个客户端可真实遥控服务端。
-- [ ] Task 4/6 开始实际服务集成前，完成 Task 2 遗留真实联调，或在该业务 task 合同中明确安全可逆的补验操作及退出门；不得无记录地跳过。
+- [x] 真机 UI 验收已覆盖四入口/橙色选中态、设置页主题选项、浅/深色切换与恢复跟随系统、状态环生产组件在设备原生分辨率下的位置预览；全屏目的地进退有设备 instrumentation 覆盖。完整主题与导航详情见 `docs/superpowers/reports/2026-10-27-task-3-final-acceptance.md`。
+- [ ] 硬件覆盖余项：无可靠 DisplayCutout 的另一台物理设备/可控条件下，完整手动偏移校准尚未实测；实际共享 mutation 期间环的5秒终态生命周期由确定性自动化测试覆盖，本次没有执行生产操作来造出真实活动，不能声称该真实活动生命周期通过实机验证。
+- [x] Task 2 安全可逆的真实 mutation/readback 已有设备级通过报告。Task 6 开始实际服务配置工作前，仍须实现普通 APK 的服务器地址设置 UI，并验证用户配置 origin 后 HTTP/WebSocket 与共享 Runtime 的完整连接流程；不得把 test instrumentation 的 origin 注入当作该 UI 已交付。
 
 ## 9. 执行约定
 
 - 工作分支：`feature/task-3-native-app-shell`。
-- 唯一实施工作区：`/home/Gold/WorkSpace/MS_remote_for_Android/.worktrees/task-3-native-app-shell`；主工作区留在 Task 2 分支且不作 Task 3 代码更改。
+- 本轮实际实施工作区：`/home/Gold/WorkSpace/MS_remote_for_Android`；本次 `git worktree list` 只返回此工作区，分支为 `feature/task-3-native-app-shell`。
 - 每个 Batch 开始时记录本 Android task 分支 HEAD；遵守固定上游基线规则，不重复查询上游。
 - Batch 只做计划中指定范围；测试先行；每个 Batch 独立提交；记录机器验证命令和结果。不得执行下一个 Batch 的 UI 实现，直至用户另行明确要求。

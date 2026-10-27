@@ -1,6 +1,6 @@
 # Task 3：原生应用壳、导航、主题与通用状态 UI Implementation Plan
 
-> **For agentic workers:** 使用 `superpowers:executing-plans` 按 Batch 实施；每个 Batch 测试先行、单独验证和提交。Task 3 UI 范围内可以实施，不意味着 Task 2 最终集成退出门已通过。
+> **For agentic workers:** 使用 `superpowers:executing-plans` 按 Batch 实施；每个 Batch 测试先行、单独验证和提交。Task 2 的安全可逆 mutation/readback 已另有真机通过证据；Task 3 的 UI-only 验收不代表普通 APK 的生产服务器地址设置/端到端连接流程已交付。
 
 **Goal:** 建立四入口原生导航、共享 App Shell、迷你播放器展示投影、应用内状态环/活动详情、主题和非业务偏好，并始终复用 Task 2 唯一共享运行时。
 
@@ -156,7 +156,7 @@
 
 ## Batch 7：Task 3 集成验证与验收记录
 
-**目标：** 做合同矩阵审查、机器验证和 UI 人工验收记录，明确 Task 2 的遗留门槛。
+**目标：** 做合同矩阵审查、机器验证和 UI 人工验收记录，分别记录已通过的 Task 2 真机 mutation/readback、Task 6 尚需实现的生产 origin 设置 UI，以及 Task 3 的硬件覆盖边界。
 
 **Files:**
 - Review: 全部 Task 3 UI/主题/导航代码及其测试
@@ -165,11 +165,11 @@
 
 - [x] 执行 clean 单测/Lint/Debug 构建，并额外编译、运行 Android instrumentation：`./gradlew --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin connectedDebugAndroidTest`；105/105 单测、SM-G986N Android 13 instrumentation 10/10，退出码 0。日志见 `.superpowers/sdd/2026-10-25-task-3-native-app-shell/task-3-batch7-finalverify.log`。最终文档修改后的 `git diff --check` 在提交前再次执行。
 - [x] 边界审查：app 源码/构建声明未发现 Room/SQLite、WebView、Media3/ExoPlayer；UI 源码未发现新增 runtime/store/controller/coordinator/socket owner、连接启动/origin 修改、mutation submit 或 retryUnknown；未修改 CI workflow。最终文档差异的 `git diff --check` 已于提交前通过（退出码 0）。
-- [x] 更新主计划：Task 3 机器验证结果与未完成的 UI 人工验收单独记录；Task 2 的真实 mutation/readback 与 APK live-origin 继续保持 BLOCKED，不将其伪装为通过。
-- [x] 记录已有用户真机反馈及边界：启动/默认主页、四入口切换、重复选择当前入口、返回原根页面和系统返回已由用户报告通过；用户当时明确“全屏播放器显示：未测”，后续 10/10 instrumentation 覆盖其导航行为但不冒充用户手动验收。主题模式全覆盖、真实活动状态环视觉/生命周期和无可靠挖孔时的物理校准没有完整用户验收反馈，故仍保持未完成。
-- [x] 完成自审、验证报告与 Batch 7 本地提交；遵守用户边界，不调用其他编程代理、不合并 main、不 push、不开始 Task 4。自审不等同于独立审查。
+- [x] 更新主计划：Task 3 机器验证结果与 UI/硬件覆盖边界单独记录。Task 2 的真实 mutation/readback 已于 2026-10-27 通过真机验证（见 `2026-10-27-task-2-live-write-verification.md`）；普通 APK 的生产 origin 设置界面仍属于 Task 6。
+- [x] 记录真机反馈及验收边界：启动/主页、四入口切换、重复选择、返回根页面和系统返回已有用户确认；主题设置控件与导航选中态经 ADB 真机检查，主题的 Follow System/Light/Dark 选择与持久化经 instrumentation 验证，系统设置恢复 Follow System。全屏进退由真机 instrumentation 覆盖；生产真实活动生命周期没有通过真实 mutation 人工触发，仍由确定性测试覆盖。无可靠 DisplayCutout 的第二种物理场景保留为硬件覆盖余项。
+- [x] 完成自审、验证报告与 Batch 7 本地提交；遵守当时的用户边界，不调用其他编程代理；当时未合并 main/push。用户于 2026-10-27 另行明确授权最终验收后合并 main 并同步远端。自审不等同于独立审查。
 
-**Batch 7 执行结果（2026-10-26）：** 全量 clean Gradle 命令 BUILD SUCCESSFUL，105/105 单测、SM-G986N / Android 13 真机 instrumentation 10/10 通过；Lint、Debug APK、Android-test 编译和边界审查通过。APK 为 12,040,311 bytes；完整日志与 SHA-256、warning、未完成人工验收项见 [Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。**退出门区分：** Batch 7 机器验证完成；Task 3 整体仍待用户完整主题/布局验收及真实活动状态环视觉/物理校准验证；Task 2 的真实 mutation/readback 与 APK live-origin 继续 BLOCKED。
+**Batch 7 历史执行结果（2026-10-26）：** 当时的 clean Gradle 命令 BUILD SUCCESSFUL，105/105 单测、SM-G986N / Android 13 真机 instrumentation 10/10 通过；Lint、Debug APK、Android-test 编译和边界审查通过。APK 为 12,040,311 bytes；历史完整证据见 [Batch 7 集成验证报告](../reports/2026-10-26-task-3-batch7-verification.md)。后续 Task 2 真机 mutation/readback 已在 2026-10-27 通过，主题设置控件已补齐并通过真机测试。最新完整验收状态以 [Task 3 最终验收报告](../reports/2026-10-27-task-3-final-acceptance.md) 为准；无可靠 DisplayCutout 的另一种物理设备校准仍列为未覆盖项。
 
 ---
 

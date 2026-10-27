@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
@@ -23,6 +24,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -30,6 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
@@ -78,6 +81,32 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag(tag).assertIsSelected()
         }
         assertSame(runtime, (composeRule.activity.application as MpdServerRemoteApplication).runtime)
+    }
+
+    @Test
+    fun settingsCanSelectAndPersistAllThemePreferences() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("主题").assertIsDisplayed()
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val options = listOf(
+            "theme-option-follow-system" to ThemePreference.FOLLOW_SYSTEM,
+            "theme-option-light" to ThemePreference.LIGHT,
+            "theme-option-dark" to ThemePreference.DARK,
+        )
+
+        options.forEach { (tag, preference) ->
+            composeRule.onNodeWithTag(tag).performClick()
+            composeRule.waitForIdle()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                runBlocking { application.uiPreferences.themePreference.first() } == preference
+            }
+            composeRule.onNodeWithTag(tag).assertIsSelected()
+        }
+
+        runBlocking { application.uiPreferences.setThemePreference(ThemePreference.FOLLOW_SYSTEM) }
     }
 
     @Test
@@ -164,14 +193,16 @@ class AppNavigationUiTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("状态环").assertIsDisplayed()
-        composeRule.onNodeWithTag("status-ring-size-slider").assertIsDisplayed()
-        composeRule.onNodeWithTag("status-ring-line-width-slider").assertIsDisplayed()
-        composeRule.onNodeWithTag("status-ring-horizontal-offset-slider").assertIsDisplayed()
-        composeRule.onNodeWithTag("status-ring-vertical-offset-slider").assertIsDisplayed()
-        composeRule.onNodeWithTag("status-ring-preview").assertIsDisplayed()
-        composeRule.onNodeWithText("1.00×").assertIsDisplayed()
-        composeRule.onNodeWithText("3.0dp").assertIsDisplayed()
-        composeRule.onNodeWithText("恢复默认值").assertIsDisplayed()
+        listOf(
+            "status-ring-size-slider",
+            "status-ring-line-width-slider",
+            "status-ring-horizontal-offset-slider",
+            "status-ring-vertical-offset-slider",
+        ).forEach { tag -> composeRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed() }
+        composeRule.onNodeWithTag("status-ring-preview").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("1.00×").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("3.0dp").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("恢复默认值").performScrollTo().assertIsDisplayed()
         composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
     }
 
@@ -183,23 +214,23 @@ class AppNavigationUiTest {
         val originalSnapshot = runtime.snapshots.state.value
         val originalActivities = runtime.mutations.activities.value
 
-        composeRule.onNodeWithTag("status-ring-size-slider")
+        composeRule.onNodeWithTag("status-ring-size-slider").performScrollTo()
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(1.20f) }
-        composeRule.onNodeWithTag("status-ring-line-width-slider")
+        composeRule.onNodeWithTag("status-ring-line-width-slider").performScrollTo()
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(4.5f) }
-        composeRule.onNodeWithTag("status-ring-horizontal-offset-slider")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-slider").performScrollTo()
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(12f) }
-        composeRule.onNodeWithTag("status-ring-vertical-offset-slider")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-slider").performScrollTo()
             .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(-8f) }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("status-ring-size-value").assertTextEquals("1.20×")
-        composeRule.onNodeWithTag("status-ring-line-width-value").assertTextEquals("4.5dp")
-        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").assertTextEquals("12dp")
-        composeRule.onNodeWithTag("status-ring-vertical-offset-value").assertTextEquals("-8dp")
+        composeRule.onNodeWithTag("status-ring-size-value").performScrollTo().assertTextEquals("1.20×")
+        composeRule.onNodeWithTag("status-ring-line-width-value").performScrollTo().assertTextEquals("4.5dp")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").performScrollTo().assertTextEquals("12dp")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-value").performScrollTo().assertTextEquals("-8dp")
         composeRule.onNodeWithContentDescription(
             "状态环预览；尺寸 1.20×；线宽 4.5dp；水平偏移 12dp；垂直偏移 -8dp",
-        ).assertIsDisplayed()
+        ).performScrollTo().assertIsDisplayed()
         assertEquals("Preview must not mutate the canonical snapshot", originalSnapshot, runtime.snapshots.state.value)
         assertEquals("Preview must not mutate shared activity history", originalActivities, runtime.mutations.activities.value)
         assertSame(runtime, (composeRule.activity.application as MpdServerRemoteApplication).runtime)
@@ -209,20 +240,20 @@ class AppNavigationUiTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("status-ring-size-value").assertTextEquals("1.20×")
-        composeRule.onNodeWithTag("status-ring-line-width-value").assertTextEquals("4.5dp")
-        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").assertTextEquals("12dp")
-        composeRule.onNodeWithTag("status-ring-vertical-offset-value").assertTextEquals("-8dp")
+        composeRule.onNodeWithTag("status-ring-size-value").performScrollTo().assertTextEquals("1.20×")
+        composeRule.onNodeWithTag("status-ring-line-width-value").performScrollTo().assertTextEquals("4.5dp")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").performScrollTo().assertTextEquals("12dp")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-value").performScrollTo().assertTextEquals("-8dp")
 
-        composeRule.onNodeWithText("恢复默认值").performClick()
+        composeRule.onNodeWithText("恢复默认值").performScrollTo().performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("status-ring-size-value").assertTextEquals("1.00×")
-        composeRule.onNodeWithTag("status-ring-line-width-value").assertTextEquals("3.0dp")
-        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").assertTextEquals("0dp")
-        composeRule.onNodeWithTag("status-ring-vertical-offset-value").assertTextEquals("0dp")
+        composeRule.onNodeWithTag("status-ring-size-value").performScrollTo().assertTextEquals("1.00×")
+        composeRule.onNodeWithTag("status-ring-line-width-value").performScrollTo().assertTextEquals("3.0dp")
+        composeRule.onNodeWithTag("status-ring-horizontal-offset-value").performScrollTo().assertTextEquals("0dp")
+        composeRule.onNodeWithTag("status-ring-vertical-offset-value").performScrollTo().assertTextEquals("0dp")
         composeRule.onNodeWithContentDescription(
             "状态环预览；尺寸 1.00×；线宽 3.0dp；水平偏移 0dp；垂直偏移 0dp",
-        ).assertIsDisplayed()
+        ).performScrollTo().assertIsDisplayed()
         assertEquals("Settings controls must never mutate the snapshot", originalSnapshot, runtime.snapshots.state.value)
         assertEquals("Settings controls must never mutate activities", originalActivities, runtime.mutations.activities.value)
     }
