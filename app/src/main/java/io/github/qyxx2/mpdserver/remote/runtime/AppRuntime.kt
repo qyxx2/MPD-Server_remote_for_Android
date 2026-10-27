@@ -30,6 +30,11 @@ class AppRuntime private constructor(
         readState = stateReader,
         scope = scope,
     )
+    /** Shared read-only resource access; origin is resolved from the live runtime for every request. */
+    val reads: RuntimeReadApi by lazy { RuntimeReadApi(
+        originProvider = { realtimeController.currentOrigin() },
+        client = httpClient,
+    ) }
     val mutations: MutationCoordinator by lazy { MutationCoordinator(
         origin = initialOrigin,
         send = { request ->
