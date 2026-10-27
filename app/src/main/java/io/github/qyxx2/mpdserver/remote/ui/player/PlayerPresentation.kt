@@ -13,12 +13,12 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import java.util.Locale
 
 enum class ConfirmedPlaybackStatus { PLAYING, PAUSED, UNKNOWN }
-enum class SongMetadataStatus { AVAILABLE, MISSING, INVALID, OCCURRENCE_MISMATCH }
+enum class SongMetadataStatus { AVAILABLE, MISSING, INVALID, OCCURRENCE_MISMATCH, NOT_CONFIRMED }
 enum class SourceFormatStatus { COMPLETE, PARTIAL, UNKNOWN }
 enum class LyricsResourceStatus { AVAILABLE, MISSING, READ_ERROR, UNKNOWN }
 enum class ArtworkReferenceStatus { REFERENCED, MISSING, UNKNOWN }
 enum class OutputObservationStatus { FRESH, STALE, UNKNOWN, ERROR }
-enum class DacOutputStatus { ACTIVE, INACTIVE, UNAVAILABLE, NOT_PRESENT, STALE, UNKNOWN, ERROR }
+enum class DacOutputStatus { ACTIVE, INACTIVE, UNAVAILABLE, STALE, UNKNOWN, ERROR }
 
 enum class PlayerDiagnostic {
     NO_SNAPSHOT,
@@ -39,6 +39,7 @@ enum class PlayerDiagnostic {
     CURRENT_SONG_MISSING,
     CURRENT_SONG_INVALID,
     CURRENT_SONG_OCCURRENCE_MISMATCH,
+    CURRENT_SONG_NOT_CONFIRMED,
     LYRICS_STATUS_UNKNOWN,
     OUTPUT_INVALID,
     OUTPUT_OBSERVATION_INVALID,
@@ -126,7 +127,6 @@ data class PlayerPresentation(
                 !decodedSong?.songId.isNullOrBlank() &&
                 decodedSong?.songId == current.songId &&
                 observation?.boundQueueItemId == current.queueItemId
-            val selectedSong = decodedSong?.takeIf { songMatchesCurrent }
 
             if (!facts.isSnapshotAvailable) playbackDiagnostics += PlayerDiagnostic.NO_SNAPSHOT
             if (facts.snapshotFreshness != SnapshotFreshness.FRESH || !facts.controlsEligible) {
@@ -217,12 +217,25 @@ data class PlayerPresentation(
                 ActualPlaybackStateDto.paused -> ConfirmedPlaybackStatus.PAUSED
                 else -> ConfirmedPlaybackStatus.UNKNOWN
             }
+            // Web exposes current song media only for an active, fresh, bound observation.
+            val selectedSong = decodedSong?.takeIf { songMatchesCurrent && confirmed }
 
-            val controlsAllowed = confirmed && targetMatchesCurrent
-            val position = observation?.positionSeconds
+            // Match Web capability rules for a confirmed current occurrence:
+            // pause needs an active playing observation; resume/seek need the matching server
+            // target; previous/next additionally require an occurrence on that side of current.
+            val confirmedCurrentPosition = current
+                ?.takeIf { confirmed && !facts.currentOccurrenceAmbiguous }
+                ?.position
+            val queueItems = facts.queue?.items.orEmpty()
+            val canPrevious = confirmedCurrentPosition?.let { position ->
+                queueItems.any { it.position < position }
+            } == true
+            val canNext = confirmedCurrentPosition?.let { position ->
+                queueItems.any { it.position > position }
+            } == true
             val duration = observation?.durationSeconds
-            val seekRangeValid = position != null && position.isFinite() && position >= 0.0 &&
-                duration != null && duration.isFinite() && duration > 0.0 && position <= duration
+            val canSeek = confirmedCurrentPosition != null && targetMatchesCurrent &&
+                duration != null && duration.isFinite() && duration > 0.0
             val songStatus = when {
                 facts.songDecodeStatus == PlayerFacts.SongDecodeStatus.INVALID -> {
                     resourceDiagnostics += PlayerDiagnostic.CURRENT_SONG_INVALID
@@ -235,6 +248,10 @@ data class PlayerPresentation(
                 !songMatchesCurrent -> {
                     resourceDiagnostics += PlayerDiagnostic.CURRENT_SONG_OCCURRENCE_MISMATCH
                     SongMetadataStatus.OCCURRENCE_MISMATCH
+                }
+                !confirmed -> {
+                    resourceDiagnostics += PlayerDiagnostic.CURRENT_SONG_NOT_CONFIRMED
+                    SongMetadataStatus.NOT_CONFIRMED
                 }
                 else -> SongMetadataStatus.AVAILABLE
             }
@@ -263,25 +280,28 @@ data class PlayerPresentation(
             }
 
             val dacState = facts.output?.states?.firstOrNull { it.mode == OutputModeDto.NAS_DAC }
-            val dacStatus = when {
-                outputObservationStatus == OutputObservationStatus.ERROR || facts.outputDecodeFailed ->
-                    DacOutputStatus.ERROR
-                outputObservationStatus == OutputObservationStatus.STALE ->
-                    DacOutputStatus.STALE
-                outputObservationStatus == OutputObservationStatus.UNKNOWN ->
+            val dacStatus = when (outputObservationStatus) {
+                OutputObservationStatus.ERROR -> DacOutputStatus.ERROR
+                OutputObservationStatus.STALE -> DacOutputStatus.STALE
+                OutputObservationStatus.UNKNOWN -> {
+                    if (dacState == null) outputDiagnostics += PlayerDiagnostic.OUTPUT_STATE_MISSING
+                    else if (dacState.stale) outputDiagnostics += PlayerDiagnostic.OUTPUT_STATE_NOT_FRESH
                     DacOutputStatus.UNKNOWN
-                dacState == null -> {
-                    outputDiagnostics += PlayerDiagnostic.OUTPUT_STATE_MISSING
-                    DacOutputStatus.NOT_PRESENT
                 }
-                dacState.stale -> {
-                    outputDiagnostics += PlayerDiagnostic.OUTPUT_STATE_NOT_FRESH
-                    DacOutputStatus.STALE
-                }
-                else -> when (dacState.status) {
-                    OutputStatusDto.ACTIVE -> DacOutputStatus.ACTIVE
-                    OutputStatusDto.INACTIVE -> DacOutputStatus.INACTIVE
-                    OutputStatusDto.UNAVAILABLE -> DacOutputStatus.UNAVAILABLE
+                OutputObservationStatus.FRESH -> when {
+                    dacState == null -> {
+                        outputDiagnostics += PlayerDiagnostic.OUTPUT_STATE_MISSING
+                        DacOutputStatus.UNKNOWN
+                    }
+                    dacState.stale -> {
+                        outputDiagnostics += PlayerDiagnostic.OUTPUT_STATE_NOT_FRESH
+                        DacOutputStatus.STALE
+                    }
+                    else -> when (dacState.status) {
+                        OutputStatusDto.ACTIVE -> DacOutputStatus.ACTIVE
+                        OutputStatusDto.INACTIVE -> DacOutputStatus.INACTIVE
+                        OutputStatusDto.UNAVAILABLE -> DacOutputStatus.UNAVAILABLE
+                    }
                 }
             }
             val outputPresentation = OutputPresentation(
@@ -299,7 +319,7 @@ data class PlayerPresentation(
             return PlayerPresentation(
                 playbackStatus = playbackStatus,
                 actualState = observation?.actualState,
-                businessPlaybackState = facts.businessPlayback?.state,
+                businessPlaybackState = facts.businessPlaybackState,
                 playbackDiagnostics = playbackDiagnostics.toList(),
                 currentOccurrenceId = current?.queueItemId,
                 songStatus = songStatus,
@@ -308,11 +328,12 @@ data class PlayerPresentation(
                 sourceFormat = sourceFormat,
                 output = outputPresentation,
                 controls = PlayerControlCapabilities(
-                    pause = controlsAllowed && observation?.actualState == ActualPlaybackStateDto.playing,
-                    resume = controlsAllowed && observation?.actualState == ActualPlaybackStateDto.paused,
-                    previous = controlsAllowed,
-                    next = controlsAllowed,
-                    seek = controlsAllowed && seekRangeValid,
+                    pause = confirmed && observation?.actualState == ActualPlaybackStateDto.playing,
+                    resume = confirmed && targetMatchesCurrent &&
+                        observation?.actualState == ActualPlaybackStateDto.paused,
+                    previous = canPrevious,
+                    next = canNext,
+                    seek = canSeek,
                 ),
                 resourceDiagnostics = resourceDiagnostics.toList(),
             )
@@ -328,22 +349,28 @@ data class PlayerPresentation(
 
         private fun classifyOutputObservationStatus(facts: PlayerFacts): OutputObservationStatus {
             if (!facts.isSnapshotAvailable) return OutputObservationStatus.UNKNOWN
+            if (facts.outputDecodeFailed || facts.outputObservationDecodeFailed || facts.outputObservation == null) {
+                return OutputObservationStatus.ERROR
+            }
+
+            // Web marks the DAC observation unknown unless both a NAS_DAC state and an observed_at
+            // timestamp exist. The state's own stale bit also affects outputFreshness.
+            val dacState = facts.output?.states?.firstOrNull { it.mode == OutputModeDto.NAS_DAC }
+                ?: return OutputObservationStatus.UNKNOWN
+            val observation = facts.outputObservation
+            if (observation.observedAt.isNullOrBlank() ||
+                observation.freshness == ObservationFreshnessDto.unknown
+            ) return OutputObservationStatus.UNKNOWN
+
             if (facts.snapshotFreshness != SnapshotFreshness.FRESH ||
                 facts.connectionStatus != RuntimeConnectionStatus.CONNECTED ||
-                !facts.isSnapshotGenerationCurrent
+                !facts.isSnapshotGenerationCurrent ||
+                observation.freshness == ObservationFreshnessDto.stale ||
+                dacState.stale
             ) return OutputObservationStatus.STALE
-            if (facts.outputObservationDecodeFailed || facts.outputObservation == null) {
-                return OutputObservationStatus.ERROR
-            }
-            val observation = facts.outputObservation
-            if (!observation.errorCode.isNullOrBlank() || !observation.errorMessage.isNullOrBlank()) {
-                return OutputObservationStatus.ERROR
-            }
-            return when (observation.freshness) {
-                ObservationFreshnessDto.fresh -> OutputObservationStatus.FRESH
-                ObservationFreshnessDto.stale -> OutputObservationStatus.STALE
-                ObservationFreshnessDto.unknown -> OutputObservationStatus.UNKNOWN
-            }
+
+            // error_code/error_message remain visible facts; Web freshness does not reinterpret them.
+            return OutputObservationStatus.FRESH
         }
 
         private fun SongDto?.toSourceFormat(): SourceFormatPresentation {

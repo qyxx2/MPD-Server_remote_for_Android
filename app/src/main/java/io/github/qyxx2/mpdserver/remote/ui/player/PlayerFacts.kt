@@ -4,7 +4,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
 import io.github.qyxx2.mpdserver.remote.protocol.dto.OutputObservationDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.OutputSnapshotDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackObservationDto
-import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackStateDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackStateValue
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSnapshotDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
@@ -14,6 +14,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonObject
 
 /** Read-only extraction of typed facts from the single app-scoped canonical snapshot. */
 data class PlayerFacts(
@@ -22,7 +23,7 @@ data class PlayerFacts(
     val connectionStatus: RuntimeConnectionStatus,
     val isSnapshotGenerationCurrent: Boolean,
     val controlsEligible: Boolean,
-    val businessPlayback: PlaybackStateDto?,
+    val businessPlaybackState: PlaybackStateValue?,
     val businessPlaybackDecodeFailed: Boolean,
     val queue: QueueSnapshotDto?,
     val queueDecodeFailed: Boolean,
@@ -49,7 +50,7 @@ data class PlayerFacts(
                     connectionStatus = state.connectionStatus,
                     isSnapshotGenerationCurrent = false,
                     controlsEligible = false,
-                    businessPlayback = null,
+                    businessPlaybackState = null,
                     businessPlaybackDecodeFailed = false,
                     queue = null,
                     queueDecodeFailed = false,
@@ -68,7 +69,11 @@ data class PlayerFacts(
 
             val json = JsonConfiguration.json
             val wire: StateSnapshotDto = snapshot.wire
-            val businessPlayback = runCatching { json.decodeFromJsonElement<PlaybackStateDto>(wire.playback) }
+            val businessPlaybackState = runCatching {
+                val state = wire.playback.jsonObject["state"]
+                    ?: throw IllegalArgumentException("playback.state is missing")
+                json.decodeFromJsonElement<PlaybackStateValue>(state)
+            }
             val queue = runCatching { json.decodeFromJsonElement<QueueSnapshotDto>(wire.queue) }
             val playbackObservation = runCatching {
                 json.decodeFromJsonElement<PlaybackObservationDto>(wire.playbackObservation)
@@ -98,8 +103,8 @@ data class PlayerFacts(
                 connectionStatus = state.connectionStatus,
                 isSnapshotGenerationCurrent = generationCurrent,
                 controlsEligible = state.controlsEligible,
-                businessPlayback = businessPlayback.getOrNull(),
-                businessPlaybackDecodeFailed = businessPlayback.isFailure,
+                businessPlaybackState = businessPlaybackState.getOrNull(),
+                businessPlaybackDecodeFailed = businessPlaybackState.isFailure,
                 queue = queue.getOrNull(),
                 queueDecodeFailed = queue.isFailure,
                 currentOccurrence = currentItems.singleOrNull(),

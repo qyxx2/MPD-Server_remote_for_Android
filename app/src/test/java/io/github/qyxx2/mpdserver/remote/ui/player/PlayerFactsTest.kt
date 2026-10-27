@@ -28,6 +28,15 @@ class PlayerFactsTest {
         assertNotNull(facts.outputObservation)
     }
 
+    @Test fun decodesBusinessPlaybackStateFromTheCanonicalWebSnapshotShape() {
+        val facts = PlayerFacts.from(PlayerTestFixtures.webState())
+
+        assertEquals("PAUSED", facts.businessPlaybackState?.name)
+        assertFalse(facts.businessPlaybackDecodeFailed)
+        assertEquals("item-a", facts.currentOccurrence?.queueItemId)
+        assertEquals("song-a", facts.currentSong?.songId)
+    }
+
     @Test fun missingSnapshotProducesEmptyFactsWithoutThrowing() {
         val facts = PlayerFacts.from(
             PlayerTestFixtures.state().copy(

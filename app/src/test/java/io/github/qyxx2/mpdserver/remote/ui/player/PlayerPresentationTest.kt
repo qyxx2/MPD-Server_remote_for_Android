@@ -1,7 +1,14 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
+import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
 import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackStateValue
 import io.github.qyxx2.mpdserver.remote.runtime.RuntimeConnectionStatus
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import org.junit.Assert.*
 import org.junit.Test
@@ -13,8 +20,8 @@ class PlayerPresentationTest {
         assertEquals("occurrence-1", confirmed.currentOccurrenceId)
         assertTrue(confirmed.controls.pause)
         assertTrue(confirmed.controls.resume.not())
-        assertTrue(confirmed.controls.previous)
-        assertTrue(confirmed.controls.next)
+        assertFalse(confirmed.controls.previous)
+        assertFalse(confirmed.controls.next)
         assertTrue(confirmed.controls.seek)
 
         val staleObservation = PlayerTestFixtures.observationJson
@@ -89,19 +96,23 @@ class PlayerPresentationTest {
             "\"control_target\":{\"queue_item_id\":\"occurrence-1\",\"token\":\"opaque-token\"}",
             "\"control_target\":{\"queue_item_id\":\"other-occurrence\",\"token\":\"opaque-token\"}",
         )
+        val mismatchedPausedTarget = mismatchedTarget
+            .replace("\"actual_state\":\"playing\"", "\"actual_state\":\"paused\"")
         val withoutTarget = PlayerPresentation.from(
-            PlayerTestFixtures.state(observation = mismatchedTarget),
+            PlayerTestFixtures.state(observation = mismatchedPausedTarget),
         )
-        assertEquals(ConfirmedPlaybackStatus.PLAYING, withoutTarget.playbackStatus)
+        assertEquals(ConfirmedPlaybackStatus.PAUSED, withoutTarget.playbackStatus)
         assertTrue(PlayerDiagnostic.CONTROL_TARGET_MISSING_OR_MISMATCH in withoutTarget.playbackDiagnostics)
         assertFalse(withoutTarget.controls.pause)
+        assertFalse(withoutTarget.controls.resume)
         assertFalse(withoutTarget.controls.previous)
+        assertFalse(withoutTarget.controls.next)
         assertFalse(withoutTarget.controls.seek)
 
         val noDuration = PlayerTestFixtures.observationJson
             .replace("\"duration_seconds\":123.5", "\"duration_seconds\":null")
         val noSeek = PlayerPresentation.from(PlayerTestFixtures.state(observation = noDuration))
-        assertTrue(noSeek.controls.next)
+        assertFalse(noSeek.controls.next)
         assertFalse(noSeek.controls.seek)
     }
 
@@ -183,7 +194,7 @@ class PlayerPresentationTest {
             "\"states\":[]",
         )
         val noDacPresentation = PlayerPresentation.from(PlayerTestFixtures.state(output = noDac))
-        assertEquals(DacOutputStatus.NOT_PRESENT, noDacPresentation.output.dacStatus)
+        assertEquals(DacOutputStatus.UNKNOWN, noDacPresentation.output.dacStatus)
         assertNull(noDacPresentation.output.dacSampleRateHz)
 
         val malformedOutput = PlayerPresentation.from(
@@ -214,6 +225,28 @@ class PlayerPresentationTest {
         assertFalse(stopped.controls.seek)
     }
 
+    @Test fun staleOrStoppedObservationDoesNotProjectTheCanonicalSongAsCurrentlyPlayingMedia() {
+        val staleObservation = PlayerTestFixtures.observationJson
+            .replace("\"actual_freshness\":\"fresh\"", "\"actual_freshness\":\"stale\"")
+        val stale = PlayerPresentation.from(
+            PlayerTestFixtures.state(observation = staleObservation),
+        )
+        assertEquals(ConfirmedPlaybackStatus.UNKNOWN, stale.playbackStatus)
+        assertNull(stale.song)
+        assertEquals(SongMetadataStatus.NOT_CONFIRMED, stale.songStatus)
+        assertEquals(SourceFormatStatus.UNKNOWN, stale.sourceFormat.status)
+        assertEquals(ArtworkReferenceStatus.UNKNOWN, stale.artworkReferenceStatus)
+
+        val stoppedObservation = PlayerTestFixtures.observationJson
+            .replace("\"actual_state\":\"playing\"", "\"actual_state\":\"stopped\"")
+        val stopped = PlayerPresentation.from(
+            PlayerTestFixtures.state(observation = stoppedObservation),
+        )
+        assertEquals(ConfirmedPlaybackStatus.UNKNOWN, stopped.playbackStatus)
+        assertNull(stopped.song)
+        assertEquals(SongMetadataStatus.NOT_CONFIRMED, stopped.songStatus)
+    }
+
     @Test fun ambiguousCurrentOccurrenceAndMismatchedSongMetadataAreNotPresentedAsCurrent() {
         val ambiguousQueue = """{"revision":18,"items":[{"queue_item_id":"occurrence-a","song_id":"song-1","position":0,"source":"MANUAL","playback_context_id":"ctx"},{"queue_item_id":"occurrence-b","song_id":"song-1","position":0,"source":"MANUAL","playback_context_id":"ctx"}]}"""
         val ambiguous = PlayerPresentation.from(
@@ -235,7 +268,7 @@ class PlayerPresentationTest {
         assertNull(mismatched.song)
     }
 
-    @Test fun readErrorLyricsAndOutputObservationErrorRemainExplicit() {
+    @Test fun readErrorLyricsRemainExplicitAndFreshOutputObservationRetainsWebFreshnessSemantics() {
         val readErrorLyrics = PlayerTestFixtures.songJson.replace(
             "\"lyrics_status\":\"available\"", "\"lyrics_status\":\"read_error\"",
         )
@@ -245,13 +278,167 @@ class PlayerPresentationTest {
         assertEquals(LyricsResourceStatus.READ_ERROR, lyrics.song?.lyricsStatus)
         assertEquals("[00:01.00]Line", lyrics.song?.lyrics)
 
-        val failedOutputObservation = PlayerTestFixtures.outputObservationJson
+        val failedOutputObservation = PlayerTestFixtures.webOutputObservationJsonForTest()
             .replace("\"error_code\":null", "\"error_code\":\"OUTPUT_READ_FAILED\"")
         val output = PlayerPresentation.from(
-            PlayerTestFixtures.state(outputObservation = failedOutputObservation),
+            PlayerTestFixtures.webState(outputObservation = failedOutputObservation),
         )
-        assertEquals(OutputObservationStatus.ERROR, output.output.observationStatus)
-        assertEquals(DacOutputStatus.ERROR, output.output.dacStatus)
-        assertNull(output.output.dacSampleRateHz)
+        assertEquals(OutputObservationStatus.FRESH, output.output.observationStatus)
+        assertEquals(DacOutputStatus.ACTIVE, output.output.dacStatus)
+        assertEquals("OUTPUT_READ_FAILED", output.output.errorCode)
+    }
+
+    @Test fun canonicalWebSnapshotAgreesOnPlaybackFactsAndQueueCapabilities() {
+        val result = PlayerPresentation.from(PlayerTestFixtures.webState())
+        assertEquals(PlaybackStateValue.PAUSED, result.businessPlaybackState)
+        assertEquals(ConfirmedPlaybackStatus.PAUSED, result.playbackStatus)
+        assertFalse(result.controls.pause)
+        assertTrue(result.controls.resume)
+        assertFalse(result.controls.previous)
+        assertTrue(result.controls.next)
+        assertFalse(result.controls.seek)
+        assertEquals(OutputObservationStatus.FRESH, result.output.observationStatus)
+        assertEquals(DacOutputStatus.ACTIVE, result.output.dacStatus)
+    }
+
+    @Test fun androidProjectionMatchesWebPlayerFactsOracleAcrossCanonicalAndDegradedSnapshots() {
+        val cases = JsonConfiguration.json
+            .parseToJsonElement(PlayerTestFixtures.webOracleCasesJson())
+            .jsonArray
+
+        for (case in cases) {
+            val root = case.jsonObject
+            val name = root.getValue("name").jsonPrimitive.content
+            val writable = root.getValue("writable").jsonPrimitive.boolean
+            val expected = root.getValue("expected").jsonObject
+            val state = PlayerTestFixtures.webStateFromSnapshot(
+                snapshotJson = root.getValue("snapshot").toString(),
+                writable = writable,
+            )
+            val actual = PlayerPresentation.from(state)
+            val expectedFreshness = expected.getValue("outputFreshness").jsonPrimitive.content
+
+            assertEquals("$name: bound", expected.getValue("bound").jsonPrimitive.boolean,
+                actual.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN)
+            assertEquals("$name: song identity", expected["songId"]?.jsonPrimitive?.contentOrNull,
+                actual.song?.songId)
+            assertEquals("$name: output freshness", expectedFreshness,
+                actual.output.observationStatus.name.lowercase(java.util.Locale.ROOT))
+
+            val expectedCapabilities = expected.getValue("capabilities").jsonObject
+            assertEquals("$name: pause", expectedCapabilities.getValue("pause").jsonPrimitive.boolean,
+                actual.controls.pause)
+            assertEquals("$name: resume", expectedCapabilities.getValue("resume").jsonPrimitive.boolean,
+                actual.controls.resume)
+            assertEquals("$name: seek", expectedCapabilities.getValue("seek").jsonPrimitive.boolean,
+                actual.controls.seek)
+            assertEquals("$name: next", expectedCapabilities.getValue("next").jsonPrimitive.boolean,
+                actual.controls.next)
+            assertEquals("$name: previous", expectedCapabilities.getValue("previous").jsonPrimitive.boolean,
+                actual.controls.previous)
+
+            val expectedSongFormat = expected["sourceFormat"]
+            if (expectedSongFormat == null || expectedSongFormat.toString() == "null") {
+                assertNull("$name: current song is not confirmed", actual.song)
+            } else {
+                val format = expectedSongFormat.jsonObject
+                assertNotNull("$name: canonical current song", actual.song)
+                assertEquals("$name: source codec", format["codec"]?.jsonPrimitive?.contentOrNull,
+                    actual.sourceFormat.codec)
+                assertEquals("$name: source bit depth", format["bitDepth"]?.jsonPrimitive?.intOrNull,
+                    actual.sourceFormat.bitDepth)
+                assertEquals("$name: source rate", format["sampleRateHz"]?.jsonPrimitive?.intOrNull,
+                    actual.sourceFormat.sampleRateHz)
+                assertEquals("$name: source channels", format["channelCount"]?.jsonPrimitive?.intOrNull,
+                    actual.sourceFormat.channelCount)
+            }
+
+            val expectedDac = expected["dacOutput"]
+            if (expectedDac == null || expectedDac.toString() == "null") {
+                assertEquals("$name: absent DAC state is unknown", DacOutputStatus.UNKNOWN, actual.output.dacStatus)
+            } else {
+                val dac = expectedDac.jsonObject
+                val expectedDacStatus = when (expectedFreshness) {
+                    "stale" -> DacOutputStatus.STALE
+                    "unknown" -> DacOutputStatus.UNKNOWN
+                    else -> DacOutputStatus.valueOf(dac.getValue("status").jsonPrimitive.content)
+                }
+                assertEquals("$name: DAC status", expectedDacStatus, actual.output.dacStatus)
+                if (expectedFreshness == "fresh") {
+                    assertEquals("$name: DAC format", dac["format"]?.jsonPrimitive?.contentOrNull,
+                        actual.output.dacFormat)
+                    assertEquals("$name: DAC rate", dac["sampleRate"]?.jsonPrimitive?.intOrNull,
+                        actual.output.dacSampleRateHz)
+                    assertEquals("$name: DAC depth", dac["bitDepth"]?.jsonPrimitive?.intOrNull,
+                        actual.output.dacBitDepth)
+                    assertEquals("$name: DAC channels", dac["channels"]?.jsonPrimitive?.intOrNull,
+                        actual.output.dacChannels)
+                } else {
+                    // Android intentionally suppresses old output numbers when their observation is stale/unknown.
+                    assertNull("$name: stale DAC format suppressed", actual.output.dacFormat)
+                    assertNull("$name: stale DAC rate suppressed", actual.output.dacSampleRateHz)
+                    assertNull("$name: stale DAC depth suppressed", actual.output.dacBitDepth)
+                    assertNull("$name: stale DAC channels suppressed", actual.output.dacChannels)
+                }
+            }
+        }
+    }
+
+    @Test fun queueCapabilitiesFollowQueueOccurrencesAndDoNotRequireControlTargetForNextPrevious() {
+        val obs = PlayerTestFixtures.webObservationJsonForTest()
+
+        val withoutTarget = PlayerPresentation.from(
+            PlayerTestFixtures.webState(
+                observation = obs.replace(
+                    "\"control_target\":{\"queue_item_id\":\"item-a\",\"token\":\"fixture-opaque-token\"}",
+                    "\"control_target\":null",
+                ),
+            ),
+        )
+        assertFalse(withoutTarget.controls.resume)
+        assertTrue(withoutTarget.controls.next)
+        assertFalse(withoutTarget.controls.previous)
+
+        val oneItemQueue = """{"revision":7,"items":[{"queue_item_id":"item-a","song_id":"song-a","position":0,"source":"MANUAL","playback_context_id":"context-a"}]}"""
+        val oneItem = PlayerPresentation.from(
+            PlayerTestFixtures.webState(queue = oneItemQueue),
+        )
+        assertFalse(oneItem.controls.next)
+        assertFalse(oneItem.controls.previous)
+    }
+
+    @Test fun webSeekCapabilityOnlyRequiresAnActiveTargetAndPositiveDuration() {
+        val observation = PlayerTestFixtures.webObservationJsonForTest()
+            .replace("\"position_seconds\":37.0", "\"position_seconds\":null")
+            .replace("\"duration_seconds\":null", "\"duration_seconds\":180")
+        val result = PlayerPresentation.from(
+            PlayerTestFixtures.webState(observation = observation),
+        )
+        assertTrue(result.controls.seek)
+    }
+
+    @Test fun outputFreshnessRequiresAStateAndObservationTimestampAndHonorsStateStaleness() {
+        val noOutput = PlayerPresentation.from(
+            PlayerTestFixtures.webState(output = """{"states":[],"last_request":null}"""),
+        )
+        assertEquals(OutputObservationStatus.UNKNOWN, noOutput.output.observationStatus)
+        assertEquals(DacOutputStatus.UNKNOWN, noOutput.output.dacStatus)
+
+        val noTimestamp = PlayerPresentation.from(
+            PlayerTestFixtures.webState(
+                outputObservation = PlayerTestFixtures.webOutputObservationJsonForTest()
+                    .replace("\"observed_at\":\"2026-10-09T08:00:00Z\"", "\"observed_at\":null"),
+            ),
+        )
+        assertEquals(OutputObservationStatus.UNKNOWN, noTimestamp.output.observationStatus)
+        assertEquals(DacOutputStatus.UNKNOWN, noTimestamp.output.dacStatus)
+
+        val staleOutputState = PlayerPresentation.from(
+            PlayerTestFixtures.webState(
+                output = PlayerTestFixtures.webOutputJsonForTest().replace("\"stale\":false", "\"stale\":true"),
+            ),
+        )
+        assertEquals(OutputObservationStatus.STALE, staleOutputState.output.observationStatus)
+        assertEquals(DacOutputStatus.STALE, staleOutputState.output.dacStatus)
     }
 }
