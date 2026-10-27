@@ -26,6 +26,7 @@ fun ArtworkStage(
     bitmap: ImageBitmap?,
     placeholderLabel: String,
     modifier: Modifier = Modifier,
+    dismissGestureModifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().testTag("player-artwork-bounds")) {
         val artworkSide = calculateArtworkSideDp(
@@ -36,6 +37,7 @@ fun ArtworkStage(
             modifier = Modifier
                 .size(artworkSide)
                 .align(Alignment.Center)
+                .then(dismissGestureModifier)
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .testTag("player-artwork-stage"),

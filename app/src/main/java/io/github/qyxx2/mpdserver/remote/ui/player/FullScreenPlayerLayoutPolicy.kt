@@ -27,3 +27,48 @@ internal object FullScreenExitGesturePolicy {
         deltaY >= thresholdPx &&
         deltaY > abs(deltaX)
 }
+
+/** Pure transform policy for the player-only interactive dismissal and mini-player expansion. */
+internal object FullScreenPlayerDismissPolicy {
+    fun dragProgress(offsetPx: Float, screenHeightPx: Float): Float {
+        if (!offsetPx.isFinite() || !screenHeightPx.isFinite() || screenHeightPx <= 0f) return 0f
+        return (offsetPx / screenHeightPx).coerceIn(0f, 1f)
+    }
+
+    fun shouldDismiss(offsetPx: Float, screenHeightPx: Float, minimumDistancePx: Float): Boolean {
+        if (!offsetPx.isFinite() || !screenHeightPx.isFinite() || !minimumDistancePx.isFinite()) return false
+        if (screenHeightPx <= 0f || minimumDistancePx <= 0f) return false
+        return offsetPx >= maxOf(minimumDistancePx, screenHeightPx * 0.18f)
+    }
+
+    fun backdropBlurDp(
+        entryProgress: Float,
+        offsetPx: Float,
+        screenHeightPx: Float,
+        maximumBlurDp: Float,
+    ): Float {
+        val entry = entryProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        val blur = maximumBlurDp.takeIf(Float::isFinite)?.coerceAtLeast(0f) ?: 0f
+        return blur * entry * (1f - dragProgress(offsetPx, screenHeightPx))
+    }
+
+    fun topCornerRadiusDp(entryProgress: Float, offsetPx: Float, screenHeightPx: Float): Float {
+        val entry = entryProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        val progress = dragProgress(offsetPx, screenHeightPx)
+        val entryRadius = 14f * (1f - entry)
+        val dragRadius = 32f * (progress / 0.12f).coerceIn(0f, 1f)
+        return maxOf(entryRadius, dragRadius)
+    }
+
+    fun entryVerticalScale(entryProgress: Float, collapsedHeightPx: Float, screenHeightPx: Float): Float {
+        val progress = entryProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 1f
+        if (!collapsedHeightPx.isFinite() || !screenHeightPx.isFinite() || screenHeightPx <= 0f) return 1f
+        val collapsed = (collapsedHeightPx / screenHeightPx).coerceIn(0.01f, 1f)
+        return collapsed + (1f - collapsed) * progress
+    }
+
+    fun entryHorizontalScale(entryProgress: Float): Float {
+        val progress = entryProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 1f
+        return 0.975f + 0.025f * progress
+    }
+}

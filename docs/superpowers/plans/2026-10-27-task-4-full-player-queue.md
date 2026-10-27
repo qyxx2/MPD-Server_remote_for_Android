@@ -151,7 +151,7 @@
 - FullScreenPlayerScreen receives the same AppRuntime/read-only state and typed presentation through parameters; it never constructs an owner.
 - 在 `AppDestination` 中新增 `QUEUE` 全屏二级 destination，不能加入 `rootDestinations`；播放器与 Queue 共用底部入口和同一 Runtime。底部中间入口从 Queue 返回正在播放目的地，右侧入口进入 Queue，左侧入口表示 DAC/output details。中间图标必须是与播放/暂停不同的波形/均衡器式图形；三个图标无底框且只有当前入口使用强调色，触控区域至少 48dp。
 - 艺术家/专辑点击产生明确的 `PlayerEntityNavigationRequest(type, id, displayName)`；只将路由请求传给应用导航边界。不得在 Task 4 复制 Task 5 的列表或集合浏览。
-- 顶部退出 pointer region 位于 WindowInsets/DisplayCutout 计算的应用内容顶部带，不含实际系统状态栏；仅该区域的主要垂直向下拖动退出。点击封面切换模式由后续 Batch 4 接入；seek/Queue/行控件优先级不得被父手势拦截。
+- Player 的 dismiss pointer region 覆盖 WindowInsets/DisplayCutout 计算后的安全内容顶部带和专辑封面图像本身；不覆盖曲目信息文本/未来歌词区域、进度条、播放控制或底部导航。仅主要向下 vertical drag 关闭，普通 tap 不触发关闭，歌词 tap 行为仍归 Batch 4。全屏 player layer 整体随手指位移，低于阈值/ACTION_CANCEL 回到原位，超过阈值动画离屏；两个上边角随拖动增加到最大 32dp，底层根页面模糊程度随位移逐渐减小。进度条/控制/底部入口不属于 gesture region。Queue 仍仅使用安全内容顶部手势带，正文下拉/seek/Queue 行控件优先级不得被抢夺。
 
 **Steps：**
 - [x] 先新增 Compose 布局/语义测试，断言 B 方向层级、标题/艺术家/专辑顺序、底部三个图标的独立语义、48dp 热区、无顶栏切换/收起按钮、无假封面数据、原四个 rootDestinations 顺序不变、QUEUE 不成为 root tab，并新增顶部手势区域判定测试。
@@ -163,6 +163,39 @@
 - [x] 按用户要求，将 Batch 2 与先前未提交的 MS 服务器地址设置及相关合同/验证文档一并提交；二者共用 `AppNavHost`、`MpdServerRemoteApplication`，避免拆分造成不完整提交。提交后确认工作区干净。
 
 **退出门：** 封面模式布局与导航符合视觉合同；没有假媒体数据或额外顶部控件；顶部退出与 Android 系统手势区隔开；artist/album 请求边界完成。
+
+### Batch 2 corrective follow-up — player dismiss and mini-player expansion (2026-10-27)
+
+**范围只修正 B2 已有的全屏页面导航/手势，不开启 B3/B4 或 Queue 主体实现。**
+
+- Player dismiss gesture 覆盖安全内容顶部带和专辑封面图像本身，不覆盖曲目信息文本/未来 B4 歌词区域、进度条、播放控制和底部导航；普通 tap 不触发关闭，预留未来 B4 封面点击切歌词的 tap 语义但不实现歌词。
+- 全屏页面图层整体垂直跟手。release 距离达到 `max(120dp, viewportHeight × 18%)` 才离屏关闭；未达到或 ACTION_CANCEL 则用无回弹 spring 恢复。下滑中顶部圆角最多 32dp，底层当前根页面从 18dp blur 随拖动逐渐恢复清晰；关闭完成时底层为正常清晰状态。
+- 根页面从同一 AppShell/RootNavigationBar/MiniPlayerPresentation 与共享 Runtime 快照显示为仅视觉 backdrop，屏蔽交互语义；不创建额外 runtime/store/network/mutation owner。点击 mini-player 时，全屏图层约 250ms 从迷你条所在的下方区域展开，不做整页 alpha fade。Queue 仍沿用顶部手势带语义。
+- [x] **TDD / 单测：** 先新增 `FullScreenPlayerGestureTest` 的拖动进度、blur、圆角、阈值和进场缩放 policy 测试；RED 记录在 `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-motion-correction-red.log`，GREEN 在 `b2-motion-correction-focused.log`。
+- [x] **设备 instrumentation：** SM-G986N / Android 13 的 Player/Queue navigation 与 presentation 共 7 项通过；覆盖专辑封面起手长下滑关闭、短拖与普通 tap 不关闭、Player 与 Queue 原顶部关闭、共享 Runtime/根 chrome 边界。结果在 `b2-motion-correction-device-tests-final2.log`。
+- [x] **构建、Lint 与安装：** `./gradlew --offline --no-daemon testDebugUnitTest lintDebug compileDebugAndroidTestKotlin assembleDebug`；以及 `adb install -r` 后检查 DataStore。不得写真实播放/Queue 状态。
+
+### Batch 2 corrective follow-up — full-screen blurred artwork background (2026-10-27)
+
+**原 B2 漏项，现在补齐，不留给后续批次。** 产品工程规格 §9 已要求整个全屏 Player 使用当前已确认专辑图的高斯模糊背景与主题蒙版。原 B2 实现只有下滑关闭时的“根页面背景解模糊”层，播放器自身缺少封面模糊背景；这属于漏实现，而非计划留到后续批次。
+
+- [x] 增加 `PlayerArtworkBackdrop`，作为全屏播放器最底层视觉背景覆盖整个 Player 内容区域，不参与测量/布局，也不接收触摸；清晰封面仍作为前景保持原样。
+- [x] 背景图片只能从同一 fresh/confirmed PlayerPresentation 的当前 song/artwork 资源加载结果生成；解码后在后台线程生成低分辨率高斯模糊图。前景与背景按同一曲目 identity 原子更新，切歌/资源身份变化先清除旧图，迟到/取消响应不得把旧封面设为新背景。
+- [x] 使用纯软件的下采样 + separable Gaussian kernel，保证 minSdk 26 可用，不使用 RenderScript、新依赖或 API 31-only `Modifier.blur` 作为唯一实现。
+- [x] 浅/深主题分别叠加主题背景色蒙版，以压低图像对比同时保留柔和色彩。没有可用封面时使用 app 内置的低细节渐变占位背景，再叠加同一主题蒙版；不拿 Queue 中其他歌曲/最后一次封面充当背景。
+- [x] Player destination 的外层 Surface 改为透明，避免原本不透明的主题背景遮住整页模糊图片；这不改变 Queue 的表面颜色和其背景规则。
+- [x] 单测覆盖背景下采样尺寸与主题蒙版选择；实机 Compose 测试覆盖背景图层、缺图占位、蒙版与整页层级，同时保留原手势测试。
+- [x] 验证 `testDebugUnitTest lintDebug compileDebugAndroidTestKotlin assembleDebug`、全屏播放器相关真机 instrumentation、overlay install 与 DataStore 原样保留。记录见 `b2-artwork-backdrop-focused.log` 及后续最终日志。
+
+### Batch 2 corrective follow-up — full-window edge-to-edge player motion (2026-10-27)
+
+**根因确认：** `MainActivity` 原本已通过 `WindowCompat.setDecorFitsSystemWindows(window, false)` 启用 edge-to-edge，且状态栏为透明。问题出在 `AppNavHost` 把完整 Player motion layer 放在 `.padding(safeContentPadding)` 内，导致真机测得 layer 起点为 `y=73px`（状态栏 inset），所以顶部透明系统栏下面的画布与手势层没有随 Player 一起移动。这不是缺少 edge-to-edge 配置，而是动画层级放错。
+
+- [x] 将 Player 路由运动层提升到全窗口尺寸，覆盖窗口物理顶部到底部；根页面 backdrop 与输入遮罩仍留在 safe-content 容器内，避免拦截实际状态栏/挖孔区触摸。
+- [x] 将实际 `safeContentPadding` 下移到全屏 Player 的前景 Column，保证艺术家/封面信息/进度/控制/底部入口及顶部退出带仍避开真实系统栏 Insets。背景与圆角/位移共用同一个 full-window graphics layer。
+- [x] 增加真实 `MainActivity` instrumentation：断言动画层从 y=0 延伸到窗口底部、封面背景从 y=0 开始、手势带起点等于 Android 当前安全 top inset；手势带内短拖时检查完整 motion layer 的 top 同步向下移动，松手后回到 y=0。
+- [x] TDD RED 真实设备日志 `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-edge-to-edge-red.log` 证实旧层范围 `Rect.fromLTRB(0.0, 73.0, 1080.0, 2400.0)`，状态栏下面那段被排除；第一次布局 GREEN 为 `b2-edge-to-edge-green.log`，含短拖与恢复断言的最终设备测试为 `b2-edge-to-edge-gesture-final.log`（SM-G986N / Android 13，2 tests passed）。
+- [x] 完成全量 unit/Lint/AndroidTest 编译、既有 Player/Queue 手势回归、debug APK 安装与 Insets preference 保留检查；结果已写入 B2 report 和 progress ledger。设备回归 `b2-edge-to-edge-device-regression.log`（10/10 通过）；完整本地验证 `b2-edge-to-edge-finalverify-rerun.log`（163 单测通过，Lint/AndroidTest 编译通过）。Android 系统图标/通知栏手势仍归系统管理；移动的是透明系统栏下方的完整应用画布。
 
 ## Batch 3：共享播放时钟、进度草稿和播放操作
 

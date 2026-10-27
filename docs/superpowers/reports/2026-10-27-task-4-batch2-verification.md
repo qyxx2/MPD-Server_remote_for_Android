@@ -43,3 +43,50 @@ No commit was created in this run. The worktree already contained the earlier MS
 ## Explicit exclusions
 
 No Batch 3 playback controls/clock/seek mutation; no Batch 4 lyrics presentation/gestures; no Batch 5 Queue/Played state, history paging or row actions; no DAC writes or hardware claims; no server-repository changes. Batch 2 does not claim complete end-to-end equivalence for realtime lifecycle/mutation recovery or physical audio.
+
+## Corrective follow-up: interactive player dismissal and mini-player expansion — 2026-10-27
+
+This follow-up corrects the B2 interaction layer without opening Batch 3, Batch 4, or Batch 5:
+
+- Expanded the Player's downward-drag recognition from the 64dp top band to the artwork image itself. Track-identity text, future lyrics area, progress row, playback controls, and bottom navigation remain outside the gesture region. Queue's top-band-only exit behavior is unchanged.
+- The whole Player destination now tracks the accumulated downward finger delta. A gesture released below `max(120dp, 18% of the content viewport)` or cancelled animates back; a qualified drag animates the complete player layer offscreen before returning to the previously active root destination.
+- The top two corners round up to 32dp while dragging. The underlying root shell is rendered as a non-interactive visual backdrop from the same app-owned presentation and Runtime; its blur decreases linearly with drag progress and reaches zero after the player leaves the screen.
+- Opening the Player from the mini-player expands the full-player layer vertically around the lower mini-player region over 250ms, paired with backdrop blur. No whole-screen alpha-fade transition is used. Ordinary artwork taps are not turned into dismiss gestures; lyrics remain unimplemented and out of scope.
+- Unit and instrumentation coverage now includes the pure drag/blur/radius/entry-transform policy, artwork-origin long downward dismissal, short drag release restoring the Player, plain artwork tap not dismissing, previous top-band Player exit, and existing Queue top-band exit.
+
+### Corrective verification
+
+- Final target-device instrumentation: **7 tests passed, 0 failures/errors/skips** on SM-G986N / Android 13. XML: `app/build/outputs/androidTest-results/connected/debug/TEST-SM-G986N - 13-_app-.xml`; Gradle log: `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-motion-correction-device-tests-final2.log`.
+- Covered dismiss from album art; short artwork drag returns to Player; plain artwork tap does not dismiss; existing Player/Queue top-band exit behavior; root backdrop’s measured bounds; artist/album callbacks and presentation layout.
+- Focused policy unit tests passed in `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-motion-correction-focused.log`. Final comprehensive command `./gradlew --offline --no-daemon testDebugUnitTest lintDebug compileDebugAndroidTestKotlin assembleDebug`: **BUILD SUCCESSFUL**, 161 unit tests passed, 0 failures/errors/skips; lint had no errors and AndroidTest sources compiled. Log: `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-motion-correction-finalverify.log`.
+- Final overlaid debug APK SHA-256: `305c592195f34207d876a08856d810dfea196f48ab624f1bba60a8d046067282`. `git diff --check` passed; generated `.kotlin/` scratch data was removed. Existing changes remain uncommitted on `task4`.
+- `adb install -r app/build/outputs/apk/debug/app-debug.apk` returned `Success`. DataStore SHA-256 before/after was `86f0fc14d00b146e90ec67736c0103fbeffe9a57ef5309fb2f44aa1460e1666c`; `cmp` passed, confirming the existing MS server origin preferences remained unchanged.
+- `git diff --check` passed. No playback, Queue, DAC or other server mutation was issued. The current root/backdrop uses the existing app-owned presentation and Runtime; there is no new playback state owner. Tap-to-lyrics remains intentionally unimplemented.
+
+
+## Corrective follow-up: full-screen blurred artwork backdrop — 2026-10-27
+
+The originally implemented B2 Player had not implemented the product-spec requirement in `docs/superpowers/specs/2026-10-24-android-client-product-and-engineering-spec.md` §9: a Gaussian-blurred background derived from the currently confirmed artwork, with a theme-specific contrast veil across the entire full-screen Player. The only blur originally present belonged to the root page behind an interactively dismissed Player. This was a B2 omission, not work intentionally assigned to a later batch; it is now implemented here.
+
+- Added `PlayerArtworkBackdrop` as a full-size, non-interactive background layer beneath the whole Player UI. The foreground album art remains sharp and uses its existing responsive stage.
+- Blurred background is derived only from the confirmed current song's existing artwork resource. Foreground and blurred versions are produced off the main thread and assigned together for that song identity; an identity change clears old art, and cancellation/late results are not used as a new track's background.
+- The blur uses a downsampled bitmap and separable Gaussian convolution in software, keeping the implementation available from minSdk 26 without RenderScript, a new dependency, or relying exclusively on API 31 `Modifier.blur`.
+- A light/dark theme-adaptive mask protects foreground contrast. When there is no valid artwork, the app displays a soft app-owned gradient placeholder behind the same theme mask; it does not reuse an unrelated/last-seen song or Queue artwork.
+- The full-screen Player's wrapping Surface is now transparent so this backdrop can be seen across the complete Player content area; Queue remains on its current themed surface.
+- New unit policy tests cover image downsample sizing and mask selection. Compose instrumentation asserts the entire backdrop layer, no-art fallback and theme veil are present while existing artwork-swipe/tap and Queue exit tests remain active.
+- Focused policy tests: `b2-artwork-backdrop-focused.log`. Final comprehensive build and real-device tests, along with overlay/DataStore checks, are recorded in the final section after validation.
+
+
+## Corrective follow-up: edge-to-edge full-window Player motion — 2026-10-27
+
+The Player dismissal animation initially did not include the transparent status-bar area in its moving canvas. This was a layout hierarchy regression, not a missing edge-to-edge window setup: `MainActivity` already uses `WindowCompat.setDecorFitsSystemWindows(window, false)` and transparent system-bar colors. On SM-G986N / Android 13, a new failing instrumentation assertion measured the old Player motion layer as `Rect.fromLTRB(0.0, 73.0, 1080.0, 2400.0)`; the layer was nested inside a parent with `safeContentPadding`, so its top edge started 73px below the physical window top.
+
+- Moved only the Player's animated motion layer to the full-window root so its canvas, background, upper corners, and foreground move together from y=0 to the physical window bottom.
+- Applied the same Android-reported safe-content insets to the Player's foreground Column instead of the animated outer layer. The exit gesture band therefore starts below the actual status-bar/display-cutout safe inset, while artwork/title/progress/controls/footer keep their safe positions.
+- Kept the previous root backdrop and its input shield inside the safe-content region. The shield does not cover the actual status-bar/cutout band, preserving Android's notification-shade/system gesture ownership. The system status icons remain OS overlays; the corrected moving element is the full-window app canvas behind the transparent bars.
+- Extended `MainActivityEdgeToEdgeUiTest` to assert the full-window motion-layer bounds, artwork backdrop top edge, exact inset alignment of the gesture band, active short-drag movement of the full canvas, and return to y=0 after release.
+- TDD RED evidence: `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-edge-to-edge-red.log` failed on the old y=73px bounds as expected. GREEN and short-drag restore evidence: `b2-edge-to-edge-gesture-final.log`.
+- Real-device regression on SM-G986N / Android 13 for MainActivity edge-to-edge, Player navigation, Player presentation and artwork backdrop: **10 instrumentation tests passed, 0 failures/errors/skips**. Log: `b2-edge-to-edge-device-regression.log`; result XML `app/build/outputs/androidTest-results/connected/debug/TEST-SM-G986N - 13-_app-.xml`.
+- Local comprehensive verification `./gradlew --offline --no-daemon testDebugUnitTest lintDebug compileDebugAndroidTestKotlin assembleDebug`: **BUILD SUCCESSFUL**, 163 unit tests passed, 0 failures/errors/skips, lint had no errors, AndroidTest sources compiled. Log: `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b2-edge-to-edge-finalverify-rerun.log`. The first comprehensive attempt had one existing intermittent DataStore recreation test failure (“multiple DataStores active for the same file”); that test passed when rerun alone (`b2-edge-to-edge-datastore-flake.log`) and the subsequent full rerun passed all 163 tests.
+- Installed the rebuilt debug APK on the same device: `adb install -r app/build/outputs/apk/debug/app-debug.apk` returned `Success`. The stored UI preferences SHA-256 stayed `86f0fc14d00b146e90ec67736c0103fbeffe9a57ef5309fb2f44aa1460e1666c` before and after installation. APK SHA-256: `ab987a21351eb5373673d1042163c6746bc876adf612f6b57ea84d25cb06aaed`.
+- `git diff --check`: passed. Changes remain uncommitted on `task4`; no playback, Queue or server write operation was performed.

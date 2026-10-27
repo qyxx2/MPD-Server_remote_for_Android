@@ -58,6 +58,10 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.waitForIdle()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-artwork-backdrop-theme-mask").assertIsDisplayed()
+        val backdropBounds = composeRule.onNodeWithTag("full-screen-root-backdrop").fetchSemanticsNode().boundsInRoot
+        assertTrue("root backdrop should remain laid out beneath the player", backdropBounds.width > 0f && backdropBounds.height > 0f)
         composeRule.onNodeWithTag("full-screen-exit-gesture-band").assertIsDisplayed()
         composeRule.onNodeWithTag("player-bottom-now-playing").assertIsSelected()
         composeRule.onNodeWithTag("player-progress-track").assertIsDisplayed()
@@ -89,6 +93,49 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
+    fun downwardSwipeStartingOnArtworkDismissesPlayerToPreviousRoot() {
+        launchNavigation()
+        composeRule.onNodeWithTag("mini-player-body").performClick()
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        composeRule.onNodeWithTag("player-artwork-stage").assertIsDisplayed()
+
+        val swipeDistancePx = with(composeRule.density) { 280.dp.toPx() }
+        composeRule.onNodeWithTag("player-artwork-stage").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + swipeDistancePx), 180L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+    }
+
+    @Test
+    fun aShortDownwardDragOnArtworkRestoresThePlayerInsteadOfDismissing() {
+        launchNavigation()
+        composeRule.onNodeWithTag("mini-player-body").performClick()
+        composeRule.waitForIdle()
+
+        // A plain press/release on artwork must remain a tap, not a dismiss gesture.
+        composeRule.onNodeWithTag("player-artwork-stage").performTouchInput {
+            down(center)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+
+        val shortDistancePx = with(composeRule.density) { 48.dp.toPx() }
+        composeRule.onNodeWithTag("player-artwork-stage").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + shortDistancePx), 180L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        composeRule.onNodeWithTag("player-artwork-stage").assertIsDisplayed()
+    }
+
+    @Test
     fun downwardSwipeFromAppContentTopBandExitsToThePreviousRoot() {
         launchNavigation()
         val application = composeRule.activity.application as MpdServerRemoteApplication
@@ -96,7 +143,7 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.onNodeWithTag("mini-player-body").performClick()
         composeRule.waitForIdle()
 
-        val swipeDistancePx = with(composeRule.density) { 128.dp.toPx() }
+        val swipeDistancePx = with(composeRule.density) { 280.dp.toPx() }
         composeRule.onNodeWithTag("full-screen-exit-gesture-band").performTouchInput {
             down(center)
             moveTo(Offset(center.x, center.y + swipeDistancePx), 180L)

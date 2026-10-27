@@ -1,6 +1,25 @@
 package io.github.qyxx2.mpdserver.remote.ui.navigation
 
 import android.os.SystemClock
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,6 +53,7 @@ import io.github.qyxx2.mpdserver.remote.ui.components.GlobalStatusRingOverlay
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingVisibilityController
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerScreen
+import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerDismissPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
@@ -80,6 +101,29 @@ fun AppNavHost(
     val navigationScope = rememberCoroutineScope()
     var showActivityStatus by remember { mutableStateOf(false) }
     var rootBeforeFullScreen by remember { mutableStateOf(AppDestination.HOME.route) }
+    var playerEntryProgress by remember { mutableFloatStateOf(1f) }
+    var playerDragOffsetPx by remember { mutableFloatStateOf(0f) }
+    var playerLayerHeightPx by remember { mutableFloatStateOf(1f) }
+    var enterPlayerFromMini by remember { mutableStateOf(false) }
+    val dismissDistancePx = with(LocalDensity.current) { 120.dp.toPx() }
+    val collapsedMiniHeightPx = with(LocalDensity.current) { 63.dp.toPx() }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route && enterPlayerFromMini) {
+            playerEntryProgress = 0f
+            animate(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+            ) { value, _ -> playerEntryProgress = value }
+            playerEntryProgress = 1f
+            enterPlayerFromMini = false
+        } else {
+            playerEntryProgress = 1f
+            enterPlayerFromMini = false
+        }
+        if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route) playerDragOffsetPx = 0f
+    }
 
     LaunchedEffect(currentRoute) {
         if (AppDestination.rootDestinations.any { it.route == currentRoute }) {
@@ -101,8 +145,8 @@ fun AppNavHost(
         ringVisibility = visibilityController.onTimer(SystemClock.elapsedRealtime())
     }
 
-    val fullScreen = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
-        currentRoute == AppDestination.QUEUE.route
+    // The full-player motion layer must be window-sized; safe insets are applied only to its
+    // interactive foreground content, not to the animated surface behind transparent system bars.
     val title = AppDestination.rootDestinations
         .firstOrNull { it.route == currentRoute }
         ?.label
@@ -120,10 +164,56 @@ fun AppNavHost(
     fun openFullScreenPlayer() {
         if (AppDestination.rootDestinations.any { it.route == currentRoute }) {
             rootBeforeFullScreen = currentRoute!!
+            playerDragOffsetPx = 0f
+            playerEntryProgress = 0f
+            enterPlayerFromMini = true
         }
         if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route) {
             navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
                 launchSingleTop = true
+            }
+        }
+    }
+
+    fun animatePlayerDragBack() {
+        navigationScope.launch {
+            animate(
+                initialValue = playerDragOffsetPx,
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+            ) { value, _ -> playerDragOffsetPx = value }
+            playerDragOffsetPx = 0f
+        }
+    }
+
+    fun finishPlayerDismissGesture(totalVerticalDistancePx: Float) {
+        navigationScope.launch {
+            val dismiss = FullScreenPlayerDismissPolicy.shouldDismiss(
+                offsetPx = playerDragOffsetPx,
+                screenHeightPx = playerLayerHeightPx,
+                minimumDistancePx = dismissDistancePx,
+            ) && totalVerticalDistancePx > 0f
+            animate(
+                initialValue = playerDragOffsetPx,
+                targetValue = if (dismiss) playerLayerHeightPx else 0f,
+                animationSpec = if (dismiss) {
+                    tween(durationMillis = 175, easing = FastOutSlowInEasing)
+                } else {
+                    spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium,
+                    )
+                },
+            ) { value, _ -> playerDragOffsetPx = value }
+            if (dismiss) {
+                if (!navController.popBackStack(rootBeforeFullScreen, inclusive = false)) {
+                    navController.popBackStack()
+                }
+            } else {
+                playerDragOffsetPx = 0f
             }
         }
     }
@@ -162,10 +252,74 @@ fun AppNavHost(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier.fillMaxSize().padding(safeContentPadding),
-        ) {
-            if (fullScreen) {
+        if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route) {
+            val backdropBlurDp = FullScreenPlayerDismissPolicy.backdropBlurDp(
+                entryProgress = playerEntryProgress,
+                offsetPx = playerDragOffsetPx,
+                screenHeightPx = playerLayerHeightPx,
+                maximumBlurDp = 18f,
+            )
+
+            // Keep the previous root aligned to its real safe content bounds. Its background
+            // remains visible behind transparent status/navigation bars as the player moves away.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(safeContentPadding),
+            ) {
+                RootBackdropShell(
+                    rootRoute = rootBeforeFullScreen,
+                    miniPlayerPresentation = miniPlayerPresentation,
+                    navController = navController,
+                    uiPreferences = uiPreferences,
+                    preferenceWriteScope = preferenceWriteScope,
+                    windowGeometry = windowGeometry,
+                    onApplyServerOrigin = applyServerOrigin,
+                    blurRadiusDp = backdropBlurDp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                // Shield only app content. Do not place a pointer interceptor in the actual
+                // status-bar/cutout band, so Android's system gestures remain available.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        )
+                        .testTag("full-screen-root-backdrop-input-shield"),
+                )
+            }
+
+            // This layer starts at the physical window top and includes both system-bar areas.
+            // Consequently its background and rounded top corners follow the finger in one piece.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { size ->
+                        playerLayerHeightPx = size.height.toFloat().coerceAtLeast(1f)
+                    }
+                    .graphicsLayer {
+                        val entry = playerEntryProgress.coerceIn(0f, 1f)
+                        val radius = FullScreenPlayerDismissPolicy.topCornerRadiusDp(
+                            entryProgress = entry,
+                            offsetPx = playerDragOffsetPx,
+                            screenHeightPx = size.height,
+                        )
+                        translationY = playerDragOffsetPx
+                        scaleY = FullScreenPlayerDismissPolicy.entryVerticalScale(
+                            entryProgress = entry,
+                            collapsedHeightPx = collapsedMiniHeightPx,
+                            screenHeightPx = size.height,
+                        )
+                        scaleX = FullScreenPlayerDismissPolicy.entryHorizontalScale(entry)
+                        transformOrigin = TransformOrigin(0.5f, 0.87f)
+                        shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
+                        clip = entry < 1f || playerDragOffsetPx > 0f
+                    }
+                    .testTag("full-screen-player-motion-layer"),
+            ) {
                 AppNavigationGraph(
                     navController = navController,
                     runtime = runtime,
@@ -179,27 +333,24 @@ fun AppNavHost(
                     onArtistClick = ::requestArtistNavigation,
                     onExitFullScreen = ::exitFullScreenToRoot,
                     onOpenFullScreenPlayer = ::openFullScreenPlayer,
+                    onPlayerDismissDragDelta = { delta ->
+                        playerDragOffsetPx =
+                            (playerDragOffsetPx + delta).coerceIn(0f, playerLayerHeightPx)
+                    },
+                    onPlayerDismissGestureEnd = ::finishPlayerDismissGesture,
+                    onPlayerDismissGestureCancel = ::animatePlayerDragBack,
+                    playerContentPadding = safeContentPadding,
                     modifier = Modifier.fillMaxSize(),
                 )
-            } else {
-                AppShell(
-                    title = title,
-                    onStatusClick = { showActivityStatus = true },
-                    miniPlayer = {
-                        if (currentRoute != AppDestination.SETTINGS.route) {
-                            MiniPlayer(
-                                presentation = miniPlayerPresentation,
-                                onOpen = ::openFullScreenPlayer,
-                            )
-                        }
-                    },
-                    bottomBar = {
-                        RootNavigationBar(
-                            currentRoute = currentRoute,
-                            navController = navController,
-                        )
-                    },
-                ) {
+            }
+        } else {
+            // Root destinations and Queue remain within the safe content window.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(safeContentPadding),
+            ) {
+                if (currentRoute == AppDestination.QUEUE.route) {
                     AppNavigationGraph(
                         navController = navController,
                         runtime = runtime,
@@ -215,6 +366,41 @@ fun AppNavHost(
                         onOpenFullScreenPlayer = ::openFullScreenPlayer,
                         modifier = Modifier.fillMaxSize(),
                     )
+                } else {
+                    AppShell(
+                        title = title,
+                        onStatusClick = { showActivityStatus = true },
+                        miniPlayer = {
+                            if (currentRoute != AppDestination.SETTINGS.route) {
+                                MiniPlayer(
+                                    presentation = miniPlayerPresentation,
+                                    onOpen = ::openFullScreenPlayer,
+                                )
+                            }
+                        },
+                        bottomBar = {
+                            RootNavigationBar(
+                                currentRoute = currentRoute,
+                                navController = navController,
+                            )
+                        },
+                    ) {
+                        AppNavigationGraph(
+                            navController = navController,
+                            runtime = runtime,
+                            snapshotState = snapshotState,
+                            playerPresentation = playerPresentation,
+                            uiPreferences = uiPreferences,
+                            preferenceWriteScope = preferenceWriteScope,
+                            windowGeometry = windowGeometry,
+                            applyServerOrigin = applyServerOrigin,
+                            onPlayerEntityNavigationRequest = onPlayerEntityNavigationRequest,
+                            onArtistClick = ::requestArtistNavigation,
+                            onExitFullScreen = ::exitFullScreenToRoot,
+                            onOpenFullScreenPlayer = ::openFullScreenPlayer,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
         }
@@ -238,6 +424,56 @@ fun AppNavHost(
 }
 
 @Composable
+private fun RootBackdropShell(
+    rootRoute: String,
+    miniPlayerPresentation: MiniPlayerPresentation,
+    navController: NavHostController,
+    uiPreferences: UiPreferencesRepository,
+    preferenceWriteScope: CoroutineScope,
+    windowGeometry: StatusRingWindowGeometry,
+    onApplyServerOrigin: suspend (ServerOrigin) -> Unit,
+    blurRadiusDp: Float,
+    modifier: Modifier = Modifier,
+) {
+    val rootTitle = AppDestination.rootDestinations.firstOrNull { it.route == rootRoute }?.label
+        ?: AppDestination.HOME.label
+    Box(modifier = modifier.testTag("full-screen-root-backdrop")) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .blur(blurRadiusDp.coerceAtLeast(0f).dp)
+                .clearAndSetSemantics { contentDescription = "全屏播放器背景" },
+        ) {
+            AppShell(
+            title = rootTitle,
+            onStatusClick = {},
+            miniPlayer = {
+                if (rootRoute != AppDestination.SETTINGS.route) {
+                    MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
+                }
+            },
+            bottomBar = {
+                RootNavigationBar(currentRoute = rootRoute, navController = navController)
+            },
+        ) {
+            when (rootRoute) {
+                AppDestination.SEARCH.route -> SearchPlaceholderScreen()
+                AppDestination.LIBRARY.route -> LibraryPlaceholderScreen()
+                AppDestination.SETTINGS.route -> StatusRingSettingsScreen(
+                    preferencesRepository = uiPreferences,
+                    preferenceWriteScope = preferenceWriteScope,
+                    windowGeometry = windowGeometry,
+                    onApplyServerOrigin = onApplyServerOrigin,
+                )
+                else -> HomePlaceholderScreen()
+            }
+        }
+        }
+    }
+}
+
+@Composable
 private fun AppNavigationGraph(
     navController: NavHostController,
     runtime: AppRuntime,
@@ -251,6 +487,10 @@ private fun AppNavigationGraph(
     onArtistClick: (String) -> Unit,
     onExitFullScreen: () -> Unit,
     onOpenFullScreenPlayer: () -> Unit,
+    onPlayerDismissDragDelta: (Float) -> Unit = {},
+    onPlayerDismissGestureEnd: (Float) -> Unit = {},
+    onPlayerDismissGestureCancel: () -> Unit = {},
+    playerContentPadding: PaddingValues = PaddingValues(),
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -269,10 +509,16 @@ private fun AppNavigationGraph(
                 onApplyServerOrigin = applyServerOrigin,
             )
         }
-        composable(AppDestination.FULL_SCREEN_PLAYER.route) {
+        composable(
+            route = AppDestination.FULL_SCREEN_PLAYER.route,
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
+        ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
+                color = Color.Transparent,
             ) {
                 FullScreenPlayerScreen(
                     runtime = runtime,
@@ -286,6 +532,10 @@ private fun AppNavigationGraph(
                     onOpenPlayer = onOpenFullScreenPlayer,
                     onArtistClick = onArtistClick,
                     onEntityNavigationRequest = onPlayerEntityNavigationRequest,
+                    onDismissDragDelta = onPlayerDismissDragDelta,
+                    onDismissGestureEnd = onPlayerDismissGestureEnd,
+                    onDismissGestureCancel = onPlayerDismissGestureCancel,
+                    contentPadding = playerContentPadding,
                 )
             }
         }

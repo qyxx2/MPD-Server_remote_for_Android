@@ -2,12 +2,14 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,10 +25,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +46,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import io.github.qyxx2.mpdserver.remote.network.HttpResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
@@ -59,10 +66,20 @@ fun FullScreenPlayerScreen(
     onOpenPlayer: () -> Unit = {},
     onArtistClick: (String) -> Unit = {},
     onEntityNavigationRequest: (PlayerEntityNavigationRequest) -> Unit = {},
+    onDismissDragDelta: (Float) -> Unit = {},
+    onDismissGestureEnd: (Float) -> Unit = { distance -> if (distance >= 120f) onExit() },
+    onDismissGestureCancel: () -> Unit = {},
+    contentPadding: PaddingValues = PaddingValues(),
 ) {
+    val currentOnDismissDragDelta = rememberUpdatedState(onDismissDragDelta)
+    val currentOnDismissGestureEnd = rememberUpdatedState(onDismissGestureEnd)
+    val currentOnDismissGestureCancel = rememberUpdatedState(onDismissGestureCancel)
     val song = presentation.song
     var showOutputDetails by remember { mutableStateOf(false) }
     var artworkBitmap by remember(song?.songId, presentation.artworkReferenceStatus) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
+    var blurredArtworkBitmap by remember(song?.songId, presentation.artworkReferenceStatus) {
         mutableStateOf<ImageBitmap?>(null)
     }
     var artworkLoading by remember(song?.songId, presentation.artworkReferenceStatus) {
@@ -71,6 +88,7 @@ fun FullScreenPlayerScreen(
 
     LaunchedEffect(runtime, song?.songId, presentation.artworkReferenceStatus) {
         artworkBitmap = null
+        blurredArtworkBitmap = null
         artworkLoading = false
         val currentSong = song?.takeIf {
             presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
@@ -80,8 +98,19 @@ fun FullScreenPlayerScreen(
         try {
             val result = runtime.reads.getArtwork(currentSong.songId)
             if (result is HttpResult.Body) {
-                artworkBitmap = withContext(Dispatchers.Default) {
-                    decodeArtworkBitmap(result.bytes)
+                val decoded = withContext(Dispatchers.Default) {
+                    decodeArtworkBitmap(result.bytes)?.let { foreground ->
+                        foreground to createBlurredArtworkBitmap(foreground)
+                    }
+                }
+                currentCoroutineContext().ensureActive()
+                // Bind foreground and blurred background atomically to this confirmed song identity.
+                if (song?.songId == currentSong.songId &&
+                    presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
+                    presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED
+                ) {
+                    artworkBitmap = decoded?.first
+                    blurredArtworkBitmap = decoded?.second
                 }
             }
         } finally {
@@ -94,45 +123,76 @@ fun FullScreenPlayerScreen(
             .fillMaxSize()
             .testTag("full-screen-player-root"),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            FullScreenExitGestureBand(onExit = onExit)
+        PlayerArtworkBackdrop(
+            blurredArtwork = blurredArtworkBitmap,
+            modifier = Modifier.fillMaxSize(),
+        )
 
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) {
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .testTag("full-screen-player-media-region"),
             ) {
                 Box(
                     modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .fullScreenPlayerDismissGesture(
+                            dragDelta = currentOnDismissDragDelta,
+                            gestureEnd = currentOnDismissGestureEnd,
+                            gestureCancel = currentOnDismissGestureCancel,
+                        )
+                        .testTag("full-screen-exit-gesture-band"),
+                )
+
+                Column(
+                    modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    val placeholder = when {
-                        presentation.playbackStatus == ConfirmedPlaybackStatus.UNKNOWN ->
-                            "当前曲目未确认"
-                        presentation.artworkReferenceStatus == ArtworkReferenceStatus.MISSING -> "无封面"
-                        presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkLoading ->
-                            "正在读取封面"
-                        presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkBitmap == null ->
-                            "封面暂不可用"
-                        else -> "无封面"
-                    }
-                    ArtworkStage(
-                        bitmap = artworkBitmap,
-                        placeholderLabel = placeholder,
+                    Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .align(Alignment.Center),
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        val placeholder = when {
+                            presentation.playbackStatus == ConfirmedPlaybackStatus.UNKNOWN ->
+                                "当前曲目未确认"
+                            presentation.artworkReferenceStatus == ArtworkReferenceStatus.MISSING -> "无封面"
+                            presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkLoading ->
+                                "正在读取封面"
+                            presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkBitmap == null ->
+                                "封面暂不可用"
+                            else -> "无封面"
+                        }
+                        ArtworkStage(
+                            bitmap = artworkBitmap,
+                            placeholderLabel = placeholder,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .align(Alignment.Center),
+                            dismissGestureModifier = Modifier.fullScreenPlayerDismissGesture(
+                                dragDelta = currentOnDismissDragDelta,
+                                gestureEnd = currentOnDismissGestureEnd,
+                                gestureCancel = currentOnDismissGestureCancel,
+                            ),
+                        )
+                    }
+
+                    PlayerSongIdentity(
+                        presentation = presentation,
+                        onArtistClick = onArtistClick,
+                        onEntityNavigationRequest = onEntityNavigationRequest,
                     )
                 }
-
-                PlayerSongIdentity(
-                    presentation = presentation,
-                    onArtistClick = onArtistClick,
-                    onEntityNavigationRequest = onEntityNavigationRequest,
-                )
             }
 
             PlayerProgressPlaceholder(modifier = Modifier.padding(horizontal = 24.dp))
@@ -158,6 +218,24 @@ fun FullScreenPlayerScreen(
             )
         }
     }
+}
+
+private fun Modifier.fullScreenPlayerDismissGesture(
+    dragDelta: State<(Float) -> Unit>,
+    gestureEnd: State<(Float) -> Unit>,
+    gestureCancel: State<() -> Unit>,
+): Modifier = pointerInput(Unit) {
+    var totalVerticalDistance = 0f
+    detectVerticalDragGestures(
+        onDragStart = { totalVerticalDistance = 0f },
+        onVerticalDrag = { change, dragAmount ->
+            totalVerticalDistance += dragAmount
+            dragDelta.value(dragAmount)
+            change.consume()
+        },
+        onDragEnd = { gestureEnd.value(totalVerticalDistance) },
+        onDragCancel = { gestureCancel.value() },
+    )
 }
 
 @Composable

@@ -38,6 +38,9 @@ class FullScreenPlayerPresentationUiTest {
         }
         composeRule.waitForIdle()
 
+        composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-artwork-backdrop-placeholder").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-artwork-backdrop-theme-mask").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-stage").assertIsDisplayed()
         composeRule.onNodeWithText("无封面").assertIsDisplayed()
         composeRule.onNodeWithTag("player-song-title").assertIsDisplayed()
