@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 
 internal enum class PlayerGlyphKind { ALBUM, OUTPUT, NOW_PLAYING, QUEUE, PREVIOUS, PLAY, PAUSE, NEXT }
 
@@ -21,7 +22,7 @@ internal fun PlayerGlyph(
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier = modifier) {
+    Canvas(modifier = modifier.testTag("player-glyph-${kind.name.lowercase()}")) {
         val w = size.width
         val h = size.height
         val stroke = size.minDimension * 0.075f
@@ -48,17 +49,25 @@ internal fun PlayerGlyph(
                 }
             }
             PlayerGlyphKind.PREVIOUS -> {
-                drawLine(tint, Offset(w * .24f, h * .22f), Offset(w * .24f, h * .78f), stroke, StrokeCap.Round)
-                drawTriangle(tint, Offset(w * .76f, h * .22f), Offset(w * .76f, h * .78f), Offset(w * .31f, h * .5f))
+                val corner = size.minDimension * .10f
+                drawRoundedTriangle(tint, Offset(w * .12f, h * .5f), Offset(w * .47f, h * .13f), Offset(w * .47f, h * .87f), corner)
+                drawRoundedTriangle(tint, Offset(w * .44f, h * .5f), Offset(w * .80f, h * .13f), Offset(w * .80f, h * .87f), corner)
             }
-            PlayerGlyphKind.PLAY -> drawTriangle(tint, Offset(w * .28f, h * .18f), Offset(w * .28f, h * .82f), Offset(w * .78f, h * .5f))
+            PlayerGlyphKind.PLAY -> drawRoundedTriangle(
+                tint,
+                Offset(w * .20f, h * .10f),
+                Offset(w * .20f, h * .90f),
+                Offset(w * .84f, h * .5f),
+                size.minDimension * .10f,
+            )
             PlayerGlyphKind.PAUSE -> {
                 drawRoundRect(tint, Offset(w * .25f, h * .18f), Size(w * .16f, h * .64f), CornerRadius(stroke))
                 drawRoundRect(tint, Offset(w * .59f, h * .18f), Size(w * .16f, h * .64f), CornerRadius(stroke))
             }
             PlayerGlyphKind.NEXT -> {
-                drawTriangle(tint, Offset(w * .24f, h * .22f), Offset(w * .24f, h * .78f), Offset(w * .69f, h * .5f))
-                drawLine(tint, Offset(w * .78f, h * .22f), Offset(w * .78f, h * .78f), stroke, StrokeCap.Round)
+                val corner = size.minDimension * .10f
+                drawRoundedTriangle(tint, Offset(w * .56f, h * .5f), Offset(w * .20f, h * .13f), Offset(w * .20f, h * .87f), corner)
+                drawRoundedTriangle(tint, Offset(w * .88f, h * .5f), Offset(w * .53f, h * .13f), Offset(w * .53f, h * .87f), corner)
             }
         }
     }
@@ -79,11 +88,34 @@ private fun DrawScope.drawOutputGlyph(tint: Color, line: Stroke, w: Float, h: Fl
     drawArc(tint, -42f, 84f, false, Offset(w * .44f, h * .17f), Size(w * .55f, h * .66f), style = line)
 }
 
-private fun DrawScope.drawTriangle(tint: Color, a: Offset, b: Offset, c: Offset) {
+private fun DrawScope.drawRoundedTriangle(
+    tint: Color,
+    a: Offset,
+    b: Offset,
+    c: Offset,
+    cornerRadius: Float,
+) {
+    val vertices = listOf(a, b, c)
+    fun alongEdge(from: Offset, toward: Offset): Offset {
+        val dx = toward.x - from.x
+        val dy = toward.y - from.y
+        val length = kotlin.math.hypot(dx, dy).coerceAtLeast(0.001f)
+        val inset = cornerRadius.coerceAtMost(length * .25f)
+        return Offset(from.x + dx / length * inset, from.y + dy / length * inset)
+    }
+    val beforeCorners = vertices.indices.map { index ->
+        alongEdge(vertices[index], vertices[(index + 2) % vertices.size])
+    }
+    val afterCorners = vertices.indices.map { index ->
+        alongEdge(vertices[index], vertices[(index + 1) % vertices.size])
+    }
     val triangle = Path().apply {
-        moveTo(a.x, a.y)
-        lineTo(b.x, b.y)
-        lineTo(c.x, c.y)
+        moveTo(beforeCorners[0].x, beforeCorners[0].y)
+        quadraticTo(a.x, a.y, afterCorners[0].x, afterCorners[0].y)
+        lineTo(beforeCorners[1].x, beforeCorners[1].y)
+        quadraticTo(b.x, b.y, afterCorners[1].x, afterCorners[1].y)
+        lineTo(beforeCorners[2].x, beforeCorners[2].y)
+        quadraticTo(c.x, c.y, afterCorners[2].x, afterCorners[2].y)
         close()
     }
     drawPath(triangle, tint)

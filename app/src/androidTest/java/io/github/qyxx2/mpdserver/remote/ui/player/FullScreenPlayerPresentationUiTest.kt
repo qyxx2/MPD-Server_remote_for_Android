@@ -55,6 +55,29 @@ class FullScreenPlayerPresentationUiTest {
         assertTrue("title should precede artist", titleTop < artistTop)
         assertTrue("artist should precede album", artistTop < albumTop)
         assertTrue("album should precede source-file format", albumTop < formatTop)
+
+        val density = composeRule.activity.resources.displayMetrics.density
+        val controlsBounds = composeRule.onNodeWithTag("player-playback-controls")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "main playback controls need a taller visual zone to stay distinct from bottom navigation",
+            controlsBounds.height / density >= 88f,
+        )
+        listOf("player-previous", "player-play-pause", "player-next").forEach { tag ->
+            val bounds = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag must keep at least a 72dp touch target", bounds.width / density >= 72f)
+            assertTrue("$tag must keep at least a 72dp touch target", bounds.height / density >= 72f)
+        }
+        val previousGlyph = composeRule.onNodeWithTag("player-glyph-previous", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val playGlyph = composeRule.onNodeWithTag("player-glyph-play", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val nextGlyph = composeRule.onNodeWithTag("player-glyph-next", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("previous glyph should be visibly larger than the old 26dp drawing", previousGlyph.width / density >= 44f)
+        assertTrue("central play glyph should be the visual focus", playGlyph.width / density >= 48f)
+        assertTrue("central play glyph should be the visual focus", playGlyph.height / density >= 48f)
+        assertTrue("next glyph should be visibly larger than the old 26dp drawing", nextGlyph.width / density >= 44f)
     }
 
     @Test

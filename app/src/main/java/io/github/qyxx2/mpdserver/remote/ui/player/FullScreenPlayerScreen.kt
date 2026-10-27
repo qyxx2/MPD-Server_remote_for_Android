@@ -407,7 +407,7 @@ private fun DisabledPlaybackControls(presentation: PlayerPresentation) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(88.dp)
             .padding(horizontal = 28.dp)
             .testTag("player-playback-controls"),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -417,41 +417,41 @@ private fun DisabledPlaybackControls(presentation: PlayerPresentation) {
             enabled = false,
             onClick = {},
             modifier = Modifier
-                .size(56.dp)
+                .size(72.dp)
                 .semantics { contentDescription = "上一首" }
                 .testTag("player-previous"),
         ) {
             PlayerGlyph(
                 kind = PlayerGlyphKind.PREVIOUS,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(26.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(width = 44.dp, height = 36.dp),
             )
         }
         IconButton(
             enabled = false,
             onClick = {},
-            modifier = Modifier.size(56.dp).testTag("player-play-pause").then(
+            modifier = Modifier.size(72.dp).testTag("player-play-pause").then(
                 Modifier.semantics { contentDescription = actionLabel },
             ),
         ) {
             PlayerGlyph(
                 kind = playGlyph,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(48.dp),
             )
         }
         IconButton(
             enabled = false,
             onClick = {},
             modifier = Modifier
-                .size(56.dp)
+                .size(72.dp)
                 .semantics { contentDescription = "下一首" }
                 .testTag("player-next"),
         ) {
             PlayerGlyph(
                 kind = PlayerGlyphKind.NEXT,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(26.dp),
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(width = 44.dp, height = 36.dp),
             )
         }
     }
