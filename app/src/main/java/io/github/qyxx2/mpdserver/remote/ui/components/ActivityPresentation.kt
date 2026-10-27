@@ -5,6 +5,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
 import io.github.qyxx2.mpdserver.remote.runtime.RuntimeConnectionStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 
 enum class ActivityVisualState { UNKNOWN, FAILED, PENDING, SYNCING, DISCONNECTED, CONNECTING, STALE, SUCCESS, INFO, IDLE }
 
@@ -14,6 +15,7 @@ data class ActivityRowPresentation(
     val statusLabel: String,
     val message: String?,
     val syncError: String?,
+    val canRetry: Boolean = false,
 )
 
 data class ActivityPresentation(
@@ -26,7 +28,12 @@ data class ActivityPresentation(
     val isConfirmedAvailable: Boolean,
 ) {
     companion object {
-        fun from(state: SnapshotStoreState, activities: List<OperationActivity>): ActivityPresentation {
+        fun from(
+            state: SnapshotStoreState,
+            activities: List<OperationActivity>,
+            currentOrigin: ServerOrigin? = null,
+            retryableIntentIds: Set<String> = emptySet(),
+        ): ActivityPresentation {
             val priority = listOf(
                 MutationStatus.UNKNOWN to ActivityVisualState.UNKNOWN,
                 MutationStatus.FAILED to ActivityVisualState.FAILED,
@@ -66,6 +73,12 @@ data class ActivityPresentation(
                         statusLabel = activity.status.label(),
                         message = activity.message?.takeIf(String::isNotBlank),
                         syncError = activity.syncError?.takeIf(String::isNotBlank),
+                        canRetry = state.snapshot != null &&
+                            state.connectionStatus == RuntimeConnectionStatus.CONNECTED &&
+                            state.snapshotConnectionGeneration == state.connectionGeneration &&
+                            activity.status == MutationStatus.UNKNOWN &&
+                            currentOrigin != null && activity.origin == currentOrigin &&
+                            (!activity.intentId.startsWith("player:") || activity.intentId in retryableIntentIds),
                     )
                 },
                 isConfirmedAvailable = state.controlsEligible,

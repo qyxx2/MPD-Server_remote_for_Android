@@ -88,6 +88,31 @@ class MutationCoordinatorTest {
         } finally { coordinator.close() }
     }
 
+    @Test fun confirmedBodyRetainsOnlyReceiptUpdatedAtWhenReadbackFails() = runBlocking {
+        val updatedAt = "2026-10-27T10:00:02Z"
+        val coordinator = MutationCoordinator(
+            origin = ServerOrigin.parse("http://music.example:18000"),
+            send = {
+                HttpResult.Body(
+                    statusCode = 200,
+                    contentType = "application/json",
+                    bytes = """{"updated_at":"$updatedAt","state":"PLAYING"}""".toByteArray(),
+                )
+            },
+            synchronize = { throw IOException("read failed") },
+            parentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
+        try {
+            coordinator.submit(intent())
+            val activity = coordinator.activities.first {
+                it.singleOrNull()?.syncError == "read failed"
+            }.single()
+            assertEquals(MutationStatus.SUCCESS, activity.status)
+            assertEquals(updatedAt, activity.receiptUpdatedAt)
+            assertEquals("read failed", activity.syncError)
+        } finally { coordinator.close() }
+    }
+
     @Test fun originChangeBlocksRetryAndDoesNotCreateNewKeyOrMigrateIntent() = runBlocking {
         val keys = mutableListOf<String>()
         val coordinator = MutationCoordinator(

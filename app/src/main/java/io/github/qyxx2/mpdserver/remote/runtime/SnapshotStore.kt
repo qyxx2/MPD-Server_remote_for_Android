@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -13,6 +14,16 @@ enum class RuntimeConnectionStatus { DISCONNECTED, CONNECTING, CONNECTED }
 enum class SnapshotFreshness { UNKNOWN, FRESH, STALE }
 enum class SnapshotSource { REALTIME_INITIAL, HTTP_READ }
 
+/** Monotonic receipt timing bound to one canonical playback observation. */
+class SnapshotReadTiming(
+    val epoch: String,
+    val sequence: Long,
+    val observedAt: String?,
+    val requestedAtElapsedMillis: Long,
+    val receivedAtElapsedMillis: Long,
+    val sampleAgeMillis: Long?,
+)
+
 data class SnapshotStoreState(
     val snapshot: FullStateSnapshot? = null,
     val connectionStatus: RuntimeConnectionStatus = RuntimeConnectionStatus.DISCONNECTED,
@@ -20,6 +31,7 @@ data class SnapshotStoreState(
     val snapshotConnectionGeneration: Long? = null,
     val freshness: SnapshotFreshness = SnapshotFreshness.UNKNOWN,
     val readError: String? = null,
+    val readTiming: SnapshotReadTiming? = null,
 ) {
     val controlsEligible: Boolean
         get() = snapshot != null && freshness == SnapshotFreshness.FRESH &&
@@ -125,6 +137,22 @@ class SnapshotStore(
             freshness = SnapshotFreshness.FRESH,
             readError = null,
         )
+        true
+    }
+
+    /** Accept timing only when it describes the currently retained canonical sample. */
+    fun recordReadTiming(timing: SnapshotReadTiming): Boolean = synchronized(lock) {
+        val old = _state.value
+        val snapshot = old.snapshot ?: return@synchronized false
+        if (snapshot.epoch != timing.epoch || snapshot.sequence != timing.sequence) return@synchronized false
+        val observation = runCatching {
+            io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration.json
+                .decodeFromJsonElement<io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackObservationDto>(
+                    snapshot.wire.playbackObservation,
+                )
+        }.getOrNull()
+        if (observation?.observedAt != timing.observedAt) return@synchronized false
+        _state.value = old.copy(readTiming = timing)
         true
     }
 

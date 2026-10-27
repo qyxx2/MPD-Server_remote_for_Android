@@ -6,6 +6,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
 import io.github.qyxx2.mpdserver.remote.runtime.RuntimeConnectionStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerTestFixtures
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -54,6 +55,68 @@ class ActivityPresentationTest {
         assertEquals(ActivityVisualState.SUCCESS, project(fresh, listOf(activity(MutationStatus.SUCCESS))).visualState)
         assertEquals(ActivityVisualState.INFO, project(fresh, listOf(activity(MutationStatus.INFO))).visualState)
         assertEquals(ActivityVisualState.IDLE, project(fresh, emptyList()).visualState)
+    }
+
+    @Test fun retryIsOnlyOfferedForUnknownIntentOnCurrentOriginWithConfirmedWritableSnapshot() {
+        val unknown = activity(MutationStatus.UNKNOWN)
+        val disconnected = project(
+            SnapshotStoreState(),
+            listOf(unknown),
+        )
+        assertFalse(disconnected.activities.single().canRetry)
+
+        val connectedButWithoutCanonicalSnapshot = ActivityPresentation.from(
+            SnapshotStoreState(connectionStatus = RuntimeConnectionStatus.CONNECTED, freshness = SnapshotFreshness.FRESH),
+            listOf(unknown),
+            currentOrigin = origin,
+        )
+        assertFalse(connectedButWithoutCanonicalSnapshot.activities.single().canRetry)
+    }
+
+    @Test fun unknownRetryRemainsAvailableForCurrentOriginWhenReadIsStaleButRuntimeIsWritable() {
+        val staleConnected = PlayerTestFixtures.state(freshness = SnapshotFreshness.STALE)
+        val result = ActivityPresentation.from(staleConnected, listOf(activity(MutationStatus.UNKNOWN)), currentOrigin = origin)
+        assertTrue(result.activities.single().canRetry)
+
+        val disconnected = ActivityPresentation.from(
+            staleConnected.copy(connectionStatus = RuntimeConnectionStatus.DISCONNECTED),
+            listOf(activity(MutationStatus.UNKNOWN)),
+            currentOrigin = origin,
+        )
+        assertFalse(disconnected.activities.single().canRetry)
+
+        val differentOrigin = ActivityPresentation.from(
+            staleConnected,
+            listOf(activity(MutationStatus.UNKNOWN)),
+            currentOrigin = ServerOrigin.parse("http://other.example:18000"),
+        )
+        assertFalse(differentOrigin.activities.single().canRetry)
+    }
+
+    @Test fun playerUnknownRetryRequiresTheMatchingUnchangedIntentIdentity() {
+        val state = PlayerTestFixtures.state()
+        val playerIntent = activity(MutationStatus.UNKNOWN).copy(intentId = "player:seek-1")
+        val withoutIdentityPermission = ActivityPresentation.from(
+            state,
+            listOf(playerIntent),
+            currentOrigin = origin,
+        )
+        assertFalse(withoutIdentityPermission.activities.single().canRetry)
+
+        val withMatchingIdentity = ActivityPresentation.from(
+            state,
+            listOf(playerIntent),
+            currentOrigin = origin,
+            retryableIntentIds = setOf("player:seek-1"),
+        )
+        assertTrue(withMatchingIdentity.activities.single().canRetry)
+        val staleButWritable = ActivityPresentation.from(
+            PlayerTestFixtures.state(freshness = SnapshotFreshness.STALE),
+            listOf(playerIntent),
+            currentOrigin = origin,
+            retryableIntentIds = setOf("player:seek-1"),
+        )
+        assertTrue(staleButWritable.activities.single().canRetry)
     }
 
     @Test fun activityRowsRetainExistingSharedOwnerDataAndReadableFallbacks() {

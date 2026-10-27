@@ -16,13 +16,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.decodeFromString
 import java.io.Closeable
 import java.io.IOException
 import java.util.UUID
 
 /** A caller-defined immutable user intent; retries never rebuild it from UI state. */
-data class MutationIntent(val id: String, val method: String, val path: String, val payload: String?) {
+data class MutationIntent(val id: String, val method: String, val path: String, val payload: String?, val label: String? = null) {
     init {
         require(id.isNotBlank())
         require(method.uppercase() in setOf("POST", "PUT", "PATCH", "DELETE"))
@@ -31,17 +34,19 @@ data class MutationIntent(val id: String, val method: String, val path: String, 
     }
 }
 
-data class MutationRequest(val method: String, val path: String, val payload: String?, val idempotencyKey: String?, val origin: ServerOrigin)
+data class MutationRequest(val method: String, val path: String, val payload: String?, val idempotencyKey: String?, val origin: ServerOrigin, val label: String? = null)
 enum class MutationStatus { PENDING, SUCCESS, FAILED, UNKNOWN, SYNCING, INFO }
 data class OperationActivity(
     val intentId: String, val label: String, val status: MutationStatus,
     val message: String? = null, val syncError: String? = null,
     val idempotencyKey: String?, val origin: ServerOrigin,
+    /** Narrow response metadata needed to establish a seek's authoritative readback watermark. */
+    val receiptUpdatedAt: String? = null,
 )
 
 sealed interface MutationOutcome {
     data object Submitted : MutationOutcome
-    data class Confirmed(val statusCode: Int?) : MutationOutcome
+    data class Confirmed(val statusCode: Int?, val receiptUpdatedAt: String? = null) : MutationOutcome
     data class Failed(val statusCode: Int?, val message: String) : MutationOutcome
     data class Unknown(val message: String) : MutationOutcome
     data object DuplicatePending : MutationOutcome
@@ -86,6 +91,7 @@ class MutationCoordinator(
                 payload = intent.payload,
                 idempotencyKey = if (intent.method.uppercase() == "POST" && intent.path == "/api/library/collections") null else keyFactory(),
                 origin = origin,
+                label = intent.label,
             )
             requests[intent.id] = request
             updateActivityLocked(request, intent.id, MutationStatus.PENDING)
@@ -155,8 +161,9 @@ class MutationCoordinator(
         }
         val outcome = when (result) {
             is HttpResult.NoContent -> MutationOutcome.Confirmed(result.statusCode)
-            is HttpResult.Body -> if (result.statusCode in 200..299) MutationOutcome.Confirmed(result.statusCode)
-                else MutationOutcome.Unknown("Unexpected response status ${result.statusCode}")
+            is HttpResult.Body -> if (result.statusCode in 200..299) {
+                MutationOutcome.Confirmed(result.statusCode, extractReceiptUpdatedAt(result.bytes))
+            } else MutationOutcome.Unknown("Unexpected response status ${result.statusCode}")
             is HttpResult.HttpError -> decodeHttpError(result)
             is HttpResult.Failed -> when (result.failure) {
                 is HttpFailure.Transport, is HttpFailure.Decode, is HttpFailure.Protocol -> MutationOutcome.Unknown("The server outcome could not be confirmed")
@@ -199,7 +206,10 @@ class MutationCoordinator(
             } else {
                 outcomes[intentId] = outcome
                 when (outcome) {
-                    is MutationOutcome.Confirmed -> updateActivityLocked(request, intentId, MutationStatus.SUCCESS, "Write confirmed")
+                    is MutationOutcome.Confirmed -> updateActivityLocked(
+                        request, intentId, MutationStatus.SUCCESS, "Write confirmed",
+                        receiptUpdatedAt = outcome.receiptUpdatedAt,
+                    )
                     is MutationOutcome.Failed -> updateActivityLocked(request, intentId, MutationStatus.FAILED, outcome.message)
                     is MutationOutcome.Unknown -> updateActivityLocked(request, intentId, MutationStatus.UNKNOWN, outcome.message)
                     else -> Unit
@@ -233,9 +243,32 @@ class MutationCoordinator(
         return MutationOutcome.Failed(result.statusCode, "HTTP ${result.statusCode} rejected the request")
     }
 
-    private fun updateActivityLocked(request: MutationRequest, id: String, status: MutationStatus, message: String? = null) {
-        replaceActivityLocked(id) { OperationActivity(id, id, status, message, it.syncError, request.idempotencyKey, request.origin) }
+    private fun updateActivityLocked(
+        request: MutationRequest,
+        id: String,
+        status: MutationStatus,
+        message: String? = null,
+        receiptUpdatedAt: String? = null,
+    ) {
+        replaceActivityLocked(id) {
+            OperationActivity(
+                intentId = id,
+                label = request.label?.takeIf(String::isNotBlank) ?: id,
+                status = status,
+                message = message,
+                syncError = it.syncError,
+                idempotencyKey = request.idempotencyKey,
+                origin = request.origin,
+                receiptUpdatedAt = receiptUpdatedAt ?: it.receiptUpdatedAt,
+            )
+        }
     }
+
+    private fun extractReceiptUpdatedAt(bytes: ByteArray): String? = runCatching {
+        val root = io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration.json
+            .parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+        root["updated_at"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
+    }.getOrNull()
 
     private fun replaceActivityLocked(id: String, transform: (OperationActivity) -> OperationActivity) {
         val old = _activities.value

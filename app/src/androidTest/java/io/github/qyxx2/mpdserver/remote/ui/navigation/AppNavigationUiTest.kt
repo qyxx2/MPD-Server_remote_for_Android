@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -25,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerAction
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
@@ -356,7 +359,12 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag("player-progress-track").assertIsDisplayed()
             composeRule.onNodeWithTag("player-source-format").assertIsDisplayed()
             composeRule.onNodeWithTag("player-playback-controls").assertIsDisplayed()
-            composeRule.onNodeWithTag("player-play-pause").assertIsNotEnabled()
+            val playbackActions = PlayerActions(originalRuntime)
+            if (playbackActions.isEnabled(PlayerAction.PAUSE) || playbackActions.isEnabled(PlayerAction.RESUME)) {
+                composeRule.onNodeWithTag("player-play-pause").assertIsEnabled()
+            } else {
+                composeRule.onNodeWithTag("player-play-pause").assertIsNotEnabled()
+            }
             composeRule.onNodeWithTag("player-bottom-now-playing").assertIsSelected()
             composeRule.onNodeWithTag("player-bottom-queue").assertIsDisplayed()
             composeRule.onAllNodesWithTag("full-screen-top-back").assertCountEquals(0)

@@ -11,6 +11,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.StateFlow
+import java.time.Duration
+import java.time.Instant
+import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
+import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackObservationDto
+import kotlinx.serialization.json.decodeFromJsonElement
 
 data class SnapshotWatermark(
     val epoch: String,
@@ -37,6 +42,7 @@ class StateReadCoordinator(
     private val connectionGeneration: () -> Long,
     private val readState: suspend () -> ApiResult<StateSnapshotDto>,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     private val lock = Any()
     private var inFlight: Deferred<StateReadResult>? = null
@@ -100,6 +106,7 @@ class StateReadCoordinator(
                     requiredWatermarkGeneration = null
                 }
             }
+            val requestedAt = monotonicMillis()
             val result = try {
                 readState()
             } catch (error: CancellationException) {
@@ -108,10 +115,11 @@ class StateReadCoordinator(
                 store.markReadFailure(error.message ?: "State snapshot read failed")
                 return StateReadResult.Failed(error.message ?: "State snapshot read failed")
             }
+            val receivedAt = monotonicMillis()
             if (generation != connectionGeneration()) continue
             when (result) {
                 is ApiResult.Success -> {
-                    try {
+                    val candidate = try {
                         FullStateSnapshot.from(result.value)
                     } catch (error: Exception) {
                         val reason = error.message ?: "State snapshot is incomplete or invalid"
@@ -119,6 +127,37 @@ class StateReadCoordinator(
                         return StateReadResult.Rejected(reason)
                     }
                     val accepted = store.accept(result.value, generation, SnapshotSource.HTTP_READ)
+                    val currentAfterAccept = store.state.value.snapshot
+                    if (currentAfterAccept != null &&
+                        currentAfterAccept.epoch == candidate.epoch &&
+                        currentAfterAccept.sequence == candidate.sequence
+                    ) {
+                        val observation = runCatching {
+                            JsonConfiguration.json.decodeFromJsonElement<PlaybackObservationDto>(
+                                currentAfterAccept.wire.playbackObservation,
+                            )
+                        }.getOrNull()
+                        val roundTripMillis = receivedAt - requestedAt
+                        val sampleAgeMillis = observation?.observedAt?.let { observedAt ->
+                            runCatching {
+                                val serverAge = Duration.between(
+                                    Instant.parse(observedAt),
+                                    Instant.parse(candidate.wire.capturedAt),
+                                ).toMillis()
+                                if (serverAge >= 0L && roundTripMillis >= 0L) serverAge + roundTripMillis else null
+                            }.getOrNull()
+                        }
+                        store.recordReadTiming(
+                            SnapshotReadTiming(
+                                epoch = currentAfterAccept.epoch,
+                                sequence = currentAfterAccept.sequence,
+                                observedAt = observation?.observedAt,
+                                requestedAtElapsedMillis = requestedAt,
+                                receivedAtElapsedMillis = receivedAt,
+                                sampleAgeMillis = sampleAgeMillis,
+                            ),
+                        )
+                    }
                     val current = store.state.value.snapshot
                     if (current == null) {
                         val reason = "No valid canonical snapshot has been accepted"

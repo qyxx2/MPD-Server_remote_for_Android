@@ -21,9 +21,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -41,8 +46,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.qyxx2.mpdserver.remote.protocol.dto.ActualPlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Native presentation of the same app-scoped canonical snapshot as Web. This screen never creates
@@ -52,6 +63,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 fun FullScreenPlayerScreen(
     runtime: AppRuntime,
     presentation: PlayerPresentation,
+    actions: PlayerActions? = null,
     onExit: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenPlayer: () -> Unit = {},
@@ -68,6 +80,83 @@ fun FullScreenPlayerScreen(
     val currentOnDismissGestureEnd = rememberUpdatedState(onDismissGestureEnd)
     val currentOnDismissGestureCancel = rememberUpdatedState(onDismissGestureCancel)
     val song = presentation.song
+    val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
+    val actionState = if (actions != null) {
+        val collected by actions.state.collectAsStateWithLifecycle()
+        collected
+    } else {
+        PlayerActionsState()
+    }
+    val playerClock = remember(runtime) { PlayerClock() }
+    var clockPosition by remember(playerClock) { mutableStateOf<Double?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleScope = androidx.compose.runtime.rememberCoroutineScope()
+
+    val clockSnapshot = actions?.currentSnapshot() ?: snapshotState
+    LaunchedEffect(playerClock, snapshotState, actionState) {
+        playerClock.update(clockSnapshot)
+        clockPosition = playerClock.positionSeconds
+    }
+    LaunchedEffect(playerClock) {
+        while (true) {
+            delay(100)
+            clockPosition = playerClock.positionSeconds
+        }
+    }
+    val clockObservation = PlayerFacts.from(snapshotState).playbackObservation
+    LaunchedEffect(runtime, snapshotState.controlsEligible, clockObservation?.actualState) {
+        // Match the Web session: establish a timing baseline on mount/writable recovery when
+        // playback is active. The shared coordinator coalesces this with any pending invalidation read.
+        if (snapshotState.controlsEligible && clockObservation?.actualState == ActualPlaybackStateDto.playing) {
+            try {
+                runtime.refreshSnapshot()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The existing SnapshotStore/StateReadCoordinator retain the authoritative read error.
+            }
+            playerClock.update(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
+            clockPosition = playerClock.positionSeconds
+        }
+    }
+    DisposableEffect(lifecycleOwner, playerClock, runtime) {
+        var backgrounded = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    backgrounded = true
+                    playerClock.setVisible(false)
+                    clockPosition = playerClock.positionSeconds
+                }
+                Lifecycle.Event.ON_START -> if (backgrounded) {
+                    backgrounded = false
+                    playerClock.setVisible(true)
+                    lifecycleScope.launch {
+                        runtime.refreshSnapshot()
+                        playerClock.completeForegroundRead(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
+                        // If the coalesced request had begun before foregrounding, its timing is
+                        // intentionally rejected by PlayerClock. Start one post-foreground read.
+                        if (playerClock.isAwaitingForegroundRead) {
+                            runtime.refreshSnapshot()
+                            playerClock.completeForegroundRead(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
+                        }
+                        clockPosition = playerClock.positionSeconds
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // The slider preview is local presentation only. The base position always comes from a fresh,
+    // target-bound server observation and is never written into SnapshotStore.
+    val displayedPosition = actionState.displayPositionSeconds ?: clockPosition
+    val observed = PlayerFacts.from(clockSnapshot).playbackObservation
+    val displayedDuration = observed?.durationSeconds?.takeIf {
+        presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
+            clockSnapshot.controlsEligible && it.isFinite() && it > 0.0
+    }
     var showOutputDetails by remember { mutableStateOf(false) }
     // Never let a previously cached track survive a canonical identity/connection change.
     // Subscribe only inside this screen so background preload state changes never tear down or
@@ -161,14 +250,19 @@ fun FullScreenPlayerScreen(
                 }
             }
 
-            PlayerProgressPlaceholder(modifier = Modifier.padding(horizontal = 24.dp))
+            PlayerProgressControl(
+                positionSeconds = displayedPosition,
+                durationSeconds = displayedDuration,
+                actions = actions,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
             SourceFormatLabel(
                 presentation = presentation,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 24.dp, top = 4.dp, end = 24.dp, bottom = 2.dp),
             )
-            DisabledPlaybackControls(presentation = presentation)
+            PlaybackControls(presentation = presentation, actions = actions)
             FullScreenBottomNavigation(
                 selectedDestination = FullScreenBottomNavigation.Destination.NOW_PLAYING,
                 onOutputClick = { showOutputDetails = true },
@@ -333,7 +427,31 @@ private fun PlayerSongIdentity(
 }
 
 @Composable
-private fun PlayerProgressPlaceholder(modifier: Modifier = Modifier) {
+private fun PlayerProgressControl(
+    positionSeconds: Double?,
+    durationSeconds: Double?,
+    actions: PlayerActions?,
+    modifier: Modifier = Modifier,
+) {
+    val actionState by if (actions != null) {
+        actions.state.collectAsState()
+    } else {
+        remember { mutableStateOf(PlayerActionsState()) }
+    }
+    val validDuration = durationSeconds?.takeIf { it.isFinite() && it > 0.0 }
+    val validPosition = positionSeconds?.takeIf { it.isFinite() && it >= 0.0 }
+    val progress = if (validDuration != null && validPosition != null) {
+        (validPosition / validDuration).coerceIn(0.0, 1.0).toFloat()
+    } else 0f
+    val interactions = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    LaunchedEffect(interactions, actions) {
+        interactions.interactions.collect { interaction ->
+            if (interaction is androidx.compose.foundation.interaction.DragInteraction.Cancel) {
+                actions?.cancelSeekDraft()
+            }
+        }
+    }
+    val seekEnabled = actions?.isEnabled(PlayerAction.SEEK) == true && validDuration != null
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -341,28 +459,82 @@ private fun PlayerProgressPlaceholder(modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "--:--",
+                text = formatPlayerTime(validPosition),
                 modifier = Modifier.testTag("player-elapsed-time"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "--:--",
+                text = formatPlayerTime(validDuration),
                 modifier = Modifier.testTag("player-duration-time"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Slider(
+            value = progress,
+            onValueChange = { fraction ->
+                if (actions?.state?.value?.seekDraftSeconds == null) actions?.beginSeek()
+                if (validDuration != null) actions?.previewSeek(fraction * validDuration)
+            },
+            onValueChangeFinished = { actions?.finishSeek() },
+            enabled = seekEnabled,
+            valueRange = 0f..1f,
+            interactionSource = interactions,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("player-progress-slider")
+                .semantics {
+                    contentDescription = "播放进度"
+                },
+        )
+        // Keep a stable, fine track as in the B2 design beneath the accessible touch slider.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp)
-                .height(3.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .padding(top = 0.dp)
+                .height(1.dp)
+                .clip(RoundedCornerShape(1.dp))
                 .background(MaterialTheme.colorScheme.outlineVariant)
                 .testTag("player-progress-track"),
         )
+        val status = when {
+            actionState.unknown -> "操作结果未知 · 可从应用状态环查看并重试原操作"
+            actionState.failed -> actionState.message?.let { "操作失败 · $it" } ?: "操作失败"
+            actionState.readFailed -> "操作已确认 · 状态同步失败"
+            actionState.syncing -> "操作已确认 · 等待新的播放观察"
+            actionState.pending -> actionState.action?.let(::playerActionPendingText) ?: "操作进行中"
+            else -> ""
+        }
+        Text(
+            text = status,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 0.dp)
+                .testTag("player-action-status"),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (actionState.unknown || actionState.failed || actionState.readFailed) {
+                MaterialTheme.colorScheme.error
+            } else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
+}
+
+private fun formatPlayerTime(seconds: Double?): String {
+    if (seconds == null || !seconds.isFinite() || seconds < 0.0) return "--:--"
+    val whole = seconds.toLong()
+    return "${whole / 60}:${(whole % 60).toString().padStart(2, '0')}"
+}
+
+private fun playerActionPendingText(action: PlayerAction): String = when (action) {
+    PlayerAction.PAUSE -> "正在暂停"
+    PlayerAction.RESUME -> "正在继续播放"
+    PlayerAction.PREVIOUS -> "正在切换上一首"
+    PlayerAction.NEXT -> "正在切换下一首"
+    PlayerAction.SEEK -> "正在调整进度"
 }
 
 @Composable
@@ -394,7 +566,18 @@ private fun SourceFormatLabel(
 }
 
 @Composable
-private fun DisabledPlaybackControls(presentation: PlayerPresentation) {
+private fun PlaybackControls(
+    presentation: PlayerPresentation,
+    actions: PlayerActions?,
+) {
+    // Explicitly subscribe here: enabled state must recompose immediately when the shared
+    // coordinator reports a pending/unknown operation, even if playback snapshot did not change.
+    val actionState by if (actions != null) {
+        actions.state.collectAsStateWithLifecycle()
+    } else {
+        remember { mutableStateOf(PlayerActionsState()) }
+    }
+    val actionLocked = actionState.locked
     val playGlyph = when (presentation.playbackStatus) {
         ConfirmedPlaybackStatus.PAUSED, ConfirmedPlaybackStatus.UNKNOWN -> PlayerGlyphKind.PLAY
         ConfirmedPlaybackStatus.PLAYING -> PlayerGlyphKind.PAUSE
@@ -414,8 +597,8 @@ private fun DisabledPlaybackControls(presentation: PlayerPresentation) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
-            enabled = false,
-            onClick = {},
+            enabled = !actionLocked && actions?.isEnabled(PlayerAction.PREVIOUS) == true,
+            onClick = { actions?.perform(PlayerAction.PREVIOUS) },
             modifier = Modifier
                 .size(72.dp)
                 .semantics { contentDescription = "上一首" }
@@ -427,9 +610,14 @@ private fun DisabledPlaybackControls(presentation: PlayerPresentation) {
                 modifier = Modifier.size(width = 44.dp, height = 36.dp),
             )
         }
+        val primaryAction = when (presentation.playbackStatus) {
+            ConfirmedPlaybackStatus.PLAYING -> PlayerAction.PAUSE
+            ConfirmedPlaybackStatus.PAUSED -> PlayerAction.RESUME
+            ConfirmedPlaybackStatus.UNKNOWN -> null
+        }
         IconButton(
-            enabled = false,
-            onClick = {},
+            enabled = !actionLocked && primaryAction != null && actions?.isEnabled(primaryAction) == true,
+            onClick = { primaryAction?.let { actions?.perform(it) } },
             modifier = Modifier.size(72.dp).testTag("player-play-pause").then(
                 Modifier.semantics { contentDescription = actionLabel },
             ),
@@ -441,8 +629,8 @@ private fun DisabledPlaybackControls(presentation: PlayerPresentation) {
             )
         }
         IconButton(
-            enabled = false,
-            onClick = {},
+            enabled = !actionLocked && actions?.isEnabled(PlayerAction.NEXT) == true,
+            onClick = { actions?.perform(PlayerAction.NEXT) },
             modifier = Modifier
                 .size(72.dp)
                 .semantics { contentDescription = "下一首" }

@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -79,7 +80,12 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.onNodeWithTag("player-bottom-now-playing").assertIsSelected()
         composeRule.onNodeWithTag("player-progress-track").assertIsDisplayed()
         composeRule.onNodeWithTag("player-source-format").assertIsDisplayed()
-        composeRule.onNodeWithTag("player-play-pause").assertIsNotEnabled()
+        val playbackActions = PlayerActions(runtime)
+        if (playbackActions.isEnabled(PlayerAction.PAUSE) || playbackActions.isEnabled(PlayerAction.RESUME)) {
+            composeRule.onNodeWithTag("player-play-pause").assertIsEnabled()
+        } else {
+            composeRule.onNodeWithTag("player-play-pause").assertIsNotEnabled()
+        }
         val minimumTouchPx = with(composeRule.density) { 48.dp.toPx() }
         listOf("player-bottom-output", "player-bottom-now-playing", "player-bottom-queue").forEach { tag ->
             val bounds = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot

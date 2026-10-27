@@ -82,12 +82,13 @@ internal object PlayerTestFixtures {
         connectionStatus: RuntimeConnectionStatus = RuntimeConnectionStatus.CONNECTED,
         connectionGeneration: Long = 1,
         snapshotConnectionGeneration: Long? = 1,
+        capturedAt: String = "2026-10-27T10:00:01Z",
     ): SnapshotStoreState {
         val json = JsonConfiguration.json
         val dto = StateSnapshotDto(
             epoch = "epoch-1",
             sequence = 10,
-            capturedAt = "2026-10-27T10:00:01Z",
+            capturedAt = capturedAt,
             explicitStopGeneration = 0,
             revisions = StateRevisionsDto(library = 7, playlist = 3),
             playback = json.parseToJsonElement(playback),

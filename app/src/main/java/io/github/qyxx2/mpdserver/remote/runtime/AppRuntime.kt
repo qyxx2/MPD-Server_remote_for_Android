@@ -74,6 +74,9 @@ class AppRuntime private constructor(
 
     fun start() = realtimeController.start()
 
+    /** Foreground refresh delegated to the existing coalescing StateReadCoordinator. */
+    suspend fun refreshSnapshot(): StateReadResult = realtimeController.refreshSnapshot()
+
     suspend fun changeOrigin(origin: ServerOrigin) {
         mutations.changeOrigin(origin)
         realtimeController.changeOrigin(origin)

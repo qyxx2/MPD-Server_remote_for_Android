@@ -59,6 +59,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerDismissPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueDestinationPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
@@ -95,7 +96,24 @@ fun AppNavHost(
     val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
     // Observe the existing shared coordinator; this does not start networking or submit a mutation.
     val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
-    val statusPresentation = ActivityPresentation.from(snapshotState, activities)
+    // This transient presentation adapter is shell-scoped; all requests/retries still belong to
+    // the Application-owned MutationCoordinator and survive player route disposal.
+    val playerActions = remember(runtime) { PlayerActions(runtime) }
+    val playerActionState by playerActions.state.collectAsStateWithLifecycle()
+    LaunchedEffect(playerActions, snapshotState, activities) {
+        playerActions.update(snapshotState, activities)
+    }
+    val currentServerOrigin = runtime.realtimeController.currentOrigin()
+    val retryablePlayerIntentIds = playerActionState.activeIntentId
+        ?.takeIf { playerActions.canRetryUnknown() }
+        ?.let(::setOf)
+        ?: emptySet()
+    val statusPresentation = ActivityPresentation.from(
+        snapshotState,
+        activities,
+        currentOrigin = currentServerOrigin,
+        retryableIntentIds = retryablePlayerIntentIds,
+    )
     val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }
     val ringPreferences by uiPreferences.statusRingPreferences.collectAsStateWithLifecycle(
@@ -377,6 +395,7 @@ fun AppNavHost(
                     runtime = runtime,
                     snapshotState = snapshotState,
                     playerPresentation = playerPresentation,
+                    playerActions = playerActions,
                     playerArtworkCacheKey = artworkCacheKey,
                     playerArtworkCache = artworkCache,
                     uiPreferences = uiPreferences,
@@ -410,6 +429,7 @@ fun AppNavHost(
                         runtime = runtime,
                         snapshotState = snapshotState,
                         playerPresentation = playerPresentation,
+                        playerActions = playerActions,
                         playerArtworkCacheKey = artworkCacheKey,
                         playerArtworkCache = artworkCache,
                         uiPreferences = uiPreferences,
@@ -446,6 +466,7 @@ fun AppNavHost(
                             runtime = runtime,
                             snapshotState = snapshotState,
                             playerPresentation = playerPresentation,
+                            playerActions = playerActions,
                             playerArtworkCacheKey = artworkCacheKey,
                             playerArtworkCache = artworkCache,
                             uiPreferences = uiPreferences,
@@ -476,6 +497,13 @@ fun AppNavHost(
             ActivityStatusSheet(
                 presentation = statusPresentation,
                 onDismiss = { showActivityStatus = false },
+                onRetryUnknown = { intentId ->
+                    if (intentId.startsWith("player:")) {
+                        if (playerActions.state.value.activeIntentId == intentId) playerActions.retryUnknown()
+                    } else {
+                        runtime.mutations.retryUnknown(intentId)
+                    }
+                },
             )
         }
     }
@@ -537,6 +565,7 @@ private fun AppNavigationGraph(
     runtime: AppRuntime,
     snapshotState: SnapshotStoreState,
     playerPresentation: PlayerPresentation,
+    playerActions: PlayerActions,
     playerArtworkCacheKey: PlayerArtworkCacheKey?,
     playerArtworkCache: PlayerArtworkMemoryCache,
     uiPreferences: UiPreferencesRepository,
@@ -583,6 +612,7 @@ private fun AppNavigationGraph(
                 FullScreenPlayerScreen(
                     runtime = runtime,
                     presentation = playerPresentation,
+                    actions = playerActions,
                     artworkCacheKey = playerArtworkCacheKey,
                     artworkCache = playerArtworkCache,
                     onExit = onExitFullScreen,

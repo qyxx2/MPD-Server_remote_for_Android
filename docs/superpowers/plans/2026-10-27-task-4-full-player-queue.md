@@ -217,18 +217,18 @@
 - Test：`app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/player/PlayerClockTest.kt`、`app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/player/PlayerActionsTest.kt`；instrumentation：`app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/player/PlayerControlsUiTest.kt`（播放控件可访问性/禁用条件/seek 手势）。
 
 **Interfaces：**
-- `PlayerClock` 只产生展示位置，不写 canonical snapshot；基于 fresh `playback_observation.position_seconds` 与单调时钟，在同一个 observation/target/current identity 下最多外推 6 秒，之后冻结并要求新鲜 observation。切换到后台、观察 stale 或身份改变时不继续外推。
+- `PlayerClock` 只产生展示位置，不写 canonical snapshot；基于 fresh `playback_observation.position_seconds`、现有 `StateReadCoordinator` 产生的 `SnapshotReadTiming` 与单调时钟，在同一个 observation/target/current identity 下最多外推 6 秒。sample age 与 Web 对齐为服务端 `captured_at - observed_at + HTTP RTT`，phone/server wall clock 不互相比较；没有可信 read timing 时只展示服务端 base，不外推。相同样本的后续读数可更新 base，但不可延长 lease。切换到后台、观察 stale 或身份改变时不继续外推。
 - `PlayerActions` 接收唯一 Runtime 与当前 presentation；调用现有 `runtime.mutations.submit(MutationIntent(...))` 并观察 `runtime.mutations.activities`。bodyless POST 按 HttpTransport 合同显式使用 `{}`；RESUME 传入 observation 中原样 target/token，SEEK 使用 `{seconds, target}`。所有请求和控制 enabled 条件在 dispatch 前重新检查。
 - Seek 拖动时仅维护本地 draft/preview；release 时身份仍匹配、控件仍可用才发一个 POST。任何目标 identity、current occurrence、snapshot epoch、generation 或 freshness 改变均取消 draft，不提交旧 seconds。
 - UNKNOWN 只能显式重试原意图，复用协调器保存的 key/origin/payload；不生成新 key 静默重发。回执成功后权威读回失败时仍保留“写入成功、同步失败”语义。
 
 **Steps：**
-- [ ] 新增 clock/action 测试：6 秒 lease 到期、重复观察样本不能续期、pause 不外推、stale/disconnect/identity change 取消 clock 和 seek draft。
-- [ ] 新增 action 测试：playing 显示 pause、paused 且 target fresh 时显示 resume；target 缺失/stale/unknown 时禁用；seek release 仅发一次；current/target/revision 变化前后释放都不能误写。
-- [ ] 运行测试见证 RED；实现 injected monotonic clock 的纯 PlayerClock 与通过 MutationCoordinator 的 action dispatch，不做页面级请求/重试 owner。
-- [ ] 覆盖 POST 路径/方法/payload、resume target/token 原样保留、seek seconds/target、连续点击去重、明确 HTTP error vs UNKNOWN、成功回执但读回失败、明确的用户重试复用同 key。
-- [ ] 将上一首/播放暂停/下一首与 seek slider 接入 UI；不增加不在已确认布局中的额外按钮。进度视觉位置仅用 local draft preview，权威回读前不写本地 snapshot。
-- [ ] 运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check` 和 mutation-owner 静态扫描。真实播放写入只在有服务可用且用户授权的安全场景里做；否则记录 NOT COVERED，单独提交 Batch 3。
+- [x] 新增 clock/action 测试：6 秒 lease 到期与 sample age/RTT 扣减、重复观察样本不能续期、pause 不外推、无可信 read timing 不外推、stale/disconnect/identity change 取消 clock 和 seek draft。
+- [x] 新增 action 测试：playing 显示 pause、paused 且 target fresh 时显示 resume；target 缺失/stale/unknown 时禁用；seek release 仅发一次；current/target/revision 变化前后释放都不能误写。
+- [x] 运行测试见证 RED；实现 injected monotonic clock 的纯 PlayerClock 与通过 MutationCoordinator 的 action dispatch，不做页面级请求/重试 owner。
+- [x] 覆盖 POST 路径/方法/payload、resume target/token 原样保留、seek seconds/target、连续点击去重、明确 HTTP error vs UNKNOWN、成功回执但读回失败、明确的用户重试复用同 key。
+- [x] 将上一首/播放暂停/下一首与 seek slider 接入 UI；不增加不在已确认布局中的额外按钮。进度视觉位置仅用 local draft preview，权威回读前不写本地 snapshot。
+- [x] 运行 `./gradlew --offline --no-daemon testDebugUnitTest lintDebug compileDebugAndroidTestKotlin assembleDebug`、`git diff --check` 和 mutation-owner 静态扫描。真实播放写入未执行，已在 [Batch 3 验证报告](../reports/2026-10-27-task-4-batch3-verification.md) 记录 NOT COVERED，以避免未授权地改变用户当前播放。
 
 **退出门：** T4-01/T4-05/T4-17 的播放器操作契约在自动化层通过；所有写请求共用 Runtime coordinator；未知结果不冒充失败/成功、不自动换 key 重发。
 

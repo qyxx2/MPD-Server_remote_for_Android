@@ -49,6 +49,9 @@ class RealtimeController(
         dispatcher = dispatcher,
     )
 
+    /** Reuse the shared/coalescing canonical snapshot reader; callers must not create a parallel GET owner. */
+    suspend fun refreshSnapshot(): StateReadResult = readCoordinator.read()
+
     fun start() {
         synchronized(lock) {
             if (started) return
