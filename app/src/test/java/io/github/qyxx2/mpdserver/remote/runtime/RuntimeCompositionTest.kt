@@ -97,7 +97,7 @@ class RuntimeCompositionTest {
             socket.open()
             socket.message(snapshot("e1", 1))
             runtime.snapshots.state.first { it.snapshot?.sequence == 1L }
-            socket.message("""{"type":"invalidate","epoch":"e1","sequence":2,"domains":["playback"],"revisions":{"library":0,"playlist":0}}""")
+            socket.message("""{"type":"invalidate","protocol_version":1,"epoch":"e1","sequence":2,"domains":["playback"],"revisions":{"library":0,"playlist":0}}""")
             runtime.snapshots.state.first { it.snapshot?.sequence == 2L }
             assertEquals(1, reads.get())
         } finally {

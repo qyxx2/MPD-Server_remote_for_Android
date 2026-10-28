@@ -48,7 +48,8 @@ class RealtimeFrameDecoder(private val json: kotlinx.serialization.json.Json = J
                 RealtimeWireEvent.Snapshot(epoch, sequence, state)
             }
             "invalidate" -> {
-                if (root.containsKey("protocol_version")) throw SerializationException("protocol_version is only valid on the initial snapshot")
+                val version = root.required<Int>("protocol_version")
+                if (version != 1) throw SerializationException("Unsupported realtime protocol version: $version")
                 val domains = root.required<List<String>>("domains")
                 if (domains.isEmpty() || domains.any { it.isBlank() }) throw SerializationException("Invalidate domains must be non-empty")
                 val revisionsElement = root["revisions"] ?: throw SerializationException("Invalidate revisions are required")

@@ -26,15 +26,29 @@ class RealtimeFrameDecoderTest {
         assertThrows(SerializationException::class.java) { decoder.decode(snapshot.replaceFirst("\"epoch\":\"e1\"", "\"epoch\":\"e2\"")) }
     }
 
-    @Test fun decodedInvalidateIsNotPatch() {
-        val decoded = decoder.decode("""{"type":"invalidate","epoch":"e1","sequence":8,"domains":["playback"],"revisions":{"library":2,"playlist":3}}""")
+    @Test fun decodedVersionedInvalidateIsNotPatch() {
+        val decoded = decoder.decode("""{"type":"invalidate","protocol_version":1,"epoch":"e1","sequence":8,"domains":["playback"],"revisions":{"library":2,"playlist":3}}""")
         assertTrue(decoded is RealtimeWireEvent.Invalidate)
         assertEquals(8L, (decoded as RealtimeWireEvent.Invalidate).sequence)
         assertEquals(listOf("playback"), decoded.domains)
     }
 
+    @Test fun rejectsUnsupportedInvalidateVersion() {
+        assertThrows(SerializationException::class.java) {
+            decoder.decode("""{"type":"invalidate","protocol_version":2,"epoch":"e1","sequence":8,"domains":["playback"],"revisions":{"library":2,"playlist":3}}""")
+        }
+    }
+
+    @Test fun requiresInvalidateProtocolVersion() {
+        assertThrows(SerializationException::class.java) {
+            decoder.decode("""{"type":"invalidate","epoch":"e1","sequence":8,"domains":["playback"],"revisions":{"library":2,"playlist":3}}""")
+        }
+    }
+
     @Test fun rejectsMissingRequiredInvalidateFields() {
-        assertThrows(SerializationException::class.java) { decoder.decode("""{"type":"invalidate","epoch":"e1","sequence":8,"domains":["playback"]}""") }
+        assertThrows(SerializationException::class.java) {
+            decoder.decode("""{"type":"invalidate","protocol_version":1,"epoch":"e1","sequence":8,"domains":["playback"]}""")
+        }
     }
 
     private val state = """{"epoch":"e1","sequence":7,"captured_at":"2026-10-24T12:00:00Z","explicit_stop_generation":0,"revisions":{"library":2,"playlist":3},"playback":{},"current_song":null,"queue":{},"history":{},"playback_observation":{},"output":{},"output_observation":{},"library_sync":{}}"""

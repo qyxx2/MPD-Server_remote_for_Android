@@ -53,6 +53,43 @@ class RealtimeConnectionTest {
         }
     }
 
+    @Test fun serverVersionedInvalidateKeepsTheRealtimeConnectionReady() = runBlocking {
+        val factory = FakeSocketFactory()
+        val connection = RealtimeConnection(
+            origin = ServerOrigin.parse("http://music.example:18000"),
+            socketFactory = factory,
+            initialSnapshotTimeoutMillis = 1_000,
+            backoff = { 5L },
+            jitter = { it },
+        )
+        connection.start()
+        try {
+            val socket = factory.awaitSocket(0)
+            socket.open()
+            val initialSnapshot = async(start = CoroutineStart.UNDISPATCHED) {
+                connection.events.first { it is RealtimeWireEvent.Snapshot }
+            }
+            socket.message(snapshot("e1", 1))
+            initialSnapshot.await()
+            connection.state.first { it.isReady }
+
+            val invalidate = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeoutOrNull(500) {
+                    connection.events.first { it is RealtimeWireEvent.Invalidate }
+                }
+            }
+            // This is the exact subsequent frame emitted by the current MS server.
+            socket.message("""{"type":"invalidate","protocol_version":1,"epoch":"e1","sequence":2,"domains":["playback"],"revisions":{"library":0,"playlist":0}}""")
+
+            val event = invalidate.await()
+            assertTrue("versioned invalidate must be decoded, not treated as a protocol error", event is RealtimeWireEvent.Invalidate)
+            assertTrue("valid invalidate must not trigger a WebSocket reconnect", connection.state.value.isReady)
+            assertEquals(1, factory.sockets.size)
+        } finally {
+            connection.stop()
+        }
+    }
+
     @Test fun invalidateCannotBeTheFirstFrame() = runBlocking {
         val factory = FakeSocketFactory()
         val connection = RealtimeConnection(ServerOrigin.parse("http://music.example:18000"), factory, initialSnapshotTimeoutMillis = 1_000, backoff = { 5L }, jitter = { it })
@@ -60,7 +97,7 @@ class RealtimeConnectionTest {
         try {
             val firstSocket = factory.awaitSocket(0)
             firstSocket.open()
-            firstSocket.message("""{"type":"invalidate","epoch":"e1","sequence":1,"domains":["playback"],"revisions":{"library":0,"playlist":0}}""")
+            firstSocket.message("""{"type":"invalidate","protocol_version":1,"epoch":"e1","sequence":1,"domains":["playback"],"revisions":{"library":0,"playlist":0}}""")
             val secondSocket = factory.awaitSocket(1)
             assertFalse(connection.state.value.isReady)
             assertTrue(secondSocket !== firstSocket)

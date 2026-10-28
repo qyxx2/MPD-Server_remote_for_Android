@@ -43,7 +43,7 @@
 ### `WS /api/realtime`
 
 - 当前协议版本为 1。连接后的第一条成功帧是完整 snapshot：`type=snapshot`、`protocol_version=1`、`epoch`、`sequence`、`state`。
-- 后续是 invalidate 帧，包含 `epoch`、`sequence`、`domains` 和 `revisions`。domains 可包括 playback、queue、history、library、playlist、output、library_sync。
+- 后续 invalidate 帧同样包含 `protocol_version=1`，以及 `epoch`、`sequence`、`domains` 和 `revisions`。客户端必须验证两种帧的版本均为 1；缺失或不支持的版本都是协议错误。domains 可包括 playback、queue、history、library、playlist、output、library_sync。
 - snapshot 外层 epoch/sequence 必须与 state 内部对应字段一致。
 - invalidate 代表重新读取的义务，不是 state patch；消息可重复。客户端按 epoch/sequence 过滤后调用 `GET /api/state`。
 - 每次重连都必须获得新连接的完整初始快照；不要依据旧 cursor 或本地持久化快照恢复权威状态。
