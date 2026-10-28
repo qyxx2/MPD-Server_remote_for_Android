@@ -35,10 +35,17 @@ internal fun PlayerGlyph(
             }
             PlayerGlyphKind.OUTPUT -> drawOutputGlyph(tint, line, w, h)
             PlayerGlyphKind.NOW_PLAYING -> {
-                val bars = listOf(.35f, .67f, .48f, .86f, .54f, .74f, .30f)
+                // A minimal three-bar waveform keeps the navigation mark distinct from playback controls.
+                val bars = listOf(.42f, .78f, .42f)
                 bars.forEachIndexed { i, height ->
-                    val x = w * (.12f + i * .13f)
-                    drawLine(tint, Offset(x, h * (1f - height) / 2f), Offset(x, h * (1f + height) / 2f), stroke * 1.2f, StrokeCap.Round)
+                    val x = w * (.30f + i * .20f)
+                    drawLine(
+                        tint,
+                        Offset(x, h * (1f - height) / 2f),
+                        Offset(x, h * (1f + height) / 2f),
+                        stroke * .8f,
+                        StrokeCap.Round,
+                    )
                 }
             }
             PlayerGlyphKind.QUEUE -> {

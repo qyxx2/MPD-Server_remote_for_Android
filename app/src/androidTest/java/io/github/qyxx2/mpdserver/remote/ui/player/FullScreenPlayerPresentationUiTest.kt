@@ -1,6 +1,12 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -79,6 +85,33 @@ class FullScreenPlayerPresentationUiTest {
         assertTrue("central play glyph should be the visual focus", playGlyph.height / density >= 48f)
         assertTrue("next glyph should be visibly larger than the old 26dp drawing", nextGlyph.width / density >= 44f)
     }
+
+    @Test
+    fun nowPlayingNavigationGlyphUsesThreeSimpleVerticalStrokes() {
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                PlayerGlyph(
+                    kind = PlayerGlyphKind.NOW_PLAYING,
+                    tint = Color.Red,
+                    modifier = Modifier.size(25.dp),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val pixels = composeRule.onNodeWithTag("player-glyph-now_playing").captureToImage().toPixelMap()
+        val occupiedColumns = (0 until pixels.width).map { x ->
+            (0 until pixels.height).any { y ->
+                val pixel = pixels[x, y]
+                pixel.red > pixel.green + 0.15f && pixel.red > pixel.blue + 0.15f
+            }
+        }
+        val strokeGroups = occupiedColumns.fold(0 to false) { (count, wasOccupied), occupied ->
+            (count + if (occupied && !wasOccupied) 1 else 0) to occupied
+        }.first
+        assertEquals("the now-playing navigation glyph should be a minimal 3-stroke waveform", 3, strokeGroups)
+    }
+
 
     @Test
     fun artistAndAlbumClicksEmitNamesAndTypedServerOwnedIds() {
