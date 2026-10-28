@@ -1,7 +1,6 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
-import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSnapshotDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.StateSnapshotDto
@@ -9,6 +8,9 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 
 enum class QueueSnapshotStatus { NO_SNAPSHOT, READY, STALE, INVALID }
@@ -77,9 +79,14 @@ data class QueuePresentation(
             val current = items.firstOrNull { it.position == 0 }
             val pending = items.filter { it.position > 0 }.sortedBy { it.position }
             val manual = pending.filter { it.source.name == "MANUAL" }
-            val autoplayEnabled = runCatching {
-                JsonConfiguration.json.decodeFromJsonElement<PlaybackStateDto>(wire.playback).autoplayEnabled
-            }.getOrDefault(false)
+            // Mirror Web's direct snapshot.playback.autoplay_enabled lookup. Decoding the full
+            // legacy PlaybackStateDto here rejects the canonical wire fields (position_seconds and
+            // playback_context_id) under the app's strict JsonConfiguration, silently hiding autoplay.
+            val autoplayEnabled = (wire.playback as? JsonObject)
+                ?.get("autoplay_enabled")
+                ?.let { value ->
+                    (value as? JsonPrimitive)?.let { !it.isString && it.booleanOrNull == true }
+                } == true
             val next = when {
                 manual.isNotEmpty() -> manual
                 current != null && autoplayEnabled -> pending.filter { it.source.name == "AUTOPLAY" }.take(1)

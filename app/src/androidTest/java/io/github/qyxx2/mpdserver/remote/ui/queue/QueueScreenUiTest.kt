@@ -107,6 +107,28 @@ class QueueScreenUiTest {
     }
 
     @Test
+    fun canonicalPlaybackWireShapeShowsOnlyTheFirstAutoplayCandidate() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val state = snapshotState(
+            items = listOf(
+                item("occ-current-auto", "song-current", 0, QueueSourceDto.AUTOPLAY),
+                item("occ-next-auto", "song-next", 1, QueueSourceDto.AUTOPLAY),
+                item("occ-later-auto", "song-later", 2, QueueSourceDto.AUTOPLAY),
+            ),
+            freshness = SnapshotFreshness.FRESH,
+        )
+        val songReads = AtomicInteger()
+        val playedReads = AtomicInteger()
+
+        launchQueue(application, state, songReads, playedReads, emptyList())
+
+        composeRule.onNodeWithTag("queue-row-occ-current-auto").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-row-occ-next-auto").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("queue-row-occ-later-auto").assertCountEquals(0)
+        assertEquals("fresh canonical Played must not trigger a fallback read", 0, playedReads.get())
+    }
+
+    @Test
     fun staleSnapshotShowsBusinessCurrentAsUnconfirmedAndReadsPlayedOnce() {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         val items = listOf(
@@ -220,7 +242,7 @@ class QueueScreenUiTest {
             capturedAt = "2026-10-28T10:00:01Z",
             explicitStopGeneration = 0,
             revisions = StateRevisionsDto(library = 11, playlist = 2),
-            playback = json.parseToJsonElement("""{"song_id":"$currentSongId","state":"PLAYING","context":null,"position":12.5,"autoplay_enabled":true,"updated_at":"2026-10-28T10:00:00Z"}"""),
+            playback = json.parseToJsonElement("""{"song_id":"$currentSongId","state":"PLAYING","playback_context_id":"context-test","position_seconds":12.5,"autoplay_enabled":true,"updated_at":"2026-10-28T10:00:00Z"}"""),
             currentSong = currentSong,
             queue = json.parseToJsonElement(queueJson),
             history = json.parseToJsonElement("{}"),

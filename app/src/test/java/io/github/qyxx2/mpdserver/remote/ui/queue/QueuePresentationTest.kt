@@ -56,6 +56,27 @@ class QueuePresentationTest {
     }
 
     @Test
+    fun canonicalPlaybackWireShapeShowsOneAutoplayNextWhenNoManualPendingExists() {
+        val state = PlayerTestFixtures.state(
+            queue = queueJson(
+                listOf(
+                    item("current-auto", "song-current", 0, QueueSourceDto.AUTOPLAY),
+                    item("next-auto", "song-next", 1, QueueSourceDto.AUTOPLAY),
+                    item("later-auto", "song-later", 2, QueueSourceDto.AUTOPLAY),
+                ),
+            ),
+            playback = """{"song_id":"song-current","state":"PAUSED","playback_context_id":"context-1","position_seconds":105.042,"autoplay_enabled":true,"updated_at":"2026-10-28T06:07:30.366157Z"}""",
+            observation = PlayerTestFixtures.observationJson
+                .replace("\"bound_queue_item_id\":\"occurrence-1\"", "\"bound_queue_item_id\":\"current-auto\""),
+        )
+
+        val result = QueuePresentation.deriveQueue(state)
+
+        assertEquals(listOf("next-auto"), result.next.map { it.queueItemId })
+        assertEquals(listOf("current-auto", "next-auto"), result.visibleRows.map { it.queueItemId })
+    }
+
+    @Test
     fun staleSnapshotUsesOnlySuppliedPlayedFallbackAndDoesNotConfirmCurrent() {
         val stale = stateWithQueue(
             items = listOf(
@@ -117,7 +138,7 @@ class QueuePresentationTest {
         val state = PlayerTestFixtures.state(
             queue = queueJson(listOf(item("current", "song-1", 0, QueueSourceDto.MANUAL))),
             observation = observation,
-            playback = """{"song_id":"song-1","state":"PAUSED","context":null,"position":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+            playback = """{"song_id":"song-1","state":"PAUSED","playback_context_id":"context-1","position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
         )
 
         val result = QueuePresentation.deriveQueue(state)
@@ -150,7 +171,7 @@ class QueuePresentationTest {
             "\"bound_queue_item_id\":\"occurrence-1\"",
             "\"bound_queue_item_id\":\"current\"",
         ),
-        playback = """{"song_id":"song-1","state":"PLAYING","context":null,"position":12.5,"autoplay_enabled":$autoplayEnabled,"updated_at":"2026-10-27T10:00:00Z"}""",
+        playback = """{"song_id":"song-1","state":"PLAYING","playback_context_id":"context-1","position_seconds":12.5,"autoplay_enabled":$autoplayEnabled,"updated_at":"2026-10-27T10:00:00Z"}""",
         freshness = freshness,
     )
 
