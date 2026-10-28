@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 
-internal enum class PlayerGlyphKind { ALBUM, OUTPUT, NOW_PLAYING, QUEUE, PREVIOUS, PLAY, PAUSE, NEXT }
+internal enum class PlayerGlyphKind { ALBUM, BACK, OUTPUT, NOW_PLAYING, QUEUE, PREVIOUS, PLAY, PAUSE, NEXT }
 
 /** Small native vector glyphs avoid an added icon dependency and keep navigation distinct from play controls. */
 @Composable
@@ -32,6 +32,14 @@ internal fun PlayerGlyph(
                 drawRoundRect(tint, Offset(w * .12f, h * .12f), Size(w * .76f, h * .76f), CornerRadius(w * .09f), style = line)
                 drawCircle(tint, w * .22f, Offset(w * .5f, h * .5f), style = line)
                 drawCircle(tint, w * .045f, Offset(w * .5f, h * .5f))
+            }
+            PlayerGlyphKind.BACK -> {
+                // Compact left arrow with rounded ends and a softly open arrowhead.
+                val arrowStroke = size.minDimension * .12f
+                val tip = Offset(w * .23f, h * .50f)
+                drawLine(tint, Offset(w * .77f, h * .50f), tip, arrowStroke, StrokeCap.Round)
+                drawLine(tint, tip, Offset(w * .43f, h * .31f), arrowStroke, StrokeCap.Round)
+                drawLine(tint, tip, Offset(w * .43f, h * .69f), arrowStroke, StrokeCap.Round)
             }
             PlayerGlyphKind.OUTPUT -> drawOutputGlyph(tint, line, w, h)
             PlayerGlyphKind.NOW_PLAYING -> {

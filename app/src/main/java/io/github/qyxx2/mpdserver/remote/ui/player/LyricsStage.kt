@@ -2,18 +2,19 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 
 import android.os.SystemClock
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,15 +35,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsDisplayStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsFollowReducer
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsPresentation
@@ -146,22 +152,22 @@ fun LyricsStage(
         IconButton(
             onClick = onShowArtwork,
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .heightIn(min = 48.dp)
+                .align(Alignment.TopStart)
+                .size(48.dp)
                 .testTag("lyrics-return-artwork")
                 .semantics { contentDescription = "显示封面" },
         ) {
             PlayerGlyph(
-                kind = PlayerGlyphKind.ALBUM,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(2.dp),
+                kind = PlayerGlyphKind.BACK,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp),
             )
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 48.dp, end = 8.dp, bottom = 4.dp)
+                .padding(top = 48.dp, end = 8.dp, bottom = 12.dp)
                 .testTag("lyrics-content-column"),
         ) {
             StatusLine(
@@ -184,8 +190,7 @@ fun LyricsStage(
                         LazyColumn(
                             state = listState,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(280.dp)
+                                .fillMaxSize()
                                 .testTag("lyrics-timed-content")
                                 .pointerInput(resourceIdentity) {
                                     awaitEachGesture {
@@ -257,14 +262,24 @@ fun LyricsStage(
                                         .then(if (current) Modifier.testTag("lyrics-cue-active") else Modifier)
                                         .testTag("lyrics-cue-" + index),
                                 ) {
-                                    Text(
-                                        text = cue.text,
-                                        modifier = Modifier.fillMaxWidth(),
+                                    val cueStyle = (if (current) {
+                                        MaterialTheme.typography.titleLarge.copy(
+                                            fontSize = 34.sp,
+                                            lineHeight = 40.sp,
+                                        )
+                                    } else {
+                                        MaterialTheme.typography.bodyLarge.copy(
+                                            fontSize = 28.sp,
+                                            lineHeight = 34.sp,
+                                        )
+                                    }).copy(
                                         color = if (current) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        style = if (current) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
                                         fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                                        textAlign = TextAlign.Start,
-                                        overflow = TextOverflow.Clip,
+                                    )
+                                    LyricCueText(
+                                        text = cue.text,
+                                        style = cueStyle,
+                                        modifier = Modifier.fillMaxWidth().testTag("lyrics-cue-text-" + index),
                                     )
                                 }
                             }
@@ -328,6 +343,66 @@ fun LyricsStage(
 }
 
 @Composable
+private fun LyricCueText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier = modifier) {
+        val maxWidthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
+        val layout = remember(text, style, maxWidthPx, textMeasurer) {
+            textMeasurer.measure(
+                text = text,
+                style = style,
+                constraints = Constraints(maxWidth = maxWidthPx),
+                maxLines = 2,
+                overflow = TextOverflow.Clip,
+            )
+        }
+        val firstLineEnd = if (layout.hasVisualOverflow && layout.lineCount >= 2) {
+            layout.getLineEnd(0, visibleEnd = true).coerceIn(0, text.length)
+        } else {
+            text.length
+        }
+        val scrollingSecondLine = if (firstLineEnd in 1 until text.length) {
+            text.substring(firstLineEnd).trimStart()
+        } else {
+            ""
+        }
+
+        if (scrollingSecondLine.isEmpty()) {
+            Text(
+                text = text,
+                modifier = Modifier.fillMaxWidth(),
+                style = style,
+                maxLines = 2,
+                overflow = TextOverflow.Clip,
+            )
+        } else {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = text.substring(0, firstLineEnd).trimEnd(),
+                    modifier = Modifier.fillMaxWidth(),
+                    style = style,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip,
+                )
+                Text(
+                    text = scrollingSecondLine,
+                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+                    style = style,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun StatusLine(
     presentation: LyricsPresentation,
     timed: Boolean,
@@ -343,7 +418,9 @@ private fun StatusLine(
             else -> Unit
         }
         if (timed && !positionKnown) add("播放位置未确认，暂不同步")
-        presentation.source?.let { add("来源：" + it) }
+        presentation.source
+            ?.takeUnless { it.equals("embedded", ignoreCase = true) }
+            ?.let { add("来源：" + it) }
     }
     if (labels.isNotEmpty()) {
         Text(

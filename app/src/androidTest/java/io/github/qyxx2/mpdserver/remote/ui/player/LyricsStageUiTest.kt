@@ -6,8 +6,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -63,6 +65,9 @@ class LyricsStageUiTest {
         composeRule.onNodeWithTag("player-artwork-stage").performClick()
         composeRule.onNodeWithTag("lyrics-stage").assertIsDisplayed()
         composeRule.onNodeWithTag("lyrics-return-artwork").assertIsDisplayed()
+        val returnGlyphBounds = composeRule.onNodeWithTag("player-glyph-back", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("return-to-artwork glyph must have visible layout bounds", returnGlyphBounds.width > 0f && returnGlyphBounds.height > 0f)
         composeRule.onAllNodesWithTag("player-song-title").assertCountEquals(0)
 
         assertEquals(
@@ -216,6 +221,33 @@ class LyricsStageUiTest {
     }
 
     @Test
+    fun lyricTextUsesLargeTypeAndLongCueNeverExceedsTwoVisibleLines() {
+        val longCue = "超长歌词内容".repeat(45)
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song("[00:10]短歌词\n[00:12]$longCue", "lrc"),
+                    resourceIdentity = "large-lyrics-layout",
+                    positionSeconds = null,
+                    durationSeconds = 120.0,
+                    seekEnabled = false,
+                    onSeek = {},
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val density = composeRule.activity.resources.displayMetrics.density
+        val shortCueHeightDp = composeRule.onNodeWithTag("lyrics-cue-0")
+            .fetchSemanticsNode().boundsInRoot.height / density
+        val longCueHeightDp = composeRule.onNodeWithTag("lyrics-cue-1")
+            .fetchSemanticsNode().boundsInRoot.height / density
+        assertTrue("inactive lyric type should be large (at least 50dp row height)", shortCueHeightDp >= 50f)
+        assertTrue("a long lyric row must stay at two lines or fewer", longCueHeightDp <= 100f)
+    }
+
+    @Test
     fun readErrorFallbackPreservesTimedLyricsAndServerSource() {
         val fallbackSong = song(
             lyrics = "[00:37]服务器回退歌词",
@@ -244,6 +276,8 @@ class LyricsStageUiTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("lyrics-status").assertIsDisplayed()
+        composeRule.onNodeWithTag("lyrics-status").assertTextEquals("歌词读取失败")
+        composeRule.onAllNodesWithText("来源：embedded").assertCountEquals(0)
         composeRule.onNodeWithText("服务器回退歌词", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onAllNodesWithTag("lyrics-plain-text").assertCountEquals(0)
     }

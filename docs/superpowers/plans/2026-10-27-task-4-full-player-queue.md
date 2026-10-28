@@ -30,7 +30,7 @@
 - 所有写请求使用现有 API 与 MutationCoordinator；未知结果不能自动换新 key 重发。seek 与排序在本地只是草稿；发生 epoch、连接 generation、current occurrence、control target/token、Queue revision 或目标基线变化时，相关草稿必须撤销。
 - Queue 行和拖拽使用 `queue_item_id` occurrence 身份，不使用 `song_id`、URI 或标题去推断 Queue 身份。current 和 Played 不可拖动；只有 position > 0 的待播 occurrence 可拖动。
 - Source file 编码/位深/采样率与 DAC/output observation 分开投影，不互相推导。Output ACTIVE 不等于硬件已发声或 bit-perfect。
-- 封面/歌词模式只替换主内容区域，进度、时间、源文件参数、主控制和底部三个无框入口的布局锚点保持稳定。五行歌词是目标，不得以难以阅读的小字号硬塞。
+- 封面/歌词模式只替换主内容区域，进度、时间、源文件参数、主控制和底部三个无框入口的布局锚点保持稳定。歌词视口填充可用主内容高度，每条 cue 最多两行；超长文本第二行水平滚动显示余下内容，不以极小字号硬塞固定行数。
 - 播放器顶部没有返回/收起按钮或“正在播放/队列”切换按钮。全屏/Queue 退出只由 WindowInsets 几何确定的应用内容顶部手势带触发；真实系统状态栏内部手势必须留给 Android。Queue 正文顶部下拉用于连续 reveal Played，与退出手势互斥。
 - 历史 reveal 使用浮点可见高度/测量行高；pointer movement 不发网络请求。ACTION_UP/ACTION_CANCEL 冻结精确的 reveal 高度与列表偏移，不吸附、不 settle、不回弹、不二次跳变；下一次手势从冻结状态继续。
 - 不添加本地数据库、持久化曲目/Queue/Played/歌词业务副本、WebView、Media3/ExoPlayer、本地播放引擎、新服务器 endpoint 或伪造演示数据。
@@ -74,7 +74,7 @@
 | T4-06 源文件参数 | B0、B1、B2 | 缺失/未知元数据和切曲更新；不读 output 参数 | 有/无源参数曲目及切歌 |
 | T4-07 DAC/output 观察 | B0、B1、B2 | fresh/stale/unknown/ACTIVE/INACTIVE/UNAVAILABLE 投影 | 可用 DAC 时检查；没有硬件证据时记录 NOT COVERED |
 | T4-08 底部三个入口 | B2、B4、B5、B9 | icon 选择态、不同 glyph、48dp 热区、TalkBack label | 图标意义、对比度、触控与避让 |
-| T4-09 歌词模式 | B0、B3、B4、B9 | LRC/fraction/offset/plain/missing/read_error、五行/当前行、手动滚动与 seek | 歌词往返、同步、切歌、无歌词/失败 |
+| T4-09 歌词模式 | B0、B3、B4、B9 | LRC/fraction/offset/plain/missing/read_error、两行上限/当前行、手动滚动与 seek | 歌词往返、同步、切歌、无歌词/失败 |
 | T4-10 Queue 定位/重入 | B5、B8、B9 | current 未确认/空/重复 occurrence、初始窗口、退出重进 reset | Queue 进出和当前项定位 |
 | T4-11 连续 Played reveal | B0、B5、B8、B9 | snapshot freshness/最多一次全量读取、fractional drag/release/CANCEL、无逐帧请求、迟到响应 | 慢拖/快拖/停顿/松手/取消/继续拖 |
 | T4-12 Queue 拖拽 | B5、B7、B9 | position 限制、revision/current/epoch/generation 改变、重复 song_id、取消不写 | 长按拖动/取消/提交/权威读回 |
@@ -250,7 +250,7 @@
 - 对带时间轴歌词，用户上下拖动/滚动时立即暂停自动跟随；从最后一次手势结束/有效滚动起 3 秒内没有继续操作，且没有仍在进行的手势或文本选择时，回到当前 active playing cue 并恢复跟随。继续滚动会重置 3 秒计时；返回位置必须根据计时触发时的最新 playback clock 计算，不能回到开始手势时缓存的旧行。用户点某条有效 cue 会提交一个 seek 到该 cue 的 offset-corrected time，并恢复跟随；收到回执后仍以服务端观察/readback 的实际播放位置决定 active cue，不以点击行冒充 seek 已完成。
 - 普通无时间轴文本允许自由上下滚动查看；不得按拖动/静止 3 秒自动回到顶部或其它位置，因为它不存在 active playback cue。plain text、LRC 中不含可读 cue 的 metadata/notes、有效 cue 但播放位置 unknown 是不同状态。点击纯文本不发送 seek。文本选择不得触发 seek。
 - 手指点击与滚动严格分开：有效 cue tap 才 seek；垂直 drag/scroll 不可因系统随后派发 click 而 seek；文本选择、取消/中断手势与长按选择不能意外 seek。手势/焦点范围仅在歌词正文，不能抢占顶部退出手势带、歌词回封面按钮或底部 progress/control。
-- 曲目/歌词原文/format/当前 occurrence/epoch/generation/resource identity 改变时取消旧的滚动计时、手势草稿与选中 cue，重新按新资源初始 following 处理；迟到的旧 song 数据不得覆盖当前歌词。五行视口为视觉目标，当前行变大/品牌色不得造成容器或底部 progress、controls、source metadata、footer 的锚点跳动。
+- 曲目/歌词原文/format/当前 occurrence/epoch/generation/resource identity 改变时取消旧的滚动计时、手势草稿与选中 cue，重新按新资源初始 following 处理；迟到的旧 song 数据不得覆盖当前歌词。歌词视口填充顶部按钮区域下方至进度条前安全间距之间的主内容区；每条 cue 字号尽可能大、最多两行，超长文本仅第二行滚动显示剩余内容，且不得插入额外 cue；当前行变大/品牌色不得造成底部 progress、controls、source metadata、footer 的锚点跳动。
 - 缺失歌词、`lyrics_status=missing`、`read_error`、无时间轴普通文本、未知 format、同步歌词但时钟不可用必须分别表达。服务端可同时返回可显示的 embedded fallback 文本与 `read_error`；即使能显示文本也要保留读取错误提示，不得只因歌词非空就判定读取成功。
 
 **Steps：**
