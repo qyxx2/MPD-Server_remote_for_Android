@@ -59,6 +59,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerDismissPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentationHandoff
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueDestinationPlaceholderScreen
@@ -116,6 +117,29 @@ fun AppNavHost(
     )
     val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }
+
+    // Mirror Web's bounded media handoff after an action: the last confirmed artwork/metadata may
+    // bridge only the same-scope quiet-UNKNOWN window. Canonical playback facts and controls remain
+    // tied to playerPresentation and are never promoted by this visual projection.
+    val playerPresentationHandoff = remember(runtime) { PlayerPresentationHandoff() }
+    var mediaHandoffTick by remember(runtime) { mutableStateOf(0) }
+    val mediaProjection = remember(
+        playerPresentationHandoff,
+        snapshotState,
+        playerPresentation,
+        playerActionState,
+        activities,
+        mediaHandoffTick,
+    ) {
+        playerPresentationHandoff.project(snapshotState, playerPresentation, playerActionState, activities)
+    }
+    LaunchedEffect(playerPresentationHandoff, mediaProjection.expiresAtElapsedMillis) {
+        val deadline = mediaProjection.expiresAtElapsedMillis ?: return@LaunchedEffect
+        val delayMillis = (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        delay(delayMillis)
+        mediaHandoffTick += 1
+    }
+
     val ringPreferences by uiPreferences.statusRingPreferences.collectAsStateWithLifecycle(
         initialValue = StatusRingPreferences.DEFAULT,
     )
@@ -124,7 +148,7 @@ fun AppNavHost(
     // current-song identity becomes confirmed, independently of whether Player is open.
     val artworkCache = remember(navigationScope) { PlayerArtworkMemoryCache(navigationScope) }
     val artworkCacheKey = PlayerArtworkCacheKey.from(
-        playerPresentation,
+        mediaProjection.mediaPresentation,
         connectionGeneration = snapshotState.connectionGeneration,
         epoch = snapshotState.snapshot?.epoch.orEmpty(),
         libraryRevision = snapshotState.snapshot?.libraryRevision ?: 0L,
@@ -395,6 +419,9 @@ fun AppNavHost(
                     runtime = runtime,
                     snapshotState = snapshotState,
                     playerPresentation = playerPresentation,
+                    playerMediaPresentation = mediaProjection.mediaPresentation,
+                    playerMediaHandoffActive = mediaProjection.isHandoff,
+                    playerMediaPositionSeconds = mediaProjection.positionSeconds,
                     playerActions = playerActions,
                     playerArtworkCacheKey = artworkCacheKey,
                     playerArtworkCache = artworkCache,
@@ -429,6 +456,9 @@ fun AppNavHost(
                         runtime = runtime,
                         snapshotState = snapshotState,
                         playerPresentation = playerPresentation,
+                        playerMediaPresentation = mediaProjection.mediaPresentation,
+                        playerMediaHandoffActive = mediaProjection.isHandoff,
+                        playerMediaPositionSeconds = mediaProjection.positionSeconds,
                         playerActions = playerActions,
                         playerArtworkCacheKey = artworkCacheKey,
                         playerArtworkCache = artworkCache,
@@ -466,6 +496,9 @@ fun AppNavHost(
                             runtime = runtime,
                             snapshotState = snapshotState,
                             playerPresentation = playerPresentation,
+                            playerMediaPresentation = mediaProjection.mediaPresentation,
+                            playerMediaHandoffActive = mediaProjection.isHandoff,
+                            playerMediaPositionSeconds = mediaProjection.positionSeconds,
                             playerActions = playerActions,
                             playerArtworkCacheKey = artworkCacheKey,
                             playerArtworkCache = artworkCache,
@@ -565,6 +598,9 @@ private fun AppNavigationGraph(
     runtime: AppRuntime,
     snapshotState: SnapshotStoreState,
     playerPresentation: PlayerPresentation,
+    playerMediaPresentation: PlayerPresentation,
+    playerMediaHandoffActive: Boolean,
+    playerMediaPositionSeconds: Double?,
     playerActions: PlayerActions,
     playerArtworkCacheKey: PlayerArtworkCacheKey?,
     playerArtworkCache: PlayerArtworkMemoryCache,
@@ -612,6 +648,9 @@ private fun AppNavigationGraph(
                 FullScreenPlayerScreen(
                     runtime = runtime,
                     presentation = playerPresentation,
+                    mediaPresentation = playerMediaPresentation,
+                    mediaHandoffActive = playerMediaHandoffActive,
+                    mediaHandoffPositionSeconds = playerMediaPositionSeconds,
                     actions = playerActions,
                     artworkCacheKey = playerArtworkCacheKey,
                     artworkCache = playerArtworkCache,

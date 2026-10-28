@@ -139,17 +139,19 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
-    fun aShortDownwardDragOnArtworkRestoresThePlayerInsteadOfDismissing() {
+    fun artworkTapOpensLyricsAndShortDownwardDragOnArtworkDoesNotDismiss() {
         launchNavigation()
         openPlayerAndWaitForArtwork()
 
-        // A plain press/release on artwork must remain a tap, not a dismiss gesture.
-        composeRule.onNodeWithTag("player-artwork-stage").performTouchInput {
-            down(center)
-            up()
-        }
+        // Artwork tap is the lyrics-mode toggle, but it must not dismiss the full-screen Player.
+        composeRule.onNodeWithTag("player-artwork-stage").performClick()
         composeRule.waitForIdle()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        composeRule.onNodeWithTag("lyrics-stage").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("lyrics-return-artwork").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("player-artwork-stage").assertIsDisplayed()
 
         val shortDistancePx = with(composeRule.density) { 48.dp.toPx() }
         composeRule.onNodeWithTag("player-artwork-stage").performTouchInput {

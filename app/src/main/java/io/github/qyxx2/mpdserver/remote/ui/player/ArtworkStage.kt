@@ -2,6 +2,7 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +28,7 @@ fun ArtworkStage(
     placeholderLabel: String,
     modifier: Modifier = Modifier,
     dismissGestureModifier: Modifier = Modifier,
+    onTap: (() -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().testTag("player-artwork-bounds")) {
         val artworkSide = calculateArtworkSideDp(
@@ -40,6 +42,7 @@ fun ArtworkStage(
                 .then(dismissGestureModifier)
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(enabled = onTap != null) { onTap?.invoke() }
                 .testTag("player-artwork-stage"),
             contentAlignment = Alignment.Center,
         ) {

@@ -1,15 +1,17 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
-import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -21,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class FullScreenPlayerPresentationUiTest {
@@ -87,6 +90,54 @@ class FullScreenPlayerPresentationUiTest {
     }
 
     @Test
+    fun progressTrackAndReadoutsMatchReferenceWithoutDivider() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val base = testPresentation()
+        val presentation = base.copy(
+            song = base.song!!.copy(durationSeconds = 227.0),
+            sourceFormat = SourceFormatPresentation(
+                status = SourceFormatStatus.COMPLETE,
+                codec = "FLAC",
+                bitDepth = 24,
+                sampleRateHz = 96000,
+                channelCount = 2,
+            ),
+        )
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                FullScreenPlayerScreen(
+                    runtime = application.runtime,
+                    presentation = presentation,
+                    mediaHandoffActive = true,
+                    mediaHandoffPositionSeconds = 80.0,
+                    onExit = {},
+                    onOpenQueue = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("player-progress-slider").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-progress-track").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-source-format-pill").assertIsDisplayed()
+        composeRule.onNodeWithText("FLAC · 24 bit · 96 kHz · 2 ch").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-remaining-time").assertIsDisplayed()
+        composeRule.onNodeWithText("-2:27").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("player-progress-divider").assertCountEquals(0)
+
+        val density = composeRule.activity.resources.displayMetrics.density
+        val track = composeRule.onNodeWithTag("player-progress-track").fetchSemanticsNode().boundsInRoot
+        val elapsed = composeRule.onNodeWithTag("player-elapsed-time").fetchSemanticsNode().boundsInRoot
+        val format = composeRule.onNodeWithTag("player-source-format-pill").fetchSemanticsNode().boundsInRoot
+        val remaining = composeRule.onNodeWithTag("player-remaining-time").fetchSemanticsNode().boundsInRoot
+        assertTrue("reference track should be a thick rounded bar, not a 1dp divider", track.height / density >= 7f)
+        assertTrue("time and source format belong below the progress track", track.bottom <= elapsed.top)
+        assertTrue("source format should share the time readout row", abs(format.center.y - elapsed.center.y) <= density * 8f)
+        assertTrue("elapsed and remaining times should share the readout row", abs(remaining.center.y - elapsed.center.y) <= density * 8f)
+    }
+
+    @Test
     fun nowPlayingNavigationGlyphUsesThreeSimpleVerticalStrokes() {
         composeRule.setContent {
             MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
@@ -111,7 +162,6 @@ class FullScreenPlayerPresentationUiTest {
         }.first
         assertEquals("the now-playing navigation glyph should be a minimal 3-stroke waveform", 3, strokeGroups)
     }
-
 
     @Test
     fun artistAndAlbumClicksEmitNamesAndTypedServerOwnedIds() {

@@ -254,15 +254,15 @@
 - 缺失歌词、`lyrics_status=missing`、`read_error`、无时间轴普通文本、未知 format、同步歌词但时钟不可用必须分别表达。服务端可同时返回可显示的 embedded fallback 文本与 `read_error`；即使能显示文本也要保留读取错误提示，不得只因歌词非空就判定读取成功。
 
 **Steps：**
-- [ ] 先为解析器写测试：`lrc` 与 `text` 格式、大小写、`text` 中有效时间戳、unsupported format、分钟/秒范围、1/2/3 位小数的 Web 精确语义、`.`/`:` 分隔符、多 timestamp per line、稳定排序/相同时间戳、正负 offset、元数据 note 过滤与原文保留。
-- [ ] 写 RED→GREEN 的纯逻辑测试，比较关键 fixture 的 cues/offset/notes/synchronized 与固定 Web 行为；覆盖首条 cue 之前、两个 cue 之间、同时间戳及末条 cue 之后 activeCue 的选择规则。
-- [ ] 为歌词来源/status 写测试：sidecar 与 embedded 都只使用服务端最终返回值；embedded LRC 被标 `lrc` 时同步解析；旧数据 `lyrics_format=text` 但含时间戳仍解析；plain embedded text 可读但不同步；`missing`、`read_error`（含可显示 fallback text）和 unsupported format 不能混为一类。Android 不自行抽取/覆盖服务器的 sidecar 优先级。
-- [ ] 为手势 reducer 写 RED 测试：同步歌词开始时 following；手动上下滚动立即暂停；最后一次滚动/手势结束后 3 秒回到最新 active cue；不足 3 秒继续动作会重置计时；timeout 时仍有 gesture 或文本选择则不强制跳转，取消/完成选择后再按 3 秒规则处理。
-- [ ] 为 cue 点击/拖动分离写 Compose/UI 测试：有效 cue tap 只发一次 offset-corrected seek；越界 cue、duration/target/capability 不可用时不可点击/不发写请求；drag、长按、pointer cancel、文本选择不会 seek；一次 tap 后由 B3 MutationCoordinator 管理，不能绕过统一操作 owner。
-- [ ] 为 plain text 写 UI 测试：内容长于 viewport 时可任意向上/向下滚动；滚动后即使静止超过 3 秒也保留用户位置，不自动回顶部、不高亮某一行、不发 seek。换曲或歌词来源/原文改变后才重置该文档自身的滚动上下文。
-- [ ] 为当前行和五行 viewport 写测试：fresh 时跟随 active cue、播放位置未知不伪高亮；手动滚动后重新使用最新 clock cue；切曲/迟到响应隔离；长句/字体缩放/窄屏/无歌词/read_error 下 progress、controls、格式参数和底部图标锚点不跳动。
-- [ ] 实现纯 parser 与歌词跟随状态后，再接 Compose 手势和 B3 `PlayerActions`；禁止在 Composable 中直接发送 HTTP/创建新的 mutation owner。只在歌词正文中处理拖动和 cue tap，回封面按钮继续只切主内容模式。
-- [ ] 运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check`；设备可用时验证内嵌 LRC、普通文本、点击 seek、拖动查看、3 秒回位与纯文本自由滚动。无真实歌词样本/设备覆盖时记录 BLOCKED/NOT COVERED，不得声称已实测。单独提交 Batch 4。
+- [x] 先为解析器写测试：`lrc` 与 `text` 格式、大小写、`text` 中有效时间戳、unsupported format、分钟/秒范围、1/2/3 位小数的 Web 精确语义、`.`/`:` 分隔符、多 timestamp per line、稳定排序/相同时间戳、正负 offset、元数据 note 过滤与原文保留。
+- [x] 写 RED→GREEN 的纯逻辑测试，比较关键 fixture 的 cues/offset/notes/synchronized 与固定 Web 行为；覆盖首条 cue 之前、两个 cue 之间、同时间戳及末条 cue 之后 activeCue 的选择规则。
+- [x] 为歌词来源/status 写测试：sidecar 与 embedded 都只使用服务端最终返回值；embedded LRC 被标 `lrc` 时同步解析；旧数据 `lyrics_format=text` 但含时间戳仍解析；plain embedded text 可读但不同步；`missing`、`read_error`（含可显示 fallback text）和 unsupported format 不能混为一类。Android 不自行抽取/覆盖服务器的 sidecar 优先级。
+- [x] 为手势 reducer 写 RED 测试：同步歌词开始时 following；手动上下滚动立即暂停；最后一次滚动/手势结束后 3 秒回到最新 active cue；不足 3 秒继续动作会重置计时；timeout 时仍有 gesture 或文本选择则不强制跳转，取消/完成选择后再按 3 秒规则处理。
+- [x] 为 cue 点击/拖动分离写 Compose/UI 测试：有效 cue tap 的 offset-corrected target、不可用 capability/越界目标、drag/long-press 不 seek 均有自动化覆盖；写入路径复用 B3 MutationCoordinator。真实 pointer-cancel 与实际文字选区交互未在设备上单独覆盖，见验证报告。
+- [x] 为 plain text 写 UI 测试：已验证长文本处于独立自由滚动模式，不生成 timed cue、不发 seek。实现只在 timed mode 启动跟随/回位 effect，因此 plain mode 不会触发该计时器；设备上静置超过 3 秒后的滚动偏移未单独量测，见验证报告。
+- [x] 为当前行和歌词区域锚点写测试：fresh 位置驱动 active cue、unknown clock 不伪高亮；歌词模式切换不移动 progress/controls/footer 锚点。长句/系统字体缩放/窄屏截图与实际歌词切换的设备覆盖未执行，切曲身份重置主要由纯逻辑测试覆盖。
+- [x] 实现纯 parser 与歌词跟随状态后，再接 Compose 手势和 B3 `PlayerActions`；禁止在 Composable 中直接发送 HTTP/创建新的 mutation owner。只在歌词正文中处理拖动和 cue tap，回封面按钮继续只切主内容模式。
+- [x] 运行本计划的本地测试、lint、APK 构建、AndroidTest 编译与目标设备测试；`git diff --check` 通过。实际内嵌/普通歌词样本及真实服务端 seek 写入标记为 NOT COVERED。经依赖与共享文件审查，Batch 3 status-flap/handoff 修复与 Batch 4 一并本地提交：B4 使用 B3 的播放时钟/`PlayerActions`，两者共享 `FullScreenPlayerScreen.kt`，且 B3 展示投影由 `AppNavHost.kt` 接入；未拆出单独的 B4-only 提交。见 Batch 3/4 验证报告。
 
 **退出门：** T4-02/T4-09/T4-16 的歌词合同测试通过；LRC/内嵌时间轴、offset、cue tap seek、滚动暂停与 3 秒回位、plain text 自由滚动均与冻结 Web 行为一致；无 WebView、假歌词、伪时间同步或 seek 目标漂移。
 

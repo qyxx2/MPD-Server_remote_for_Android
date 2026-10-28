@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -22,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,13 +59,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Native presentation of the same app-scoped canonical snapshot as Web. This screen never creates
- * a state/network/mutation owner; playback actions intentionally remain disabled until Batch 3.
+ * Native presentation of the same app-scoped canonical snapshot as Web. The bounded media handoff
+ * is display-only; playback status, control capabilities and mutation targets remain canonical.
  */
 @Composable
 fun FullScreenPlayerScreen(
     runtime: AppRuntime,
     presentation: PlayerPresentation,
+    mediaPresentation: PlayerPresentation = presentation,
+    mediaHandoffActive: Boolean = false,
+    mediaHandoffPositionSeconds: Double? = null,
     actions: PlayerActions? = null,
     onExit: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -79,7 +85,7 @@ fun FullScreenPlayerScreen(
     val currentOnDismissDragDelta = rememberUpdatedState(onDismissDragDelta)
     val currentOnDismissGestureEnd = rememberUpdatedState(onDismissGestureEnd)
     val currentOnDismissGestureCancel = rememberUpdatedState(onDismissGestureCancel)
-    val song = presentation.song
+    val media = mediaPresentation
     val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
     val actionState = if (actions != null) {
         val collected by actions.state.collectAsStateWithLifecycle()
@@ -151,9 +157,12 @@ fun FullScreenPlayerScreen(
     }
     // The slider preview is local presentation only. The base position always comes from a fresh,
     // target-bound server observation and is never written into SnapshotStore.
-    val displayedPosition = actionState.displayPositionSeconds ?: clockPosition
+    val displayedPosition = actionState.displayPositionSeconds ?:
+        if (mediaHandoffActive) mediaHandoffPositionSeconds else clockPosition
     val observed = PlayerFacts.from(clockSnapshot).playbackObservation
-    val displayedDuration = observed?.durationSeconds?.takeIf {
+    val displayedDuration = if (mediaHandoffActive) {
+        media.song?.durationSeconds?.takeIf { it.isFinite() && it > 0.0 }
+    } else observed?.durationSeconds?.takeIf {
         presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
             clockSnapshot.controlsEligible && it.isFinite() && it > 0.0
     }
@@ -163,7 +172,7 @@ fun FullScreenPlayerScreen(
     // replace the root NavHost before a delayed mini-player open completes.
     val artworkCacheState = artworkCache?.state?.collectAsStateWithLifecycle()?.value
         ?: PlayerArtworkCacheState.Empty
-    val currentArtworkKey = artworkCacheKey?.takeIf { it.matches(presentation) }
+    val currentArtworkKey = artworkCacheKey?.takeIf { it.matches(media) }
     val currentArtworkState = artworkCacheState.takeIf {
         currentArtworkKey != null && it.key == currentArtworkKey
     }
@@ -172,6 +181,34 @@ fun FullScreenPlayerScreen(
     val artworkLoading = currentArtworkKey != null &&
         currentArtworkState !is PlayerArtworkCacheState.Ready &&
         currentArtworkState !is PlayerArtworkCacheState.Failed
+    var showLyrics by remember { mutableStateOf(false) }
+    val lyricsPlaybackConfirmed = !mediaHandoffActive &&
+        presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
+        presentation.currentOccurrenceId != null &&
+        presentation.currentOccurrenceId == media.currentOccurrenceId &&
+        clockSnapshot.controlsEligible
+    val lyricsPositionSeconds = clockPosition.takeIf {
+        lyricsPlaybackConfirmed && it != null && it.isFinite() && it >= 0.0
+    }
+    val lyricsPlaybackObservation = PlayerFacts.from(clockSnapshot).playbackObservation
+    val lyricsDurationSeconds = lyricsPlaybackObservation?.durationSeconds?.takeIf {
+        lyricsPlaybackConfirmed && it.isFinite() && it > 0.0
+    }
+    val lyricsControlTarget = lyricsPlaybackObservation?.controlTarget
+    val lyricsResourceIdentity = listOf(
+        snapshotState.snapshot?.epoch.orEmpty(),
+        snapshotState.connectionGeneration.toString(),
+        presentation.currentOccurrenceId.orEmpty(),
+        media.currentOccurrenceId.orEmpty(),
+        lyricsControlTarget?.queueItemId.orEmpty(),
+        lyricsControlTarget?.token.orEmpty(),
+        media.song?.songId.orEmpty(),
+        media.song?.fileUri.orEmpty(),
+        media.song?.lyrics.orEmpty(),
+        media.song?.lyricsFormat.orEmpty(),
+        media.song?.lyricsSource.orEmpty(),
+        media.song?.rawLyricsStatus.orEmpty(),
+    ).joinToString(separator = "") { it.length.toString() + ":" + it }
 
     Box(
         modifier = Modifier
@@ -213,54 +250,66 @@ fun FullScreenPlayerScreen(
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    ) {
-                        val placeholder = when {
-                            presentation.playbackStatus == ConfirmedPlaybackStatus.UNKNOWN ->
-                                "当前曲目未确认"
-                            presentation.artworkReferenceStatus == ArtworkReferenceStatus.MISSING -> "无封面"
-                            presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkLoading ->
-                                "正在读取封面"
-                            presentation.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkBitmap == null ->
-                                "封面暂不可用"
-                            else -> "无封面"
-                        }
-                        ArtworkStage(
-                            bitmap = artworkBitmap,
-                            placeholderLabel = placeholder,
+                    if (showLyrics) {
+                        LyricsStage(
+                            song = media.song,
+                            resourceIdentity = lyricsResourceIdentity,
+                            positionSeconds = lyricsPositionSeconds,
+                            durationSeconds = lyricsDurationSeconds,
+                            seekEnabled = lyricsPlaybackConfirmed &&
+                                actions?.isEnabled(PlayerAction.SEEK) == true,
+                            onSeek = { seconds -> actions?.perform(PlayerAction.SEEK, seconds) },
+                            onShowArtwork = { showLyrics = false },
                             modifier = Modifier
-                                .fillMaxSize()
-                                .align(Alignment.Center),
-                            dismissGestureModifier = Modifier.fullScreenPlayerDismissGesture(
-                                dragDelta = currentOnDismissDragDelta,
-                                gestureEnd = currentOnDismissGestureEnd,
-                                gestureCancel = currentOnDismissGestureCancel,
-                            ),
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        ) {
+                            val placeholder = when {
+                                media.playbackStatus == ConfirmedPlaybackStatus.UNKNOWN ->
+                                    "当前曲目未确认"
+                                media.artworkReferenceStatus == ArtworkReferenceStatus.MISSING -> "无封面"
+                                media.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkLoading ->
+                                    "正在读取封面"
+                                media.artworkReferenceStatus == ArtworkReferenceStatus.REFERENCED && artworkBitmap == null ->
+                                    "封面暂不可用"
+                                else -> "无封面"
+                            }
+                            ArtworkStage(
+                                bitmap = artworkBitmap,
+                                placeholderLabel = placeholder,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .align(Alignment.Center),
+                                dismissGestureModifier = Modifier.fullScreenPlayerDismissGesture(
+                                    dragDelta = currentOnDismissDragDelta,
+                                    gestureEnd = currentOnDismissGestureEnd,
+                                    gestureCancel = currentOnDismissGestureCancel,
+                                ),
+                                onTap = { showLyrics = true },
+                            )
+                        }
+
+                        PlayerSongIdentity(
+                            presentation = media,
+                            onArtistClick = onArtistClick,
+                            onEntityNavigationRequest = onEntityNavigationRequest,
                         )
                     }
-
-                    PlayerSongIdentity(
-                        presentation = presentation,
-                        onArtistClick = onArtistClick,
-                        onEntityNavigationRequest = onEntityNavigationRequest,
-                    )
                 }
             }
 
             PlayerProgressControl(
+                presentation = media,
                 positionSeconds = displayedPosition,
                 durationSeconds = displayedDuration,
                 actions = actions,
                 modifier = Modifier.padding(horizontal = 24.dp),
-            )
-            SourceFormatLabel(
-                presentation = presentation,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, top = 4.dp, end = 24.dp, bottom = 2.dp),
             )
             PlaybackControls(presentation = presentation, actions = actions)
             FullScreenBottomNavigation(
@@ -428,6 +477,7 @@ private fun PlayerSongIdentity(
 
 @Composable
 private fun PlayerProgressControl(
+    presentation: PlayerPresentation,
     positionSeconds: Double?,
     durationSeconds: Double?,
     actions: PlayerActions?,
@@ -453,8 +503,69 @@ private fun PlayerProgressControl(
     }
     val seekEnabled = actions?.isEnabled(PlayerAction.SEEK) == true && validDuration != null
     Column(modifier = modifier.fillMaxWidth()) {
+        // The visible track is independent of Material3's default slider artwork; the transparent
+        // Slider remains the sole accessible touch/seek surface and uses the shared PlayerActions.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f))
+                    .testTag("player-progress-track"),
+            ) {
+                if (progress > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(percent = 50))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.96f))
+                            .testTag("player-progress-fill"),
+                    )
+                }
+            }
+            Slider(
+                value = progress,
+                onValueChange = { fraction ->
+                    if (actions?.state?.value?.seekDraftSeconds == null) actions?.beginSeek()
+                    if (validDuration != null) actions?.previewSeek(fraction * validDuration)
+                },
+                onValueChangeFinished = { actions?.finishSeek() },
+                enabled = seekEnabled,
+                valueRange = 0f..1f,
+                interactionSource = interactions,
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.Transparent,
+                    activeTrackColor = Color.Transparent,
+                    inactiveTrackColor = Color.Transparent,
+                    activeTickColor = Color.Transparent,
+                    inactiveTickColor = Color.Transparent,
+                    disabledThumbColor = Color.Transparent,
+                    disabledActiveTrackColor = Color.Transparent,
+                    disabledInactiveTrackColor = Color.Transparent,
+                    disabledActiveTickColor = Color.Transparent,
+                    disabledInactiveTickColor = Color.Transparent,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("player-progress-slider")
+                    .semantics {
+                        contentDescription = "播放进度"
+                    },
+            )
+        }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp)
+                .testTag("player-progress-readout"),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -464,41 +575,17 @@ private fun PlayerProgressControl(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            SourceFormatLabel(
+                presentation = presentation,
+                modifier = Modifier.weight(1f),
+            )
             Text(
-                text = formatPlayerTime(validDuration),
-                modifier = Modifier.testTag("player-duration-time"),
+                text = formatPlayerRemainingTime(validPosition, validDuration),
+                modifier = Modifier.testTag("player-remaining-time"),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Slider(
-            value = progress,
-            onValueChange = { fraction ->
-                if (actions?.state?.value?.seekDraftSeconds == null) actions?.beginSeek()
-                if (validDuration != null) actions?.previewSeek(fraction * validDuration)
-            },
-            onValueChangeFinished = { actions?.finishSeek() },
-            enabled = seekEnabled,
-            valueRange = 0f..1f,
-            interactionSource = interactions,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .testTag("player-progress-slider")
-                .semantics {
-                    contentDescription = "播放进度"
-                },
-        )
-        // Keep a stable, fine track as in the B2 design beneath the accessible touch slider.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 0.dp)
-                .height(1.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(MaterialTheme.colorScheme.outlineVariant)
-                .testTag("player-progress-track"),
-        )
         val status = when {
             actionState.unknown -> "操作结果未知 · 可从应用状态环查看并重试原操作"
             actionState.failed -> actionState.message?.let { "操作失败 · $it" } ?: "操作失败"
@@ -522,11 +609,16 @@ private fun PlayerProgressControl(
         )
     }
 }
-
 private fun formatPlayerTime(seconds: Double?): String {
     if (seconds == null || !seconds.isFinite() || seconds < 0.0) return "--:--"
     val whole = seconds.toLong()
     return "${whole / 60}:${(whole % 60).toString().padStart(2, '0')}"
+}
+
+private fun formatPlayerRemainingTime(positionSeconds: Double?, durationSeconds: Double?): String {
+    val position = positionSeconds?.takeIf { it.isFinite() && it >= 0.0 } ?: return "--:--"
+    val duration = durationSeconds?.takeIf { it.isFinite() && it > 0.0 } ?: return "--:--"
+    return "-${formatPlayerTime((duration - position).coerceAtLeast(0.0))}"
 }
 
 private fun playerActionPendingText(action: PlayerAction): String = when (action) {
@@ -543,7 +635,7 @@ private fun SourceFormatLabel(
     modifier: Modifier = Modifier,
 ) {
     val format = presentation.sourceFormat
-    val parts = buildList {
+    val label = buildList {
         format.codec?.takeIf { it.isNotBlank() }?.let(::add)
         format.bitDepth?.takeIf { it > 0 }?.let { add("$it bit") }
         format.sampleRateHz?.takeIf { it > 0 }?.let { rate ->
@@ -551,20 +643,32 @@ private fun SourceFormatLabel(
             else add(String.format(java.util.Locale.ROOT, "%.1f kHz", rate / 1000.0))
         }
         format.channelCount?.takeIf { it > 0 }?.let { add("$it ch") }
-    }
-    Text(
-        text = if (parts.isEmpty()) "源文件格式未知" else parts.joinToString(" · "),
-        modifier = modifier
-            .heightIn(min = 24.dp)
-            .testTag("player-source-format"),
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
+    }.joinToString(" · ").ifBlank { "源文件格式未知" }
 
+    Box(
+        modifier = modifier.padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+                .testTag("player-source-format-pill"),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.testTag("player-source-format"),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
 @Composable
 private fun PlaybackControls(
     presentation: PlayerPresentation,
