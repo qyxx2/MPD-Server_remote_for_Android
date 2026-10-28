@@ -282,12 +282,12 @@
 - 有限 metadata prefetch 用稳定缓存 key 和明确的并发上限；迟到数据必须核对 current epoch/library revision/generation 与仍可见 ID。仅在原行内 placeholder 里替换内容，不因加载而改变 row height 的测量策略或挪动 Queue order。缓存只在内存使用，不持久化为曲库副本。
 
 **Steps：**
-- [ ] 为 deriveQueue 写 RED 测试：position 0/current 未确认、manual 与 autoplay next 候选、Played position<0 顺序、相同 song_id 多个 queue_item_id、空队列和坏/缺失歌曲元数据。
-- [ ] 为进入/离开/重进 Queue、当前项初始可见、row key 稳定、状态 freshness 与整行轻量高亮写 Compose UI 测试。
-- [ ] 运行测试确认 RED；实现纯 QueuePresentation 与只读 QueueScreen/Row，不加入菜单写操作、拖拽或连续 reveal 动作。
-- [ ] 为 song details/artwork cache 写并发合并、并发上限、404/坏 MIME/坏 bytes、epoch/library revision 变更淘汰和 stale request 丢弃测试；实现同一 RuntimeReadApi 的只读资源预取。
-- [ ] 验证进入 Queue 不重复获取已 fresh 的 Played；仅在 snapshot 对 Played 不 fresh 且现有读取规则允许时准备调用一次 `GET /api/history/played`，请求结果到达前显式 loading/placeholder，失败后显示可辨识的读取失败，不伪造历史项。
-- [ ] 运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check` 与单一 owner/source scan；记录设备 UI 可运行情况并单独提交 Batch 5。
+- [x] 先写并运行 deriveQueue RED 测试，再覆盖 position 0/current 确认/暂停、MANUAL 与 AUTOPLAY next 候选、Played position<0 次序、重复 song_id 的不同 queue_item_id、空/坏 Queue snapshot。
+- [x] 为 Queue 初始 current 可见、稳定 occurrence key、stale 状态不误报播放、当前行信息与进入/离开/重进路由写 Compose/UI 测试；重进由导航回归实测覆盖。
+- [x] 运行测试确认 RED；实现纯 QueuePresentation 与只读 QueueScreen/Row；Batch 5 内未加入菜单写操作、拖拽提交或连续 reveal 手势。
+- [x] 为 song metadata/artwork cache 覆盖并发请求合并、并发上限、404/坏 MIME/无效图像签名、epoch/library revision/connection generation 变更与迟到读取丢弃测试；资源读取复用同一 RuntimeReadApi。
+- [x] 验证 fresh canonical Played 不额外请求；snapshot 对 Played 不 fresh 时至多发起一次现有 `GET /api/history/played` 读取，并覆盖 loading/failure 与过期结果保护。
+- [x] 完成 `./gradlew --offline --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、目标设备 `connectedDebugAndroidTest`、`git diff --check` 和单一 owner/source scan；报告记录测试计数、DataStore 保留与未覆盖的实时视觉检查，Batch 5 单独提交。
 
 **退出门：** T4-02/T4-10 与 T4-13 的 occurrence/列表投影基础通过；Queue 只读展示不产生 mutation；没有假历史/假 next/按 song_id 去重。
 

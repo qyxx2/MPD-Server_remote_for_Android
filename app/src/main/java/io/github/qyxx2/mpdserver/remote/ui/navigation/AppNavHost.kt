@@ -62,7 +62,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentationHandoff
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueDestinationPlaceholderScreen
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
@@ -675,7 +675,9 @@ private fun AppNavigationGraph(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
             ) {
-                QueueDestinationPlaceholderScreen(
+                QueueScreen(
+                    runtime = runtime,
+                    snapshotState = snapshotState,
                     onExit = onExitFullScreen,
                     onOpenPlayer = {
                         if (!navController.popBackStack(AppDestination.FULL_SCREEN_PLAYER.route, inclusive = false)) {

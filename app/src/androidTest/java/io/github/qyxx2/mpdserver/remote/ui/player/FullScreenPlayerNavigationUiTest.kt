@@ -99,12 +99,12 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.onNodeWithTag("player-bottom-queue").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             navController.currentDestination?.route == AppDestination.QUEUE.route &&
-                composeRule.onAllNodesWithTag("queue-destination-placeholder")
+                composeRule.onAllNodesWithTag("queue-screen")
                     .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
         }
         composeRule.waitForIdle()
         assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)
-        composeRule.onNodeWithTag("queue-destination-placeholder").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-screen").assertIsDisplayed()
         composeRule.onNodeWithTag("player-bottom-queue").assertIsSelected()
         composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
         assertSame(runtime, application.runtime)
@@ -118,6 +118,16 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.waitForIdle()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+        assertSame(runtime, application.runtime)
+
+        // Re-enter after Queue was popped: a new destination must be available and visible.
+        composeRule.onNodeWithTag("player-bottom-queue").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.QUEUE.route &&
+                composeRule.onAllNodesWithTag("queue-screen")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        composeRule.onNodeWithTag("queue-screen").assertIsDisplayed()
         assertSame(runtime, application.runtime)
     }
 

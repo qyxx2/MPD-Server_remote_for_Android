@@ -72,3 +72,10 @@
 ## 6. Batch 计划索引
 
 逐 Batch 目标、文件边界、测试先行步骤、依赖关系与退出门见 [Task 4 Implementation Plan](../plans/2026-10-27-task-4-full-player-queue.md)。矩阵中的 Batch 标记只说明责任归属，不代表实现或验收已完成。B9 负责逐项核对 T4-01 至 T4-17 的机器/人工证据；未运行或未覆盖的场景须标记 BLOCKED/NOT COVERED。
+
+## 7. Batch 5 实施证据（2026-10-28）
+
+- **T4-02 / T4-10 的 Batch 5 部分：** `QueuePresentation` 读取 canonical snapshot 并沿用 B1 `PlayerPresentation` 的实际播放确认条件；Queue 当前项使用 position 0，后续行遵循 Web MANUAL-first/AUTOPLAY-fallback 规则；Lazy row key 为 `queue_item_id`。单测覆盖重复 `song_id` 的多个 occurrence、paused/current 状态、无确认/空/坏 snapshot；Compose 测试覆盖 current-first、stale 未确认、无 current 时不伪造 current 与导航重入。
+- **T4-11 的 Batch 5 部分：** fresh canonical Played 不额外请求；snapshot 非 ready 时通过共享 `RuntimeReadApi` 走现有 `GET /api/history/played`，并核对 epoch/connection/origin 后才接受回包。连续 fractional reveal、释放冻结与手势互斥仍明确留给 B8，不能据此标记 T4-11 全部完成。
+- **T4-12 / T4-13 的 Batch 5 部分：** row 以 occurrence ID 渲染，视觉拖拽柄禁用，尾部三点图形暂不交互；拖拽提交仍归 B7，菜单/播放写动作仍归 B6。
+- **验证报告：** [Task 4 Batch 5 Verification Report](../reports/2026-10-28-task-4-batch5-verification.md)。Batch 5 自动化通过不替代 B9 对整个合同矩阵的退出验收；未覆盖的实时服务器 Queue 视觉检查如实保留为未覆盖项。
