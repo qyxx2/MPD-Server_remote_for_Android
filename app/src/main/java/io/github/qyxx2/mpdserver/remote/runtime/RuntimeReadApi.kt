@@ -8,6 +8,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.decodeJson
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtistListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,9 @@ class RuntimeReadApi(
     suspend fun getArtists(): ApiResult<ArtistListDto> = jsonGet("/api/library/artists")
 
     suspend fun getPlayed(): ApiResult<QueueListDto> = jsonGet("/api/history/played")
+
+    /** Web-equivalent post-save readback; the server's playlist list remains authoritative. */
+    suspend fun getPlaylists(): ApiResult<PlaylistListDto> = jsonGet("/api/playlists")
 
     /** Returns original image bytes; HTTP 404 stays distinguishable from malformed/non-image content. */
     suspend fun getArtwork(songId: String): HttpResult = withContext(dispatcher) {

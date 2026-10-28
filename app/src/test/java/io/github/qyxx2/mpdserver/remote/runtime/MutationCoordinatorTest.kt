@@ -73,6 +73,31 @@ class MutationCoordinatorTest {
         } finally { coordinator.close() }
     }
 
+    @Test fun confirmedReceiptStaysSyncingUntilAuthoritativeReadbackFinishes() = runBlocking {
+        val readbackStarted = CountDownLatch(1)
+        val releaseReadback = CountDownLatch(1)
+        val coordinator = MutationCoordinator(
+            origin = ServerOrigin.parse("http://music.example:18000"),
+            send = { HttpResult.NoContent() },
+            synchronize = {
+                readbackStarted.countDown()
+                releaseReadback.await(2, TimeUnit.SECONDS)
+            },
+            parentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        )
+        try {
+            coordinator.submit(intent())
+            assertTrue(readbackStarted.await(2, TimeUnit.SECONDS))
+            assertEquals(MutationStatus.SYNCING, coordinator.activities.value.single().status)
+            releaseReadback.countDown()
+            val activity = coordinator.activities.first { it.singleOrNull()?.status == MutationStatus.SUCCESS }.single()
+            assertEquals("Write confirmed and authoritative state synchronized", activity.message)
+        } finally {
+            releaseReadback.countDown()
+            coordinator.close()
+        }
+    }
+
     @Test fun confirmedWriteRemainsConfirmedWhenFollowupReadFails() = runBlocking {
         val coordinator = MutationCoordinator(
             origin = ServerOrigin.parse("http://music.example:18000"),
@@ -128,6 +153,41 @@ class MutationCoordinatorTest {
             coordinator.changeOrigin(ServerOrigin.parse("https://other.example:18443"))
             assertEquals(MutationOutcome.BlockedOriginChange, coordinator.retryUnknown(id.id))
             assertEquals(listOf("key-0"), keys)
+        } finally { coordinator.close() }
+    }
+
+    @Test fun queueUnknownRetryReusesTheOriginalKeyButRevisionDriftBlocksAnotherSend() = runBlocking {
+        val sent = java.util.concurrent.CopyOnWriteArrayList<MutationRequest>()
+        var scope = "epoch-1:generation-4:revision-17"
+        val coordinator = MutationCoordinator(
+            origin = ServerOrigin.parse("http://music.example:18000"),
+            send = { request ->
+                sent += request
+                HttpResult.Failed(HttpFailure.Transport(IOException("timeout")))
+            },
+            parentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            keyFactory = { "queue-stable-key" },
+            retryScopeProvider = { scope },
+        )
+        try {
+            val queueIntent = MutationIntent(
+                id = "queue:one",
+                method = "DELETE",
+                path = "/api/playback/queue",
+                payload = null,
+                retryScope = scope,
+            )
+            coordinator.submit(queueIntent)
+            coordinator.activities.first { it.singleOrNull()?.status == MutationStatus.UNKNOWN }
+            assertEquals(MutationOutcome.Submitted, coordinator.retryUnknown(queueIntent.id))
+            coordinator.activities.first { it.singleOrNull()?.status == MutationStatus.UNKNOWN && sent.size == 2 }
+            assertEquals(sent[0].idempotencyKey, sent[1].idempotencyKey)
+            assertEquals(sent[0].path, sent[1].path)
+            assertEquals(sent[0].payload, sent[1].payload)
+
+            scope = "epoch-1:generation-4:revision-18"
+            assertEquals(MutationOutcome.NotRetryable, coordinator.retryUnknown(queueIntent.id))
+            assertEquals("a stale queue intent must not be resent after the canonical revision changes", 2, sent.size)
         } finally { coordinator.close() }
     }
 

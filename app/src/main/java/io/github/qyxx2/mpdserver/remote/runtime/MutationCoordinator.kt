@@ -25,7 +25,15 @@ import java.io.IOException
 import java.util.UUID
 
 /** A caller-defined immutable user intent; retries never rebuild it from UI state. */
-data class MutationIntent(val id: String, val method: String, val path: String, val payload: String?, val label: String? = null) {
+data class MutationIntent(
+    val id: String,
+    val method: String,
+    val path: String,
+    val payload: String?,
+    val label: String? = null,
+    /** Optional exact precondition for explicit retries of state-scoped intents such as Queue writes. */
+    val retryScope: String? = null,
+) {
     init {
         require(id.isNotBlank())
         require(method.uppercase() in setOf("POST", "PUT", "PATCH", "DELETE"))
@@ -34,7 +42,15 @@ data class MutationIntent(val id: String, val method: String, val path: String, 
     }
 }
 
-data class MutationRequest(val method: String, val path: String, val payload: String?, val idempotencyKey: String?, val origin: ServerOrigin, val label: String? = null)
+data class MutationRequest(
+    val method: String,
+    val path: String,
+    val payload: String?,
+    val idempotencyKey: String?,
+    val origin: ServerOrigin,
+    val label: String? = null,
+    val retryScope: String? = null,
+)
 enum class MutationStatus { PENDING, SUCCESS, FAILED, UNKNOWN, SYNCING, INFO }
 data class OperationActivity(
     val intentId: String, val label: String, val status: MutationStatus,
@@ -62,6 +78,7 @@ class MutationCoordinator(
     parentScope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val keyFactory: () -> String = { UUID.randomUUID().toString() },
+    private val retryScopeProvider: (() -> String?)? = null,
 ) : Closeable {
     private val lock = Any()
     private var origin = origin
@@ -76,7 +93,7 @@ class MutationCoordinator(
         val decision = synchronized(lock) {
             val existing = requests[intent.id]
             if (existing != null) {
-                if (existing.method != intent.method.uppercase() || existing.path != intent.path || existing.payload != intent.payload) {
+                if (existing.method != intent.method.uppercase() || existing.path != intent.path || existing.payload != intent.payload || existing.retryScope != intent.retryScope) {
                     return@synchronized Decision.Immediate(MutationOutcome.Failed(null, "Intent id reused with a different request"))
                 }
                 val status = _activities.value.firstOrNull { it.intentId == intent.id }?.status
@@ -92,6 +109,7 @@ class MutationCoordinator(
                 idempotencyKey = if (intent.method.uppercase() == "POST" && intent.path == "/api/library/collections") null else keyFactory(),
                 origin = origin,
                 label = intent.label,
+                retryScope = intent.retryScope,
             )
             requests[intent.id] = request
             updateActivityLocked(request, intent.id, MutationStatus.PENDING)
@@ -106,11 +124,22 @@ class MutationCoordinator(
         }
     }
 
+    /** Whether the shared activity UI may offer an explicit retry without changing intent identity. */
+    fun canRetryUnknown(intentId: String): Boolean = synchronized(lock) {
+        val request = requests[intentId] ?: return@synchronized false
+        request.origin == origin &&
+            _activities.value.firstOrNull { it.intentId == intentId }?.status == MutationStatus.UNKNOWN &&
+            (request.retryScope == null || retryScopeProvider?.invoke() == request.retryScope)
+    }
+
     /** Explicit user-driven retry of the same immutable intent, key and origin. */
     fun retryUnknown(intentId: String): MutationOutcome {
         val request = synchronized(lock) {
             val existing = requests[intentId] ?: return MutationOutcome.NotRetryable
             if (existing.origin != origin) return MutationOutcome.BlockedOriginChange
+            if (existing.retryScope != null && retryScopeProvider?.invoke() != existing.retryScope) {
+                return MutationOutcome.NotRetryable
+            }
             if (_activities.value.firstOrNull { it.intentId == intentId }?.status != MutationStatus.UNKNOWN) {
                 return MutationOutcome.NotRetryable
             }
@@ -207,7 +236,10 @@ class MutationCoordinator(
                 outcomes[intentId] = outcome
                 when (outcome) {
                     is MutationOutcome.Confirmed -> updateActivityLocked(
-                        request, intentId, MutationStatus.SUCCESS, "Write confirmed",
+                        request,
+                        intentId,
+                        if (synchronize == null) MutationStatus.SUCCESS else MutationStatus.SYNCING,
+                        if (synchronize == null) "Write confirmed" else "Write confirmed; synchronizing authoritative state",
                         receiptUpdatedAt = outcome.receiptUpdatedAt,
                     )
                     is MutationOutcome.Failed -> updateActivityLocked(request, intentId, MutationStatus.FAILED, outcome.message)
@@ -217,9 +249,19 @@ class MutationCoordinator(
                 true
             }
         }
-        if (originStillCurrentAfterSend && outcome is MutationOutcome.Confirmed) {
+        if (originStillCurrentAfterSend && outcome is MutationOutcome.Confirmed && synchronize != null) {
             try {
-                synchronize?.invoke(intentId)
+                synchronize.invoke(intentId)
+                synchronized(lock) {
+                    replaceActivityLocked(intentId) { activity ->
+                        if (activity.status == MutationStatus.SYNCING && activity.syncError == null) {
+                            activity.copy(
+                                status = MutationStatus.SUCCESS,
+                                message = "Write confirmed and authoritative state synchronized",
+                            )
+                        } else activity
+                    }
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -277,7 +319,13 @@ class MutationCoordinator(
     }
 
     fun recordSynchronizationFailure(intentId: String, message: String) = synchronized(lock) {
-        replaceActivityLocked(intentId) { it.copy(syncError = message.ifBlank { "Follow-up state synchronization failed" }) }
+        replaceActivityLocked(intentId) {
+            it.copy(
+                status = if (it.status == MutationStatus.SYNCING) MutationStatus.SUCCESS else it.status,
+                message = if (it.status == MutationStatus.SYNCING) "Write confirmed; authoritative state readback failed" else it.message,
+                syncError = message.ifBlank { "Follow-up state synchronization failed" },
+            )
+        }
     }
 
     private sealed interface Decision {

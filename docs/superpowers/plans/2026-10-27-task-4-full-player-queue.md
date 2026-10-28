@@ -302,18 +302,18 @@
 
 **Interfaces：**
 - Queue row play 固定走 `POST /api/playback/queue/items/{queue_item_id}/play`，使用被点击 occurrence ID。
-- 对已在 Queue 中的待播 occurrence 移动/排序走 `PUT /api/playback/queue/items/{queue_item_id}` 和 `before_queue_item_id`；删除具体 pending item 用 `DELETE /api/playback/queue/items/{queue_item_id}`；仅使用 Web 已有动作和禁用条件，不额外实现 song/collection algorithm。
+- 对已在 Queue 中的待播 occurrence 移动/排序走 `PUT /api/playback/queue/items/{queue_item_id}` 和 `before_queue_item_id`；三点菜单按实际 Web 实现对每个可见行保留入口，Next/Add 仅对 `position > 0` 显示，Remove 按 Web 对所有可见行显示。提交 Remove 前必须确认 occurrence 仍在 canonical snapshot 中；最终是否允许删除当前项由服务端校验，不额外实现 song/collection algorithm。
 - 保存 Queue 使用 `POST /api/playback/queue/save-as-playlist`；清空使用 `DELETE /api/playback/queue`。Queue clear 不调用 `/api/playback/stop`，也不能本地删除 current/Played 来制造清空成功。
 - 所有 mutation 使用确定且不冲突的 intent ID 和既有 coordinator；POST/PUT 若 transport 合同要求 body，则使用契约明确的 `{}` 或精确 payload。HTTP 204 视为写入回执，后续 snapshot/readback 仍单独处理；读回失败不得把成功回执翻成“写入失败”。
 - 未知操作只允许在用户明确点击重试时使用同一个 intent/key/origin/payload；target/epoch/generation/revision 改变需阻止过期 intent 的 UI 重发。
 
 **Steps：**
-- [ ] 为每一项写操作先写测试并断言确切 HTTP method/path/payload、queue_item_id escaping、请求幂等语义和允许状态；覆盖重复标题但不同 occurrence ID。
-- [ ] 为 current/Played 行的禁用菜单、pending 行的合法菜单、未知/过期 snapshot、同时有未解决 mutation 时所有写入口禁用写 presentation tests。
-- [ ] 运行目标测试见证 RED，再实现 QueueActions 将 intent 交给唯一 Runtime MutationCoordinator；不得直接在 Composable 调 HTTP。
-- [ ] 覆盖成功回执后权威 readback、DELETE 204、写成功但读回失败、明确业务失败与 UNKNOWN 区分、显式 retry 复用同 key；在 readback 之前不手动修改 canonical Queue。
-- [ ] 对 clear 添加强断言：只提交 DELETE /api/playback/queue，不调用 POST /api/playback/stop，不清除 current/Played；处理后是否有 AutoPlay refill 以服务端快照为准。
-- [ ] 运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check` 与 UI 无 owner/直接网络调用扫描；真实 Queue 写入须取得用户授权且可安全恢复，否则仅执行自动测试并记录 NOT COVERED；单独提交 Batch 6。
+- [x] 为每一项写操作先写测试并断言确切 HTTP method/path/payload、Web `encodeURIComponent` 兼容的 queue_item_id escaping、请求幂等语义和允许状态；覆盖重复标题但不同 occurrence ID。
+- [x] 按真实 Web 源码建立菜单可用性契约：current/Played 仅显示 Remove，pending 显示 Next/Add/Remove；snapshot 不 fresh 或存在未解决 mutation 时所有写入口禁用。
+- [x] 运行目标测试见证 RED，再实现 QueueActions 将 intent 交给唯一 Runtime MutationCoordinator；不得直接在 Composable 调 HTTP。
+- [x] 覆盖成功回执后权威 readback、DELETE 204、写成功但读回失败、明确业务失败与 UNKNOWN 区分、显式 retry 复用同 key；在 readback 之前不手动修改 canonical Queue。
+- [x] 对 clear 添加强断言：只提交 DELETE /api/playback/queue，不调用 POST /api/playback/stop，不清除 current/Played；处理后是否有 AutoPlay refill 以服务端快照为准。
+- [x] 运行 `./gradlew --offline --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check` 与 UI 无 owner/直接网络调用扫描；真实 Queue 写入因未授权未执行并记录 NOT COVERED；独立 instrumentation 最终重跑被设备锁屏阻断（此前同一组 UI 测试 12/12 通过，见 Batch 6 报告）；Batch 6 单独本地提交。
 
 **退出门：** T4-13/T4-14/T4-17 写操作由唯一 coordinator 管理；Queue clear 语义与 Stop 严格隔离；receipt/readback/UNKNOWN 不混淆。
 

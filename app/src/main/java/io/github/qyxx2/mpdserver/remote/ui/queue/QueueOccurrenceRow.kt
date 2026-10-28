@@ -2,6 +2,7 @@ package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,7 +26,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +44,9 @@ internal fun QueueOccurrenceRow(
     isCurrent: Boolean,
     currentLabel: String,
     cacheEntry: QueueSongCacheEntry?,
+    menuEnabled: Boolean,
+    onPlay: () -> Unit,
+    onMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
@@ -52,6 +60,15 @@ internal fun QueueOccurrenceRow(
             .fillMaxWidth()
             .defaultMinSize(minHeight = 84.dp)
             .background(background)
+            .pointerInput(occurrence.queueItemId) {
+                detectTapGestures(onTap = { onPlay() })
+            }
+            .semantics {
+                onClick(label = "播放队列条目") {
+                    onPlay()
+                    true
+                }
+            }
             .padding(horizontal = 8.dp, vertical = 8.dp)
             .testTag("queue-row-${occurrence.queueItemId}"),
         verticalAlignment = Alignment.CenterVertically,
@@ -105,6 +122,7 @@ internal fun QueueOccurrenceRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+
             )
             val format = listOfNotNull(
                 song?.codec?.takeIf { it.isNotBlank() },
@@ -121,11 +139,16 @@ internal fun QueueOccurrenceRow(
                 fontSize = 10.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+
             )
         }
-        QueueMoreGlyph(
+        IconButton(
+            enabled = menuEnabled,
+            onClick = onMenu,
             modifier = Modifier.size(48.dp).testTag("queue-row-menu-${occurrence.queueItemId}"),
-        )
+        ) {
+            QueueMoreGlyph()
+        }
     }
 }
 
@@ -153,9 +176,9 @@ private fun QueueDragHandle(enabled: Boolean, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun QueueMoreGlyph(modifier: Modifier = Modifier) {
+private fun QueueMoreGlyph() {
     val tint = MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.size(18.dp)) {
             val radius = 1.7.dp.toPx()
             repeat(3) { index ->

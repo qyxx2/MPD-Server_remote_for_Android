@@ -109,11 +109,16 @@ fun AppNavHost(
         ?.takeIf { playerActions.canRetryUnknown() }
         ?.let(::setOf)
         ?: emptySet()
+    val retryableQueueIntentIds = activities.asSequence()
+        .filter { it.intentId.startsWith("queue:") && it.status == io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.UNKNOWN }
+        .map { it.intentId }
+        .filter(runtime.mutations::canRetryUnknown)
+        .toSet()
     val statusPresentation = ActivityPresentation.from(
         snapshotState,
         activities,
         currentOrigin = currentServerOrigin,
-        retryableIntentIds = retryablePlayerIntentIds,
+        retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds,
     )
     val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }

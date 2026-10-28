@@ -8,8 +8,13 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
+import io.github.qyxx2.mpdserver.remote.runtime.MutationIntent
+import io.github.qyxx2.mpdserver.remote.runtime.MutationOutcome
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
@@ -174,6 +179,63 @@ class QueueScreenUiTest {
         assertEquals(0, playedReads.get())
     }
 
+    @Test
+    fun rowMenuAndQueueToolsSubmitOnlyTheirConfirmedActions() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val state = snapshotState(
+            listOf(
+                item("current", "same-song", 0, QueueSourceDto.MANUAL),
+                item("pending-a", "same-song", 1, QueueSourceDto.MANUAL),
+                item("pending-b", "same-song", 2, QueueSourceDto.MANUAL),
+            ),
+            freshness = SnapshotFreshness.FRESH,
+        )
+        val submitted = mutableListOf<MutationIntent>()
+        val actions = QueueActions(
+            stateProvider = { state },
+            activitiesProvider = { emptyList() },
+            submitter = { submitted += it; MutationOutcome.Submitted },
+            idFactory = { "ui-test-${submitted.size}" },
+        )
+        launchQueue(
+            application = application,
+            state = state,
+            songReads = AtomicInteger(),
+            playedReads = AtomicInteger(),
+            played = emptyList(),
+            queueActionsFactory = { actions },
+        )
+
+        composeRule.onNodeWithTag("queue-row-pending-a").performClick()
+        assertEquals("POST", submitted.single().method)
+        assertEquals("/api/playback/queue/items/pending-a/play", submitted.single().path)
+
+        composeRule.onNodeWithTag("queue-row-menu-pending-b").performClick()
+        composeRule.onNodeWithTag("queue-menu-next").assertIsDisplayed().performClick()
+        assertEquals(2, submitted.size)
+        assertEquals("PUT", submitted[1].method)
+        assertEquals("/api/playback/queue/items/pending-b", submitted[1].path)
+        assertTrue(submitted[1].payload!!.contains("pending-a"))
+
+        composeRule.onNodeWithTag("queue-clear-button").performClick()
+        composeRule.onNodeWithTag("queue-clear-dialog").assertIsDisplayed()
+        composeRule.onNodeWithText("取消").performClick()
+        assertEquals("cancel must not mutate the Queue", 2, submitted.size)
+
+        composeRule.onNodeWithTag("queue-clear-button").performClick()
+        composeRule.onNodeWithTag("queue-clear-confirm").performClick()
+        assertEquals("DELETE", submitted[2].method)
+        assertEquals("/api/playback/queue", submitted[2].path)
+        assertTrue(submitted.none { it.path.contains("/stop") })
+
+        composeRule.onNodeWithTag("queue-save-button").performClick()
+        composeRule.onNodeWithTag("queue-playlist-name").performTextInput("Road Trip")
+        composeRule.onNodeWithTag("queue-save-confirm").performClick()
+        assertEquals("POST", submitted[3].method)
+        assertEquals("/api/playback/queue/save-as-playlist", submitted[3].path)
+        assertTrue(submitted[3].payload!!.contains("Road Trip"))
+    }
+
     private fun launchQueue(
         application: MpdServerRemoteApplication,
         state: SnapshotStoreState,
@@ -181,6 +243,7 @@ class QueueScreenUiTest {
         playedReads: AtomicInteger,
         played: List<QueueItemDto>,
         songLoadGate: CompletableDeferred<Unit>? = null,
+        queueActionsFactory: (() -> QueueActions)? = null,
     ) {
         val presentation = PlayerPresentation.from(state)
         composeRule.setContent {
@@ -201,6 +264,7 @@ class QueueScreenUiTest {
                         QueueSongResource(song(songId, "Title $songId"))
                     },
                     snapshotProvider = { state },
+                    queueActionsFactory = queueActionsFactory,
                 )
             }
         }

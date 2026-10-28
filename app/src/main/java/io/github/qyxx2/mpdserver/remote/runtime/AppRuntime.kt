@@ -70,6 +70,7 @@ class AppRuntime private constructor(
             }
         },
         parentScope = scope,
+        retryScopeProvider = { QueueMutationScope.fingerprint(snapshots.state.value) },
     ) }
 
     fun start() = realtimeController.start()

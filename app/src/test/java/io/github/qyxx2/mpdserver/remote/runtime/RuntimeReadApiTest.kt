@@ -27,6 +27,20 @@ class RuntimeReadApiTest {
         assertTrue(seen.all { it.method == "GET" && it.header("Content-Type") == null })
     }
 
+    @Test fun playlistReadbackUsesTheExistingWebEndpointAndWireShape() = runBlocking {
+        var path = ""
+        var method = ""
+        val api = RuntimeReadApi({ ServerOrigin.parse("http://server.example") }, OkHttpClient()) { _, request ->
+            path = request.url.encodedPath
+            method = request.method
+            HttpResult.Body(200, "application/json", """{"items":[],"count":0}""".toByteArray())
+        }
+        val result = api.getPlaylists() as io.github.qyxx2.mpdserver.remote.protocol.ApiResult.Success
+        assertEquals("/api/playlists", path)
+        assertEquals("GET", method)
+        assertEquals(0, result.value.count)
+    }
+
     @Test fun artistsReadUsesTheExistingWebNavigationEndpointAndWireShape() = runBlocking {
         var path = ""
         var method = ""

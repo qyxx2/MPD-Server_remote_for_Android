@@ -78,7 +78,11 @@ data class ActivityPresentation(
                             state.snapshotConnectionGeneration == state.connectionGeneration &&
                             activity.status == MutationStatus.UNKNOWN &&
                             currentOrigin != null && activity.origin == currentOrigin &&
-                            (!activity.intentId.startsWith("player:") || activity.intentId in retryableIntentIds),
+                            when {
+                                activity.intentId.startsWith("player:") -> activity.intentId in retryableIntentIds
+                                activity.intentId.startsWith("queue:") -> activity.intentId in retryableIntentIds
+                                else -> true
+                            },
                     )
                 },
                 isConfirmedAvailable = state.controlsEligible,

@@ -119,6 +119,21 @@ class ActivityPresentationTest {
         assertTrue(staleButWritable.activities.single().canRetry)
     }
 
+    @Test fun queueUnknownRetryRequiresCoordinatorScopePermission() {
+        val state = PlayerTestFixtures.state()
+        val queueIntent = activity(MutationStatus.UNKNOWN).copy(intentId = "queue:clear-1")
+        val denied = ActivityPresentation.from(state, listOf(queueIntent), currentOrigin = origin)
+        assertFalse(denied.activities.single().canRetry)
+
+        val allowed = ActivityPresentation.from(
+            state,
+            listOf(queueIntent),
+            currentOrigin = origin,
+            retryableIntentIds = setOf("queue:clear-1"),
+        )
+        assertTrue(allowed.activities.single().canRetry)
+    }
+
     @Test fun activityRowsRetainExistingSharedOwnerDataAndReadableFallbacks() {
         val result = project(
             SnapshotStoreState(connectionStatus = RuntimeConnectionStatus.CONNECTED, freshness = SnapshotFreshness.FRESH, readError = "snapshot error"),

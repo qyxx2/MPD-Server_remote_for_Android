@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
@@ -31,6 +32,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenBottomNavigation
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenExitGestureBand
@@ -39,10 +41,12 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 private enum class PlayedReadStatus { WAITING, LOADING, CANONICAL, FALLBACK, FAILED }
 
-/** Read-only Queue/Played surface. B6+ attach actions and interactive history reveal separately. */
+/** Canonical Queue/Played projection with B6 mutations delegated to the shared Runtime coordinator. */
 @Composable
 internal fun QueueScreen(
     runtime: AppRuntime,
@@ -53,8 +57,23 @@ internal fun QueueScreen(
     playedReader: (suspend () -> ApiResult<QueueListDto>)? = null,
     songResourceLoader: (suspend (QueueResourceIdentity, String) -> QueueSongResource)? = null,
     snapshotProvider: () -> SnapshotStoreState = { runtime.snapshots.state.value },
+    queueActionsFactory: (() -> QueueActions)? = null,
 ) {
     val scope = rememberCoroutineScope()
+    val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
+    val actions = remember(runtime, queueActionsFactory) {
+        queueActionsFactory?.invoke() ?: QueueActions(
+            stateProvider = { runtime.snapshots.state.value },
+            activitiesProvider = { runtime.mutations.activities.value },
+            submitter = { runtime.mutations.submit(it) },
+        )
+    }
+    var selectedMenuItem by remember { mutableStateOf<QueueItemDto?>(null) }
+    var toolDialog by remember { mutableStateOf<QueueToolDialog?>(null) }
+    var pendingSaveIntentId by remember { mutableStateOf<String?>(null) }
+    var saveReadbackError by remember { mutableStateOf<String?>(null) }
+    var saveReadbackOnlyRetry by remember { mutableStateOf(false) }
+    var saveAlreadyConfirmed by remember { mutableStateOf(false) }
     val canonicalProjection = remember(snapshotState) { QueuePresentation.deriveQueue(snapshotState) }
     var playedFallback by remember { mutableStateOf<List<QueueItemDto>?>(null) }
     var playedReadStatus by remember { mutableStateOf(PlayedReadStatus.WAITING) }
@@ -168,6 +187,83 @@ internal fun QueueScreen(
     LaunchedEffect(queueProjection.epoch, queueProjection.queueRevision, queueProjection.current?.queueItemId) {
         listState.scrollToItem(0)
     }
+    LaunchedEffect(selectedMenuItem?.queueItemId, queueProjection.visibleRows.map { it.queueItemId }) {
+        val selectedId = selectedMenuItem?.queueItemId ?: return@LaunchedEffect
+        if (queueProjection.visibleRows.none { it.queueItemId == selectedId }) {
+            selectedMenuItem = null
+        }
+    }
+
+    // Keep the save dialog open until the shared mutation has a confirmed receipt/readback and
+    // Web's existing GET /api/playlists read succeeds. UNKNOWN waits for an explicit shared retry.
+    LaunchedEffect(pendingSaveIntentId) {
+        val intentId = pendingSaveIntentId ?: return@LaunchedEffect
+        val activity = runtime.mutations.activities.first { entries ->
+            entries.firstOrNull { entry ->
+                entry.intentId == intentId && (
+                    entry.status in setOf(MutationStatus.SUCCESS, MutationStatus.FAILED) ||
+                        (entry.status == MutationStatus.UNKNOWN &&
+                            entry.origin != runtime.realtimeController.currentOrigin())
+                )
+            } != null
+        }.firstOrNull { it.intentId == intentId } ?: return@LaunchedEffect
+        when {
+            activity.status == MutationStatus.FAILED -> {
+                saveReadbackError = activity.message ?: "保存失败，请检查服务器反馈"
+                saveAlreadyConfirmed = false
+                saveReadbackOnlyRetry = false
+                pendingSaveIntentId = null
+            }
+            activity.status == MutationStatus.UNKNOWN -> {
+                // The outcome may still have committed on the previous origin. Do not let the
+                // user repeat the save against either origin; the original server is no longer active.
+                saveReadbackError = "服务器地址已变化；原服务器的保存结果未知。为避免重复提交，当前表单已锁定。"
+                saveAlreadyConfirmed = true
+                saveReadbackOnlyRetry = false
+                pendingSaveIntentId = null
+            }
+            activity.syncError != null -> {
+                saveReadbackError = "写入已确认，但权威状态同步失败：${activity.syncError}"
+                saveAlreadyConfirmed = true
+                saveReadbackOnlyRetry = true
+                pendingSaveIntentId = null
+            }
+            activity.origin != runtime.realtimeController.currentOrigin() -> {
+                saveReadbackError = "服务器地址已变化；原服务器的保存结果未能确认，请勿重复提交"
+                saveAlreadyConfirmed = true
+                saveReadbackOnlyRetry = false
+                pendingSaveIntentId = null
+            }
+            else -> {
+                // The write receipt already exists. Lock the form while the independent
+                // playlist-list readback runs, so another tap cannot issue a second POST.
+                saveAlreadyConfirmed = true
+                saveReadbackOnlyRetry = false
+                when (runtime.reads.getPlaylists()) {
+                    is ApiResult.Success -> {
+                        if (activity.origin == runtime.realtimeController.currentOrigin()) {
+                            saveReadbackError = null
+                            saveAlreadyConfirmed = false
+                            saveReadbackOnlyRetry = false
+                            pendingSaveIntentId = null
+                            toolDialog = null
+                        } else {
+                            saveReadbackError = "服务器地址已变化；原服务器的保存结果未能确认，请勿重复提交"
+                            saveAlreadyConfirmed = true
+                            saveReadbackOnlyRetry = false
+                            pendingSaveIntentId = null
+                        }
+                    }
+                    else -> {
+                        saveReadbackError = "保存请求已确认，但读取歌单列表失败。重试将只读取权威状态，不会再次提交保存。"
+                        saveAlreadyConfirmed = true
+                        saveReadbackOnlyRetry = true
+                        pendingSaveIntentId = null
+                    }
+                }
+            }
+        }
+    }
 
     var showOutputDetails by remember { mutableStateOf(false) }
     Column(
@@ -178,12 +274,27 @@ internal fun QueueScreen(
             onExit = onExit,
             modifier = Modifier.testTag("full-screen-exit-gesture-band"),
         ) {
-            Text(
-                text = "队列",
-                modifier = Modifier.padding(start = 24.dp).align(Alignment.CenterStart),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "队列",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(
+                    enabled = actions.isEnabled,
+                    onClick = { toolDialog = QueueToolDialog.CLEAR },
+                    modifier = Modifier.testTag("queue-clear-button"),
+                ) { Text("清空待播") }
+                TextButton(
+                    enabled = actions.isEnabled,
+                    onClick = { toolDialog = QueueToolDialog.SAVE_PLAYLIST },
+                    modifier = Modifier.testTag("queue-save-button"),
+                ) { Text("保存歌单") }
+            }
         }
 
         when {
@@ -210,6 +321,26 @@ internal fun QueueScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)
                             .testTag("queue-stale-state"),
                     )
+                }
+                activities.lastOrNull { it.intentId.startsWith("queue:") }?.let { activity ->
+                    val feedback = when {
+                        activity.syncError != null -> "写入已确认，状态同步失败：${activity.syncError}"
+                        activity.status == MutationStatus.PENDING -> activity.message ?: "队列操作处理中…"
+                        activity.status == MutationStatus.UNKNOWN -> "操作结果未知：${activity.message ?: "请先确认服务器状态"}"
+                        activity.status == MutationStatus.FAILED -> "操作失败：${activity.message ?: "服务器拒绝请求"}"
+                        activity.status == MutationStatus.SUCCESS -> activity.message ?: "队列操作已确认"
+                        else -> null
+                    }
+                    feedback?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (activity.status == MutationStatus.FAILED || activity.status == MutationStatus.UNKNOWN || activity.syncError != null)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 3.dp)
+                                .testTag("queue-operation-feedback"),
+                        )
+                    }
                 }
                 when (playedReadStatus) {
                     PlayedReadStatus.LOADING -> Text(
@@ -248,11 +379,15 @@ internal fun QueueScreen(
                         ) { occurrence ->
                             val entry = cacheEntries[occurrence.songId]
                                 ?.takeIf { it.identity == resourceIdentity }
+                            val song = entry?.song
                             QueueOccurrenceRow(
                                 occurrence = occurrence,
                                 isCurrent = occurrence.position == 0,
                                 currentLabel = queueProjection.currentLabel,
                                 cacheEntry = entry,
+                                menuEnabled = actions.canShowMenu(occurrence.queueItemId),
+                                onPlay = { actions.play(occurrence.queueItemId, song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId) },
+                                onMenu = { selectedMenuItem = occurrence },
                             )
                         }
                     }
@@ -270,6 +405,78 @@ internal fun QueueScreen(
     if (showOutputDetails) {
         OutputDetailsDialog(presentation = presentation, onDismiss = { showOutputDetails = false })
     }
+    QueueRowMenu(
+        item = selectedMenuItem,
+        title = cacheEntries[selectedMenuItem?.songId]?.song?.title.orEmpty(),
+        artist = cacheEntries[selectedMenuItem?.songId]?.song?.artists.orEmpty().joinToString(" / "),
+        album = cacheEntries[selectedMenuItem?.songId]?.song?.album.orEmpty(),
+        enabled = selectedMenuItem?.let { actions.canShowMenu(it.queueItemId) } == true,
+        onDismiss = { selectedMenuItem = null },
+        onMoveNext = {
+            selectedMenuItem?.let { item -> actions.move(item.queueItemId, QueueMove.NEXT, cacheEntries[item.songId]?.song?.title ?: item.songId) }
+            selectedMenuItem = null
+        },
+        onMoveToEnd = {
+            selectedMenuItem?.let { item -> actions.move(item.queueItemId, QueueMove.ADD, cacheEntries[item.songId]?.song?.title ?: item.songId) }
+            selectedMenuItem = null
+        },
+        onRemove = {
+            selectedMenuItem?.let { item -> actions.remove(item.queueItemId, cacheEntries[item.songId]?.song?.title ?: item.songId) }
+            selectedMenuItem = null
+        },
+    )
+    QueueToolsDialog(
+        dialog = toolDialog,
+        enabled = actions.isEnabled,
+        onDismiss = { toolDialog = null },
+        onClear = { actions.clear(); toolDialog = null },
+        onSave = { name ->
+            if (!saveAlreadyConfirmed) {
+                saveReadbackError = null
+                saveReadbackOnlyRetry = false
+                if (actions.save(name) == io.github.qyxx2.mpdserver.remote.runtime.MutationOutcome.Submitted) {
+                    pendingSaveIntentId = actions.lastSubmittedIntentId
+                }
+            }
+        },
+        saveFeedback = saveReadbackError,
+        saveAlreadyConfirmed = saveAlreadyConfirmed,
+        saveReadbackOnlyRetry = saveReadbackOnlyRetry,
+        onRetrySaveReadback = {
+            scope.launch {
+                val originBefore = runtime.realtimeController.currentOrigin()
+                // Prevent concurrent taps from starting overlapping readback retries.
+                saveReadbackOnlyRetry = false
+                saveReadbackError = null
+                val snapshotResult = runtime.refreshSnapshot()
+                if (originBefore != runtime.realtimeController.currentOrigin()) {
+                    saveReadbackError = "服务器地址已变化；原服务器的保存结果未能确认，请勿重复提交"
+                    saveReadbackOnlyRetry = false
+                } else if (snapshotResult !is io.github.qyxx2.mpdserver.remote.runtime.StateReadResult.Accepted) {
+                    saveReadbackError = "权威队列状态读取仍失败；未重新提交保存请求"
+                    saveReadbackOnlyRetry = true
+                } else {
+                    when (runtime.reads.getPlaylists()) {
+                        is ApiResult.Success -> {
+                            if (originBefore == runtime.realtimeController.currentOrigin()) {
+                                saveReadbackError = null
+                                saveAlreadyConfirmed = false
+                                saveReadbackOnlyRetry = false
+                                toolDialog = null
+                            } else {
+                                saveReadbackError = "服务器地址已变化；原服务器的保存结果未能确认，请勿重复提交"
+                                saveReadbackOnlyRetry = false
+                            }
+                        }
+                        else -> {
+                            saveReadbackError = "读取歌单列表仍失败；未重新提交保存请求"
+                            saveReadbackOnlyRetry = true
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable
