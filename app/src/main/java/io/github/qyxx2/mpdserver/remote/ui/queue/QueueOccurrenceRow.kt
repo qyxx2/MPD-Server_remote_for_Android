@@ -2,6 +2,7 @@ package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,11 +20,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -66,17 +72,39 @@ internal fun QueueOccurrenceRow(
     onMoveToEnd: () -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    reorderEnabled: Boolean = false,
+    isDragSource: Boolean = false,
+    isDropTarget: Boolean = false,
+    dropAtEnd: Boolean = false,
+    onReorderStart: () -> Unit = {},
+    onReorderDelta: (Float) -> Unit = {},
+    onReorderEnd: () -> Unit = {},
+    onReorderCancel: () -> Unit = {},
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
     val background = queueOccurrenceBackgroundColor(
         isCurrent = isCurrent,
         primary = MaterialTheme.colorScheme.primary,
     )
+    val insertionLineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.94f)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = 84.dp)
             .background(background)
+            .drawBehind {
+                if (isDropTarget) {
+                    val stroke = 2.dp.toPx()
+                    val y = if (dropAtEnd) size.height - stroke / 2f else stroke / 2f
+                    drawLine(
+                        color = insertionLineColor,
+                        start = Offset(8.dp.toPx(), y),
+                        end = Offset(size.width - 8.dp.toPx(), y),
+                        strokeWidth = stroke,
+                    )
+                }
+            }
+            .graphicsLayer { alpha = if (isDragSource) 0.76f else 1f }
             .pointerInput(occurrence.queueItemId) {
                 detectTapGestures(onTap = { onPlay() })
             }
@@ -91,7 +119,11 @@ internal fun QueueOccurrenceRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         QueueDragHandle(
-            enabled = false,
+            enabled = reorderEnabled && occurrence.position > 0,
+            onDragStart = onReorderStart,
+            onDragDelta = onReorderDelta,
+            onDragEnd = onReorderEnd,
+            onDragCancel = onReorderCancel,
             modifier = Modifier.size(width = 28.dp, height = 40.dp)
                 .testTag("queue-row-drag-handle-${occurrence.queueItemId}"),
         )
@@ -185,9 +217,33 @@ private fun formatSampleRate(rate: Int): String =
     if (rate % 1000 == 0) "${rate / 1000} kHz" else "${rate} Hz"
 
 @Composable
-private fun QueueDragHandle(enabled: Boolean, modifier: Modifier = Modifier) {
+private fun QueueDragHandle(
+    enabled: Boolean,
+    onDragStart: () -> Unit,
+    onDragDelta: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.78f else 0.28f)
-    Canvas(modifier = modifier) {
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnDragDelta by rememberUpdatedState(onDragDelta)
+    val currentOnDragEnd by rememberUpdatedState(onDragEnd)
+    val currentOnDragCancel by rememberUpdatedState(onDragCancel)
+    Canvas(
+        modifier = modifier.pointerInput(enabled) {
+            if (enabled) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { currentOnDragStart() },
+                    onDragEnd = { currentOnDragEnd() },
+                    onDragCancel = { currentOnDragCancel() },
+                ) { change, dragAmount ->
+                    change.consume()
+                    currentOnDragDelta(dragAmount.y)
+                }
+            }
+        },
+    ) {
         val dotRadius = 1.6.dp.toPx()
         val centerX = size.width / 2f
         val gapX = 6.dp.toPx()
@@ -197,7 +253,7 @@ private fun QueueDragHandle(enabled: Boolean, modifier: Modifier = Modifier) {
                 drawCircle(
                     color = tint,
                     radius = dotRadius,
-                    center = androidx.compose.ui.geometry.Offset(centerX + (column - 0.5f) * gapX, startY + row * 7.dp.toPx()),
+                    center = Offset(centerX + (column - 0.5f) * gapX, startY + row * 7.dp.toPx()),
                 )
             }
         }

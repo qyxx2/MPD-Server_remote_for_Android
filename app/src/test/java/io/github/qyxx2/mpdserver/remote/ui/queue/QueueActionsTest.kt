@@ -60,6 +60,33 @@ class QueueActionsTest {
         assertTrue(h.submitted.isEmpty())
     }
 
+    @Test fun reorderUsesPutAndCanonicalOccurrenceBeforeId() {
+        val h = Harness()
+        val actions = h.actions()
+        assertEquals(MutationOutcome.Submitted, actions.reorder("pending-b", "pending-a", "Duplicate title"))
+        val intent = h.submitted.single()
+        assertEquals("PUT", intent.method)
+        assertEquals("/api/playback/queue/items/pending-b", intent.path)
+        assertEquals("pending-a", JsonConfiguration.json.parseToJsonElement(intent.payload!!).jsonObject
+            .getValue("before_queue_item_id").jsonPrimitive.content)
+        assertTrue(intent.label!!.contains("pending-b"))
+    }
+
+    @Test fun reorderCanMoveToEndButRejectsCurrentPlayedSelfAndMissingTargets() {
+        val h = Harness()
+        val actions = h.actions()
+        actions.reorder("pending-b", null, "B")
+        assertEquals(JsonNull, JsonConfiguration.json.parseToJsonElement(h.submitted.single().payload!!).jsonObject
+            .getValue("before_queue_item_id"))
+        assertNull(actions.reorder("current", "pending-a", "Current"))
+        assertNull(actions.reorder("played", "pending-a", "Played"))
+        assertNull(actions.reorder("pending-b", "current", "B"))
+        assertNull(actions.reorder("pending-b", "played", "B"))
+        assertNull(actions.reorder("pending-b", "pending-b", "B"))
+        assertNull(actions.reorder("pending-b", "missing", "B"))
+        assertEquals(1, h.submitted.size)
+    }
+
     @Test fun removeUsesClickedCurrentOccurrenceWithoutSongIdSubstitution() {
         val h = Harness()
         h.actions().remove("current", "Duplicate title")

@@ -139,6 +139,87 @@ internal fun QueueScreen(
             addAll(queueProjection.next)
         }
     }
+    val reorderBaseline = remember(snapshotState) { QueueReorderBaseline.from(snapshotState) }
+    val visiblePendingIds = remember(visibleRows) { visibleRows.filter { it.position > 0 }.map { it.queueItemId } }
+    var reorderDraft by remember(runtime) { mutableStateOf<QueueReorderDraft?>(null) }
+    var dragPointerY by remember(runtime) { mutableStateOf<Float?>(null) }
+    val activeReorderDraft = reorderDraft?.takeIf {
+        it.isCompatible(reorderBaseline, actions.isEnabled, visiblePendingIds)
+    }
+    val renderedRows = remember(visibleRows, activeReorderDraft?.orderedVisiblePendingIds) {
+        val byId = visibleRows.filter { it.position > 0 }.associateBy { it.queueItemId }
+        val currentRows = visibleRows.filter { it.position <= 0 }
+        val order = activeReorderDraft?.orderedVisiblePendingIds ?: visiblePendingIds
+        buildList {
+            addAll(currentRows)
+            order.mapNotNullTo(this, byId::get)
+        }
+    }
+    LaunchedEffect(reorderDraft, reorderBaseline, actions.isEnabled, visiblePendingIds) {
+        if (reorderDraft != null && activeReorderDraft == null) {
+            reorderDraft = null
+            dragPointerY = null
+        }
+    }
+
+    fun startReorder(queueItemId: String) {
+        if (!actions.isEnabled || reorderBaseline == null || visiblePendingIds.size < 2) return
+        val latestState = snapshotProvider()
+        val latestBaseline = QueueReorderBaseline.from(latestState) ?: return
+        if (latestBaseline != reorderBaseline) return
+        val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == queueItemId } ?: return
+        val draft = QueueReorderDraft.begin(latestBaseline, queueItemId, visiblePendingIds) ?: return
+        dragPointerY = itemInfo.offset + itemInfo.size / 2f
+        reorderDraft = draft
+    }
+
+    fun updateReorder(deltaY: Float) {
+        val draft = reorderDraft ?: return
+        if (!draft.isCompatible(reorderBaseline, actions.isEnabled, visiblePendingIds)) {
+            reorderDraft = null
+            dragPointerY = null
+            return
+        }
+        val pointerY = (dragPointerY ?: return) + deltaY
+        dragPointerY = pointerY
+        val remaining = draft.orderedVisiblePendingIds.filterNot { it == draft.draggedQueueItemId }.toSet()
+        val rowCenters = listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+            val id = info.key.toString()
+            id.takeIf { it in remaining }?.let { it to (info.offset + info.size / 2f) }
+        }.toMap()
+        if (rowCenters.isEmpty()) return
+        val targetBefore = draft.targetBefore(pointerY, rowCenters)
+        val updated = draft.moveBefore(targetBefore)
+        if (updated != null) reorderDraft = updated
+    }
+
+    fun finishReorder() {
+        val draft = reorderDraft
+        val latestState = snapshotProvider()
+        val latestBaseline = QueueReorderBaseline.from(latestState)
+        val latestProjection = QueuePresentation.deriveQueue(latestState, playedFallback)
+        val latestRows = buildList {
+            latestProjection.current?.let(::add)
+            addAll(latestProjection.next)
+        }
+        val latestVisiblePendingIds = latestRows.filter { it.position > 0 }.map { it.queueItemId }
+        val commit = draft?.finish(latestBaseline, actions.isEnabled, latestVisiblePendingIds)
+        reorderDraft = null
+        dragPointerY = null
+        if (commit != null) {
+            val source = latestRows.firstOrNull { it.queueItemId == commit.queueItemId }
+                ?: latestProjection.pending.firstOrNull { it.queueItemId == commit.queueItemId }
+            val title = cacheEntries[source?.songId]?.song?.title?.takeIf(String::isNotBlank)
+                ?: source?.songId
+                ?: commit.queueItemId
+            actions.reorder(commit.queueItemId, commit.beforeQueueItemId, title)
+        }
+    }
+
+    fun cancelReorder() {
+        reorderDraft = null
+        dragPointerY = null
+    }
 
     // snapshotFlow coalesces LazyList layout changes and emits only when the bounded visible
     // metadata window changes. It avoids feeding a newly allocated visibleItemsInfo list back
@@ -416,7 +497,7 @@ internal fun QueueScreen(
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
                             itemsIndexed(
-                                items = visibleRows,
+                                items = renderedRows,
                                 key = { _, item -> item.queueItemId },
                                 contentType = { _, _ -> "queue-occurrence" },
                             ) { rowIndex, occurrence ->
@@ -448,6 +529,25 @@ internal fun QueueScreen(
                                             actions.remove(occurrence.queueItemId, menuTitle)
                                             selectedMenuItem = null
                                         },
+                                        reorderEnabled = occurrence.position > 0 && actions.isEnabled &&
+                                            reorderBaseline != null && visiblePendingIds.size > 1,
+                                        isDragSource = activeReorderDraft?.draggedQueueItemId == occurrence.queueItemId,
+                                        isDropTarget = activeReorderDraft?.changed == true && (
+                                            activeReorderDraft.orderedVisiblePendingIds.getOrNull(
+                                                activeReorderDraft.orderedVisiblePendingIds.indexOf(activeReorderDraft.draggedQueueItemId) + 1,
+                                            ) == occurrence.queueItemId ||
+                                                (activeReorderDraft.orderedVisiblePendingIds.lastOrNull() == occurrence.queueItemId &&
+                                                    activeReorderDraft.orderedVisiblePendingIds.indexOf(activeReorderDraft.draggedQueueItemId) ==
+                                                    activeReorderDraft.orderedVisiblePendingIds.lastIndex)
+                                            ),
+                                        dropAtEnd = activeReorderDraft?.changed == true &&
+                                            activeReorderDraft.orderedVisiblePendingIds.lastOrNull() == occurrence.queueItemId &&
+                                            activeReorderDraft.orderedVisiblePendingIds.indexOf(activeReorderDraft.draggedQueueItemId) ==
+                                            activeReorderDraft.orderedVisiblePendingIds.lastIndex,
+                                        onReorderStart = { startReorder(occurrence.queueItemId) },
+                                        onReorderDelta = ::updateReorder,
+                                        onReorderEnd = ::finishReorder,
+                                        onReorderCancel = ::cancelReorder,
                                     )
                                     if (rowIndex < visibleRows.lastIndex) {
                                         HorizontalDivider(

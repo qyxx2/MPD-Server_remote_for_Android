@@ -75,6 +75,28 @@ internal class QueueActions(
         )
     }
 
+    fun reorder(queueItemId: String, beforeQueueItemId: String?, title: String): MutationOutcome? {
+        val items = queueItems() ?: return null
+        if (!isEnabled) return null
+        val source = items.firstOrNull { it.queueItemId == queueItemId } ?: return null
+        if (source.position <= 0) return null
+        if (beforeQueueItemId != null) {
+            val target = items.firstOrNull { it.queueItemId == beforeQueueItemId } ?: return null
+            if (target.position <= 0 || target.queueItemId == source.queueItemId) return null
+        }
+        val payload = buildJsonObject {
+            if (beforeQueueItemId == null) put("before_queue_item_id", JsonNull)
+            else put("before_queue_item_id", beforeQueueItemId)
+        }.toString()
+        val placement = beforeQueueItemId?.let { "放到条目 $it 之前" } ?: "移到队尾"
+        return submit(
+            method = "PUT",
+            path = "/api/playback/queue/items/${encodePathSegment(queueItemId)}",
+            payload = payload,
+            label = "队列 · 排序 $title · $placement · 条目 $queueItemId",
+        )
+    }
+
     fun remove(queueItemId: String, title: String): MutationOutcome? {
         if (!isEnabled) return null
         val items = queueItems() ?: return null

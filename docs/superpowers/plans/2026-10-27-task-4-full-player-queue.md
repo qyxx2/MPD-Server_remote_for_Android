@@ -332,11 +332,11 @@
 - drop 时生成以 `queue_item_id` 为主体的 PUT reorder intent；目标用 `before_queue_item_id`，不得用 song_id 去匹配。服务端读回的顺序才是最终顺序。
 
 **Steps：**
-- [ ] 先为 reducer 写 RED 测试：pending 开始/目标插入、current/Played 拒绝、自己作为目标拒绝、拖动取消不提交、重复歌曲时 ID 身份仍正确。
-- [ ] 为 epoch/revision/generation/current order 变化期间取消、离开页面、stale 状态、pointer cancellation 写测试；确认不会出现旧 baseline PUT。
-- [ ] 运行测试见证 RED；实现纯 draft/reducer，再将长按/拖拽柄 pointer 与稳定 placeholder 集成到 Queue 行。
-- [ ] 测试完成 drop 后只提交一次正确 `before_queue_item_id`，API success/UNKNOWN 后不做乐观 canonical reorder；权威 readback 决定结果。
-- [ ] 运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check`；设备可用时验证长按/拖动/取消/提交，并记录任何触摸设备覆盖缺口，单独提交 Batch 7。
+- [x] 先为 reducer 写 RED 测试：pending 开始/目标插入、current/Played 拒绝、自己作为目标拒绝、拖动取消不提交、重复歌曲时 ID 身份仍正确；另为滚动视口中的 off-screen 插入目标建立回归测试并见证断言 RED。
+- [x] 为 epoch/revision/generation/current 与 pending 成员身份/顺序/position/source 变化、stale/controls unavailable 和 pointer cancellation 写确定性测试；所有 baseline 漂移均阻断旧 baseline PUT。拖动过程中导航离开页面没有单独的 instrumentation 场景；草稿仅为 Queue composable 本地状态，路由销毁会丢弃它，此路径另记 NOT COVERED。
+- [x] 运行测试见证 RED；实现纯 draft/reducer，再将长按/拖拽柄 pointer 与稳定 LazyColumn occurrence keys 集成到 Queue 行。
+- [x] 测试完成 drop 后仅提交一次正确 `before_queue_item_id`；服务端快照未更新前不改 canonical 顺序，成功回执/UNKNOWN 均不以本地乐观排序冒充权威 readback。
+- [x] 运行 `./gradlew --offline --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.queue.QueueReorderUiTest`、`git diff --check`；SM-G986N/Android 13 完成两项手势 instrumentation。真实 MS Queue 写入及服务端读回未执行，作为 NOT COVERED 记录。独立提交 Batch 7。
 
 **退出门：** T4-12 的 reducer/UI 和 revision guards 通过；只有 pending 项可拖，服务端结果是最终顺序。
 
