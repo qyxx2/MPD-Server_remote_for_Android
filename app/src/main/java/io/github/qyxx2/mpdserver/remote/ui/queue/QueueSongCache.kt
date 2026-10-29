@@ -46,9 +46,10 @@ data class QueueSongCacheEntry(
 class QueueSongCache(
     private val scope: CoroutineScope,
     private val maxConcurrentRequests: Int = 3,
-    private val maxEntries: Int = 48,
+    private val maxEntries: Int = 512,
     private val maxArtworkBytesPerItem: Int = 8 * 1024 * 1024,
     private val maxArtworkBytesTotal: Long = 24L * 1024 * 1024,
+    private val artworkPrefetcher: ((QueueResourceIdentity, String, ByteArray) -> Unit)? = null,
     private val loader: suspend (QueueResourceIdentity, String) -> QueueSongResource,
 ) {
     init {
@@ -79,17 +80,16 @@ class QueueSongCache(
             lastAccess.clear()
             _state.value = emptyMap()
             activeIdentity = identity
-        } else {
-            val hiddenInFlight = jobs.keys.filter { it !in normalizedVisible }
-            hiddenInFlight.forEach { id ->
-                jobs.remove(id)?.cancel()
-                requestTokens.remove(id)
-                if (_state.value[id]?.status == QueueSongLoadStatus.LOADING) removeEntryLocked(id)
-            }
         }
+        // Prefetched work is intentionally allowed to finish after its row leaves the viewport.
+        // Cancelling on every scroll caused request churn and guaranteed placeholders on fast flings.
         visibleSongIds = normalizedVisible
         normalizedVisible.forEach { id -> if (_state.value.containsKey(id)) lastAccess[id] = ++sequence }
     }
+
+    /** Synchronous read for a row's initial state; ongoing updates are observed through [state]. */
+    fun currentEntry(songId: String, identity: QueueResourceIdentity): QueueSongCacheEntry? =
+        synchronized(lock) { _state.value[songId]?.takeIf { it.identity == identity } }
 
     fun load(songId: String) {
         val key: QueueResourceIdentity
@@ -126,6 +126,15 @@ class QueueSongCache(
                         return@launch
                     }
                     val artwork = resolveArtwork(resource)
+                    // Start decoding before artwork-byte LRU pruning can discard this response.
+                    // The callback only warms a presentation cache and never changes queue state.
+                    artwork.first?.let { bytes ->
+                        try {
+                            artworkPrefetcher?.invoke(key, songId, bytes)
+                        } catch (_: Exception) {
+                            // Artwork decode scheduling must not turn valid song metadata into a failure.
+                        }
+                    }
                     complete(
                         songId,
                         key,
@@ -181,7 +190,7 @@ class QueueSongCache(
         token: Long,
         entry: QueueSongCacheEntry,
     ) = synchronized(lock) {
-        if (activeIdentity != identity || requestTokens[songId] != token || songId !in visibleSongIds) return@synchronized
+        if (activeIdentity != identity || requestTokens[songId] != token) return@synchronized
         jobs.remove(songId)
         requestTokens.remove(songId)
         putEntryLocked(songId, entry, prune = true)
@@ -199,12 +208,25 @@ class QueueSongCache(
     }
 
     private fun pruneCompletedEntriesLocked() {
-        while (_state.value.size > maxEntries || retainedArtworkBytesLocked() > maxArtworkBytesTotal) {
+        // Metadata is small and useful across all 400 queue occurrences. Never throw away song
+        // metadata solely because artwork consumed its separate memory budget.
+        while (_state.value.size > maxEntries) {
             val candidate = _state.value.entries
                 .filter { it.value.status != QueueSongLoadStatus.LOADING }
                 .minByOrNull { lastAccess[it.key] ?: Long.MIN_VALUE }
-                ?.key ?: return
+                ?.key ?: break
             removeEntryLocked(candidate)
+        }
+
+        while (retainedArtworkBytesLocked() > maxArtworkBytesTotal) {
+            val candidate = _state.value.entries
+                .filter { it.value.status != QueueSongLoadStatus.LOADING && it.value.artworkBytes != null }
+                .minByOrNull { lastAccess[it.key] ?: Long.MIN_VALUE }
+                ?.key ?: break
+            val entry = _state.value[candidate] ?: continue
+            _state.value = _state.value.toMutableMap().apply {
+                put(candidate, entry.copy(artworkBytes = null, artworkStatus = QueueArtworkStatus.UNAVAILABLE))
+            }
         }
     }
 

@@ -1,6 +1,5 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,9 +19,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,8 +31,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.layout.ContentScale
@@ -44,9 +43,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-
 /** Keep the selected row's existing hue/lightness and opacity; strengthen only its saturation. */
 internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color): Color {
     if (!isCurrent) return Color.Transparent
@@ -282,27 +278,22 @@ private fun QueueRowArtwork(
     entry: QueueSongCacheEntry?,
     modifier: Modifier = Modifier,
 ) {
-    val bytes = entry?.takeIf {
-        it.status == QueueSongLoadStatus.READY && it.artworkStatus == QueueArtworkStatus.AVAILABLE
-    }?.artworkBytes
-    val bitmap = produceState<ImageBitmap?>(initialValue = null, bytes) {
-        value = if (bytes == null) null else withContext(Dispatchers.Default) {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                null
-            } else {
-                var sampleSize = 1
-                while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > 512) sampleSize *= 2
-                BitmapFactory.decodeByteArray(
-                    bytes,
-                    0,
-                    bytes.size,
-                    BitmapFactory.Options().apply { inSampleSize = sampleSize },
-                )?.asImageBitmap()
-            }
+    val readyEntry = entry?.takeIf { it.status == QueueSongLoadStatus.READY && it.song?.artwork != null }
+    val thumbnailKey = readyEntry?.let {
+        QueueArtworkThumbnailKey(it.identity, it.song!!.songId.orEmpty())
+    }?.takeIf { it.songId.isNotBlank() }
+    val bytes = readyEntry?.takeIf { it.artworkStatus == QueueArtworkStatus.AVAILABLE }?.artworkBytes
+    LaunchedEffect(thumbnailKey, bytes) {
+        if (thumbnailKey != null && bytes != null) {
+            QueueArtworkThumbnailCache.preload(thumbnailKey, bytes)
         }
-    }.value
+    }
+    val thumbnailState = remember(thumbnailKey) {
+        thumbnailKey?.let(QueueArtworkThumbnailCache::stateFor)
+    }
+    // The decoded image is a shared LRU value. Recycling a row or reopening Queue reuses it
+    // instead of decoding the same compressed artwork on every composition.
+    val bitmap = thumbnailState?.collectAsStateWithLifecycle()?.value
 
     Box(
         modifier = modifier.clip(RoundedCornerShape(7.dp)).background(MaterialTheme.colorScheme.surfaceVariant),

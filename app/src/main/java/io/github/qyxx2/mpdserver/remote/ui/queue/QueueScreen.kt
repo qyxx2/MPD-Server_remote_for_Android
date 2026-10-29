@@ -51,12 +51,49 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 private enum class PlayedReadStatus { WAITING, LOADING, CANONICAL, FALLBACK, FAILED }
+
+/** Creates only a bounded presentation cache around the existing app-scoped RuntimeReadApi. */
+internal fun createQueueSongCache(
+    runtime: AppRuntime,
+    scope: CoroutineScope,
+    maxConcurrentRequests: Int = 5,
+    maxEntries: Int = 512,
+    maxArtworkBytesTotal: Long = 24L * 1024 * 1024,
+    loaderOverride: (suspend (QueueResourceIdentity, String) -> QueueSongResource)? = null,
+): QueueSongCache = QueueSongCache(
+    scope = scope,
+    maxConcurrentRequests = maxConcurrentRequests,
+    maxEntries = maxEntries,
+    maxArtworkBytesTotal = maxArtworkBytesTotal,
+    artworkPrefetcher = { identity, songId, bytes ->
+        QueueArtworkThumbnailCache.preloadPrefetchOnce(
+            QueueArtworkThumbnailKey(identity, songId),
+            bytes,
+        )
+    },
+) { identity, songId ->
+    if (loaderOverride != null) {
+        loaderOverride(identity, songId)
+    } else {
+        val response = runtime.reads.getSong(songId)
+        val song = (response as? ApiResult.Success)?.value
+            ?: throw IllegalStateException("Song metadata could not be read")
+        if (song.songId != songId) {
+            throw IllegalStateException("Song metadata identity did not match the requested song")
+        }
+        val artwork = if (song.artwork != null) runtime.reads.getArtwork(songId) else null
+        QueueSongResource(song, artwork)
+    }
+}
 
 /** Canonical Queue/Played projection with B6 mutations delegated to the shared Runtime coordinator. */
 @Composable
@@ -72,6 +109,7 @@ internal fun QueueScreen(
     contentPadding: PaddingValues = PaddingValues(),
     playedReader: (suspend () -> ApiResult<QueueListDto>)? = null,
     songResourceLoader: (suspend (QueueResourceIdentity, String) -> QueueSongResource)? = null,
+    songCache: QueueSongCache? = null,
     snapshotProvider: () -> SnapshotStoreState = { runtime.snapshots.state.value },
     queueActionsFactory: (() -> QueueActions)? = null,
 ) {
@@ -104,28 +142,11 @@ internal fun QueueScreen(
         connectionGeneration = snapshotState.connectionGeneration,
         originAddress = currentOrigin.address,
     )
-    val cache = remember(runtime, scope) {
-        QueueSongCache(
-            scope = scope,
-            maxConcurrentRequests = 3,
-            maxEntries = 48,
-            loader = { identity, songId ->
-                if (songResourceLoader != null) {
-                    songResourceLoader(identity, songId)
-                } else {
-                    val response = runtime.reads.getSong(songId)
-                    val song = (response as? ApiResult.Success)?.value
-                        ?: throw IllegalStateException("Song metadata could not be read")
-                    if (song.songId != songId) {
-                        throw IllegalStateException("Song metadata identity did not match the requested song")
-                    }
-                    val artwork = if (song.artwork != null) runtime.reads.getArtwork(songId) else null
-                    QueueSongResource(song, artwork)
-                }
-            },
-        )
+    // AppNavHost can supply its stable instance so metadata/artwork survive Queue route re-entry.
+    // Direct callers (including isolated UI tests) still receive a screen-scoped cache.
+    val cache = songCache ?: remember(runtime, scope) {
+        createQueueSongCache(runtime, scope, loaderOverride = songResourceLoader)
     }
-    val cacheEntries by cache.state.collectAsStateWithLifecycle()
     val artworkCacheState = artworkCache?.state?.collectAsStateWithLifecycle()?.value
         ?: PlayerArtworkCacheState.Empty
     val currentArtworkKey = artworkCacheKey?.takeIf { it.matches(artworkPresentation) }
@@ -209,7 +230,7 @@ internal fun QueueScreen(
         if (commit != null) {
             val source = latestRows.firstOrNull { it.queueItemId == commit.queueItemId }
                 ?: latestProjection.pending.firstOrNull { it.queueItemId == commit.queueItemId }
-            val title = cacheEntries[source?.songId]?.song?.title?.takeIf(String::isNotBlank)
+            val title = cache.state.value[source?.songId]?.song?.title?.takeIf(String::isNotBlank)
                 ?: source?.songId
                 ?: commit.queueItemId
             actions.reorder(commit.queueItemId, commit.beforeQueueItemId, title)
@@ -221,24 +242,45 @@ internal fun QueueScreen(
         dragPointerY = null
     }
 
-    // snapshotFlow coalesces LazyList layout changes and emits only when the bounded visible
-    // metadata window changes. It avoids feeding a newly allocated visibleItemsInfo list back
-    // through Compose state on every recomposition.
+    // Prefetch the first 100 queue resources immediately, then extend the cache window when
+    // the user approaches its end. This is client-side staging over the canonical snapshot, not
+    // server pagination. Requests stay bounded by QueueSongCache's semaphore.
     LaunchedEffect(cache, resourceIdentity, visibleRows) {
+        QueueArtworkThumbnailCache.updateIdentity(resourceIdentity)
         snapshotFlow {
-            val visibleItems = listState.layoutInfo.visibleItemsInfo
-            if (visibleRows.isEmpty()) {
-                emptySet()
-            } else {
-                val start = visibleItems.minOfOrNull { it.index } ?: 0
-                val end = minOf(visibleRows.lastIndex, (visibleItems.maxOfOrNull { it.index } ?: 1) + 3)
-                (start..end).mapNotNull { index ->
-                    visibleRows.getOrNull(index)?.songId?.takeIf(String::isNotBlank)
-                }.toSet()
-            }
-        }.collect { songIds ->
+            QueuePrefetchWindow.endExclusive(
+                lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0,
+                totalItems = visibleRows.size,
+            )
+        }.collect { endExclusive ->
+            val songIds = visibleRows.take(endExclusive)
+                .mapNotNull { it.songId.takeIf(String::isNotBlank) }
+                .toSet()
             cache.updateScope(resourceIdentity, songIds)
             songIds.forEach(cache::load)
+        }
+    }
+
+    // Decode queue thumbnails once in the background. The shared LRU keeps visible/recent images
+    // ready as LazyColumn recycles rows and retains them when the Queue destination is reopened.
+    LaunchedEffect(cache, resourceIdentity) {
+        QueueArtworkThumbnailCache.updateIdentity(resourceIdentity)
+        val warmedSongIds = mutableSetOf<String>()
+        cache.state.collect { entries ->
+            entries.forEach { (songId, entry) ->
+                val bytes = entry.artworkBytes
+                if (entry.identity == resourceIdentity &&
+                    entry.status == QueueSongLoadStatus.READY &&
+                    entry.artworkStatus == QueueArtworkStatus.AVAILABLE &&
+                    bytes != null &&
+                    warmedSongIds.add(songId)
+                ) {
+                    QueueArtworkThumbnailCache.preloadPrefetchOnce(
+                        QueueArtworkThumbnailKey(resourceIdentity, songId),
+                        bytes,
+                    )
+                }
+            }
         }
     }
 
@@ -501,8 +543,14 @@ internal fun QueueScreen(
                                 key = { _, item -> item.queueItemId },
                                 contentType = { _, _ -> "queue-occurrence" },
                             ) { rowIndex, occurrence ->
-                                val entry = cacheEntries[occurrence.songId]
-                                    ?.takeIf { it.identity == resourceIdentity }
+                                val entryFlow = remember(cache, resourceIdentity, occurrence.songId) {
+                                    cache.state.map { entries ->
+                                        entries[occurrence.songId]?.takeIf { it.identity == resourceIdentity }
+                                    }.distinctUntilChanged()
+                                }
+                                val entry by entryFlow.collectAsStateWithLifecycle(
+                                    initialValue = cache.currentEntry(occurrence.songId, resourceIdentity),
+                                )
                                 val song = entry?.song
                                 val menuTitle = song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
                                 Column(modifier = Modifier.fillMaxWidth()) {

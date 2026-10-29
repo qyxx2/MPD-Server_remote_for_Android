@@ -63,6 +63,12 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentationHandoff
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueScreen
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueSongCache
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentation
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePrefetchWindow
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
+import io.github.qyxx2.mpdserver.remote.ui.queue.createQueueSongCache
 import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
@@ -75,6 +81,8 @@ import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** The app-scoped runtime is supplied by MainActivity; this shell observes it read-only. */
@@ -152,6 +160,42 @@ fun AppNavHost(
     // App-scoped for the lifetime of this navigation shell: preload once when the canonical
     // current-song identity becomes confirmed, independently of whether Player is open.
     val artworkCache = remember(navigationScope) { PlayerArtworkMemoryCache(navigationScope) }
+    // Queue metadata and decoded artwork live across Queue destination disposal/re-entry, but
+    // remain tied to the same app Runtime, resource identity, and one shared networking owner.
+    val queueSongCache = remember(runtime, navigationScope) {
+        createQueueSongCache(runtime, navigationScope)
+    }
+    // Warm the first client-side window while the Player remains open. The snapshot is still
+    // canonical; only read-only song/artwork presentation resources are prefetched here.
+    LaunchedEffect(runtime, queueSongCache, currentRoute) {
+        if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route &&
+            currentRoute != AppDestination.QUEUE.route
+        ) return@LaunchedEffect
+        runtime.snapshots.state
+            .map { state ->
+                val projection = QueuePresentation.deriveQueue(state)
+                val identity = QueueResourceIdentity(
+                    epoch = projection.epoch ?: "no-snapshot",
+                    libraryRevision = projection.libraryRevision ?: 0L,
+                    connectionGeneration = state.connectionGeneration,
+                    originAddress = runtime.realtimeController.currentOrigin().address,
+                )
+                val rows = buildList {
+                    projection.current?.let(::add)
+                    addAll(projection.next)
+                }
+                val endExclusive = QueuePrefetchWindow.endExclusive(0, rows.size)
+                identity to rows.take(endExclusive)
+                    .mapNotNull { it.songId.takeIf(String::isNotBlank) }
+                    .toSet()
+            }
+            .distinctUntilChanged()
+            .collect { (identity, songIds) ->
+                QueueArtworkThumbnailCache.updateIdentity(identity)
+                queueSongCache.updateScope(identity, songIds)
+                songIds.forEach(queueSongCache::load)
+            }
+    }
     val artworkCacheKey = PlayerArtworkCacheKey.from(
         mediaProjection.mediaPresentation,
         connectionGeneration = snapshotState.connectionGeneration,
@@ -430,6 +474,7 @@ fun AppNavHost(
                     playerActions = playerActions,
                     playerArtworkCacheKey = artworkCacheKey,
                     playerArtworkCache = artworkCache,
+                    queueSongCache = queueSongCache,
                     uiPreferences = uiPreferences,
                     preferenceWriteScope = preferenceWriteScope,
                     windowGeometry = windowGeometry,
@@ -471,6 +516,7 @@ fun AppNavHost(
                         playerActions = playerActions,
                         playerArtworkCacheKey = artworkCacheKey,
                         playerArtworkCache = artworkCache,
+                    queueSongCache = queueSongCache,
                         uiPreferences = uiPreferences,
                         preferenceWriteScope = preferenceWriteScope,
                         windowGeometry = windowGeometry,
@@ -512,6 +558,7 @@ fun AppNavHost(
                             playerActions = playerActions,
                             playerArtworkCacheKey = artworkCacheKey,
                             playerArtworkCache = artworkCache,
+                    queueSongCache = queueSongCache,
                             uiPreferences = uiPreferences,
                             preferenceWriteScope = preferenceWriteScope,
                             windowGeometry = windowGeometry,
@@ -614,6 +661,7 @@ private fun AppNavigationGraph(
     playerActions: PlayerActions,
     playerArtworkCacheKey: PlayerArtworkCacheKey?,
     playerArtworkCache: PlayerArtworkMemoryCache,
+    queueSongCache: QueueSongCache,
     uiPreferences: UiPreferencesRepository,
     preferenceWriteScope: CoroutineScope,
     windowGeometry: StatusRingWindowGeometry,
@@ -701,6 +749,7 @@ private fun AppNavigationGraph(
                     artworkPresentation = playerMediaPresentation,
                     artworkCacheKey = playerArtworkCacheKey,
                     artworkCache = playerArtworkCache,
+                    songCache = queueSongCache,
                     contentPadding = queueContentPadding,
                 )
             }

@@ -176,12 +176,17 @@ class QueueSongCacheTest {
     fun perImageAndTotalArtworkByteBudgetsAreEnforced() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val calls = AtomicInteger()
+        val prefetchedArtworkIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val cache = QueueSongCache(
             scope = scope,
             maxConcurrentRequests = 2,
             maxEntries = 4,
             maxArtworkBytesPerItem = 8,
             maxArtworkBytesTotal = 8,
+            artworkPrefetcher = { _, id, bytes ->
+                assertTrue(bytes.isNotEmpty())
+                prefetchedArtworkIds += id
+            },
         ) { _, id ->
             calls.incrementAndGet()
             resource(song(id, withArtwork = true), HttpResult.Body(200, "image/png", pngHeader()))
@@ -195,6 +200,12 @@ class QueueSongCacheTest {
             }
             val retainedBytes = cache.state.value.values.sumOf { it.artworkBytes?.size?.toLong() ?: 0L }
             assertTrue("retained artwork bytes=$retainedBytes", retainedBytes <= 8)
+            assertEquals("artwork budget must not evict small song metadata", 2, cache.state.value.size)
+            assertTrue(cache.state.value.values.all { it.status == QueueSongLoadStatus.READY && it.song != null })
+            assertTrue(
+                "raw artwork callback must run before byte-budget pruning",
+                prefetchedArtworkIds.containsAll(setOf("song-a", "song-b")),
+            )
         } finally {
             scope.cancel()
         }
@@ -219,7 +230,7 @@ class QueueSongCacheTest {
     }
 
     @Test
-    fun completedSongMetadataCacheIsBoundedAndInvisibleLateLoadsAreIgnored() = runBlocking {
+    fun offscreenLoadsFinishAndCompletedMetadataCacheRemainsBounded() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<QueueSongResource>()
@@ -235,8 +246,8 @@ class QueueSongCacheTest {
             withTimeout(3_000) { started.await() }
             cache.updateScope(identity(), emptySet())
             release.complete(resource(song("song-1")))
-            delay(50)
-            assertFalse(cache.state.value.containsKey("song-1"))
+            val retained = awaitEntry(cache, "song-1") { it.status == QueueSongLoadStatus.READY }
+            assertEquals("song-1", retained.song?.songId)
 
             cache.updateScope(identity(), setOf("song-2", "song-3", "song-4"))
             listOf("song-2", "song-3", "song-4").forEach(cache::load)
@@ -246,6 +257,54 @@ class QueueSongCacheTest {
                 ) delay(10)
             }
             assertTrue("cache entries=${cache.state.value.size}", cache.state.value.size <= 2)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun reenteringQueueReusesTheSameInMemoryMetadataWithoutAnotherRead() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val calls = AtomicInteger()
+        val cache = QueueSongCache(scope, maxEntries = 512) { _, id ->
+            calls.incrementAndGet()
+            resource(song(id, title = "Cached title"))
+        }
+        try {
+            cache.updateScope(identity(), setOf("song-1"))
+            cache.load("song-1")
+            val loaded = awaitEntry(cache, "song-1") { it.status == QueueSongLoadStatus.READY }
+            assertEquals("Cached title", loaded.song?.title)
+
+            // Leaving Queue does not destroy its app-scoped cache; re-entry must be a memory hit.
+            cache.updateScope(identity(), emptySet())
+            cache.updateScope(identity(), setOf("song-1"))
+            cache.load("song-1")
+
+            assertEquals(1, calls.get())
+            assertEquals("Cached title", cache.state.value["song-1"]?.song?.title)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun cacheRetainsMetadataForA400ItemQueue() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val songIds = (1..400).map { "song-$it" }.toSet()
+        val cache = QueueSongCache(
+            scope = scope,
+            maxConcurrentRequests = 6,
+            maxEntries = 512,
+        ) { _, id -> resource(song(id)) }
+        try {
+            cache.updateScope(identity(), songIds)
+            songIds.forEach(cache::load)
+            withTimeout(10_000) {
+                while (songIds.any { cache.state.value[it]?.status != QueueSongLoadStatus.READY }) delay(10)
+            }
+            assertEquals(400, cache.state.value.size)
+            assertTrue(songIds.all { cache.state.value[it]?.song?.songId == it })
         } finally {
             scope.cancel()
         }
