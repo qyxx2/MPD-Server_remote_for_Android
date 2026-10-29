@@ -1,13 +1,23 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -16,6 +26,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSourceDto
 import io.github.qyxx2.mpdserver.remote.ui.theme.MpdServerRemoteTheme
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -27,11 +38,9 @@ class QueueActionsUiTest {
     fun currentRowsKeepWebRemoveActionButNotNextOrAdd() {
         composeRule.setContent {
             MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
-                QueueRowMenu(
+                AnchoredQueueRowMenu(
                     item = item("current", 0),
                     title = "Current",
-                    artist = "Artist",
-                    album = "Album",
                     enabled = true,
                     onDismiss = {},
                     onMoveNext = {},
@@ -48,15 +57,46 @@ class QueueActionsUiTest {
     }
 
     @Test
+    fun rowMenuIsCompactAndOmitsDuplicateSongDetails() {
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                AnchoredQueueRowMenu(
+                    item = item("pending-compact", 2),
+                    title = "Track title",
+                    enabled = true,
+                    onDismiss = {},
+                    onMoveNext = {},
+                    onMoveToEnd = {},
+                    onRemove = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("queue-row-menu-panel").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-menu-title").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Artist metadata should be hidden").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Album metadata should be hidden").assertCountEquals(0)
+
+        val panel = composeRule.onNodeWithTag("queue-row-menu-panel").fetchSemanticsNode().boundsInRoot
+        val screenWidth = composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
+        val title = composeRule.onNodeWithTag("queue-menu-title").fetchSemanticsNode().boundsInRoot
+        val optionTags = listOf("queue-menu-next-label", "queue-menu-add-label", "queue-menu-remove-label", "queue-menu-cancel-label")
+        val optionCenters = optionTags.map { tag ->
+            composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.center.x
+        }
+        assertTrue("menu should be noticeably narrower than the available screen", panel.width < screenWidth * 0.80f)
+        assertTrue("title should be centered in the menu", kotlin.math.abs(panel.center.x - title.center.x) < 2f)
+        assertTrue("every option should be centered in the menu", optionCenters.all { kotlin.math.abs(panel.center.x - it) < 2f })
+    }
+
+    @Test
     fun pendingRowMenuEmitsExactlyTheChosenAction() {
         var chosen = ""
         composeRule.setContent {
             MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
-                QueueRowMenu(
+                AnchoredQueueRowMenu(
                     item = item("pending-duplicate-song", 2),
                     title = "Duplicate title",
-                    artist = "Artist",
-                    album = "Album",
                     enabled = true,
                     onDismiss = {},
                     onMoveNext = { chosen = "next" },
@@ -199,6 +239,32 @@ class QueueActionsUiTest {
         composeRule.onNodeWithTag("queue-playlist-name").performTextInput("  Road Trip  ")
         composeRule.onNodeWithTag("queue-save-confirm").assertIsEnabled().performClick()
         composeRule.runOnIdle { assertEquals("  Road Trip  ", saved) }
+    }
+
+    @Composable
+    private fun AnchoredQueueRowMenu(
+        item: QueueItemDto,
+        title: String,
+        enabled: Boolean,
+        onDismiss: () -> Unit,
+        onMoveNext: () -> Unit,
+        onMoveToEnd: () -> Unit,
+        onRemove: () -> Unit,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+            Box(Modifier.size(48.dp)) {
+                IconButton(onClick = {}) {}
+                QueueRowMenu(
+                    item = item,
+                    title = title,
+                    enabled = enabled,
+                    onDismiss = onDismiss,
+                    onMoveNext = onMoveNext,
+                    onMoveToEnd = onMoveToEnd,
+                    onRemove = onRemove,
+                )
+            }
+        }
     }
 
     private fun item(id: String, position: Int) =

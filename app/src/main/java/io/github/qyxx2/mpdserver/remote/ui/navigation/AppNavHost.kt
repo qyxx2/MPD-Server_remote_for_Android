@@ -449,11 +449,15 @@ fun AppNavHost(
                 )
             }
         } else {
-            // Root destinations and Queue remain within the safe content window.
+            // Queue paints its backdrop edge-to-edge and applies safe Insets only to foreground content.
+            // Root destinations remain fully within the safe content window.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(safeContentPadding),
+                    .then(
+                        if (currentRoute == AppDestination.QUEUE.route) Modifier
+                        else Modifier.padding(safeContentPadding),
+                    ),
             ) {
                 if (currentRoute == AppDestination.QUEUE.route) {
                     AppNavigationGraph(
@@ -475,6 +479,7 @@ fun AppNavHost(
                         onArtistClick = ::requestArtistNavigation,
                         onExitFullScreen = ::exitFullScreenToRoot,
                         onOpenFullScreenPlayer = ::openFullScreenPlayer,
+                        queueContentPadding = safeContentPadding,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
@@ -621,6 +626,7 @@ private fun AppNavigationGraph(
     onPlayerDismissGestureEnd: (Float) -> Unit = {},
     onPlayerDismissGestureCancel: () -> Unit = {},
     playerContentPadding: PaddingValues = PaddingValues(),
+    queueContentPadding: PaddingValues = PaddingValues(),
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -678,7 +684,7 @@ private fun AppNavigationGraph(
         composable(AppDestination.QUEUE.route) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
+                color = Color.Transparent,
             ) {
                 QueueScreen(
                     runtime = runtime,
@@ -692,6 +698,10 @@ private fun AppNavigationGraph(
                         }
                     },
                     presentation = playerPresentation,
+                    artworkPresentation = playerMediaPresentation,
+                    artworkCacheKey = playerArtworkCacheKey,
+                    artworkCache = playerArtworkCache,
+                    contentPadding = queueContentPadding,
                 )
             }
         }

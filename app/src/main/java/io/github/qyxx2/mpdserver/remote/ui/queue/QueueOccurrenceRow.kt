@@ -45,8 +45,14 @@ internal fun QueueOccurrenceRow(
     currentLabel: String,
     cacheEntry: QueueSongCacheEntry?,
     menuEnabled: Boolean,
+    menuTitle: String,
+    menuExpanded: Boolean,
     onPlay: () -> Unit,
     onMenu: () -> Unit,
+    onDismissMenu: () -> Unit,
+    onMoveNext: () -> Unit,
+    onMoveToEnd: () -> Unit,
+    onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
@@ -142,12 +148,24 @@ internal fun QueueOccurrenceRow(
 
             )
         }
-        IconButton(
-            enabled = menuEnabled,
-            onClick = onMenu,
-            modifier = Modifier.size(48.dp).testTag("queue-row-menu-${occurrence.queueItemId}"),
-        ) {
-            QueueMoreGlyph()
+        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            IconButton(
+                enabled = menuEnabled,
+                onClick = onMenu,
+                modifier = Modifier.size(48.dp).testTag("queue-row-menu-${occurrence.queueItemId}"),
+            ) {
+                QueueMoreGlyph()
+            }
+            QueueRowMenu(
+                item = occurrence.takeIf { menuExpanded },
+                title = menuTitle,
+                enabled = menuEnabled,
+                expanded = menuExpanded,
+                onDismiss = onDismissMenu,
+                onMoveNext = onMoveNext,
+                onMoveToEnd = onMoveToEnd,
+                onRemove = onRemove,
+            )
         }
     }
 }

@@ -114,4 +114,31 @@ class MainActivityEdgeToEdgeUiTest {
             abs(restoredMotionBounds.top) <= tolerancePx,
         )
     }
+
+    @Test
+    fun queueBackdropExtendsBehindSystemBarsWhileToolbarStaysInSafeContent() {
+        composeRule.onNodeWithTag("mini-player-body").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("player-bottom-queue").performClick()
+        composeRule.waitForIdle()
+
+        val activity = composeRule.activity
+        val insets = requireNotNull(ViewCompat.getRootWindowInsets(activity.window.decorView))
+        val safeInsets = insets.getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        )
+        val rootBounds = composeRule.onNodeWithTag("queue-screen-root").fetchSemanticsNode().boundsInRoot
+        val backdropBounds = composeRule.onNodeWithTag("player-artwork-backdrop").fetchSemanticsNode().boundsInRoot
+        val toolbarBounds = composeRule.onNodeWithTag("full-screen-exit-gesture-band").fetchSemanticsNode().boundsInRoot
+        val remainingTimeBounds = composeRule.onNodeWithTag("queue-remaining-time").fetchSemanticsNode().boundsInRoot
+        val windowHeight = activity.window.decorView.height.toFloat()
+        val tolerancePx = 2f * composeRule.density.density
+
+        assertTrue("The Queue route root must extend to the physical window top: $rootBounds", abs(rootBounds.top) <= tolerancePx)
+        assertTrue("The Queue route root must extend through the bottom system-bar area: $rootBounds", rootBounds.bottom >= windowHeight - tolerancePx)
+        assertTrue("The Queue backdrop must cover the transparent status-bar area: $backdropBounds", abs(backdropBounds.top) <= tolerancePx)
+        assertTrue("The Queue backdrop must cover the transparent navigation-bar area: $backdropBounds", backdropBounds.bottom >= windowHeight - tolerancePx)
+        assertTrue("The Queue toolbar gesture band must begin below the real top safe inset: $toolbarBounds safeTop=${safeInsets.top}", abs(toolbarBounds.top - safeInsets.top) <= tolerancePx)
+        assertTrue("The Queue time placeholder must remain inside the safe foreground: $remainingTimeBounds safeTop=${safeInsets.top}", remainingTimeBounds.top >= safeInsets.top - tolerancePx)
+    }
 }

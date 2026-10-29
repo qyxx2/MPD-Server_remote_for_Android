@@ -1,6 +1,10 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
+import android.os.SystemClock
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -94,6 +98,7 @@ class QueueScreenUiTest {
             metadataGate.complete(Unit)
         }
         composeRule.onNodeWithTag("queue-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-occ-current").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-title-occ-current").assertTextEquals("Title song-duplicate")
         composeRule.onNodeWithTag("queue-row-occ-manual-first").assertIsDisplayed()
@@ -234,6 +239,80 @@ class QueueScreenUiTest {
         assertEquals("POST", submitted[3].method)
         assertEquals("/api/playback/queue/save-as-playlist", submitted[3].path)
         assertTrue(submitted[3].payload!!.contains("Road Trip"))
+    }
+
+    @Test
+    fun queueToolbarShowsRemainingTimeAndCompactActionsWithoutTitle() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val state = snapshotState(
+            listOf(item("current", "song-current", 0, QueueSourceDto.MANUAL)),
+            freshness = SnapshotFreshness.FRESH,
+        )
+        launchQueue(application, state, AtomicInteger(), AtomicInteger(), emptyList())
+
+        composeRule.onNodeWithTag("queue-remaining-time").assertTextEquals("剩余播放时间：--:--")
+        composeRule.onNodeWithTag("queue-clear-button").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-clear-icon", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-save-button").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-save-icon", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onAllNodesWithText("队列").assertCountEquals(0)
+    }
+
+    @Test
+    fun rowMenuIsCompactNearItsTriggerAndDismissesWhenTappingOutside() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val state = snapshotState(
+            listOf(
+                item("current", "song-current", 0, QueueSourceDto.MANUAL),
+                item("pending", "song-pending", 1, QueueSourceDto.MANUAL),
+            ),
+            freshness = SnapshotFreshness.FRESH,
+        )
+        launchQueue(
+            application,
+            state,
+            AtomicInteger(),
+            AtomicInteger(),
+            emptyList(),
+            queueActionsFactory = {
+                QueueActions(
+                    stateProvider = { state },
+                    activitiesProvider = { emptyList() },
+                    submitter = { MutationOutcome.Submitted },
+                    idFactory = { "outside-tap-test" },
+                )
+            },
+        )
+
+        composeRule.onNodeWithTag("queue-row-menu-pending").performClick()
+        composeRule.onNodeWithTag("queue-row-menu-panel").assertIsDisplayed()
+        val panel = composeRule.onNodeWithTag("queue-row-menu-panel").fetchSemanticsNode().boundsInRoot
+        val screenWidth = composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
+        assertTrue(
+            "The row menu must stay compact rather than filling/centering across the screen: $panel",
+            panel.width < screenWidth * 0.80f,
+        )
+
+        // Compose's test-node touch targets the underlying host view directly and bypasses a
+        // focusable Popup window. Inject a real screen touch so Android routes it outside the menu.
+        val decor = composeRule.activity.window.decorView
+        val location = IntArray(2)
+        decor.getLocationOnScreen(location)
+        val x = location[0] + decor.width * 0.10f // far left of the row-anchored popup
+        val y = location[1] + decor.height * 0.78f // blank space below the visible queue rows
+        val downTime = SystemClock.uptimeMillis()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(downTime, downTime + 60L, MotionEvent.ACTION_UP, x, y, 0)
+        try {
+            instrumentation.uiAutomation.injectInputEvent(down, true)
+            instrumentation.uiAutomation.injectInputEvent(up, true)
+        } finally {
+            down.recycle()
+            up.recycle()
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag("queue-row-menu-panel").assertCountEquals(0)
     }
 
     private fun launchQueue(

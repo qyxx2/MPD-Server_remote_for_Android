@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ActualPlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -781,6 +782,7 @@ internal fun OutputDetailsDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = dialogSurfaceColor(),
         title = { Text("DAC / 输出状态") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

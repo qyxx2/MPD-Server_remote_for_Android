@@ -1,12 +1,17 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,9 +28,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
@@ -37,6 +44,10 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenBottomNavigation
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenExitGestureBand
 import io.github.qyxx2.mpdserver.remote.ui.player.OutputDetailsDialog
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkBackdrop
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -54,6 +65,10 @@ internal fun QueueScreen(
     presentation: PlayerPresentation,
     onExit: () -> Unit,
     onOpenPlayer: () -> Unit,
+    artworkPresentation: PlayerPresentation = presentation,
+    artworkCacheKey: PlayerArtworkCacheKey? = null,
+    artworkCache: PlayerArtworkMemoryCache? = null,
+    contentPadding: PaddingValues = PaddingValues(),
     playedReader: (suspend () -> ApiResult<QueueListDto>)? = null,
     songResourceLoader: (suspend (QueueResourceIdentity, String) -> QueueSongResource)? = null,
     snapshotProvider: () -> SnapshotStoreState = { runtime.snapshots.state.value },
@@ -110,6 +125,12 @@ internal fun QueueScreen(
         )
     }
     val cacheEntries by cache.state.collectAsStateWithLifecycle()
+    val artworkCacheState = artworkCache?.state?.collectAsStateWithLifecycle()?.value
+        ?: PlayerArtworkCacheState.Empty
+    val currentArtworkKey = artworkCacheKey?.takeIf { it.matches(artworkPresentation) }
+    val blurredArtworkBitmap = (artworkCacheState as? PlayerArtworkCacheState.Ready)
+        ?.takeIf { it.key == currentArtworkKey }
+        ?.blurred
     val listState = rememberLazyListState()
     val visibleRows = remember(queueProjection.current, queueProjection.next) {
         buildList {
@@ -266,165 +287,183 @@ internal fun QueueScreen(
     }
 
     var showOutputDetails by remember { mutableStateOf(false) }
-    Column(
-        modifier = Modifier.fillMaxSize().testTag("queue-screen"),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        FullScreenExitGestureBand(
-            onExit = onExit,
-            modifier = Modifier.testTag("full-screen-exit-gesture-band"),
+    Box(modifier = Modifier.fillMaxSize().testTag("queue-screen-root")) {
+        PlayerArtworkBackdrop(
+            blurredArtwork = blurredArtworkBitmap,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Column(
+            modifier = Modifier.fillMaxSize().padding(contentPadding).testTag("queue-screen"),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            FullScreenExitGestureBand(
+                onExit = onExit,
+                modifier = Modifier.testTag("full-screen-exit-gesture-band"),
             ) {
-                Text(
-                    text = "队列",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                TextButton(
-                    enabled = actions.isEnabled,
-                    onClick = { toolDialog = QueueToolDialog.CLEAR },
-                    modifier = Modifier.testTag("queue-clear-button"),
-                ) { Text("清空待播") }
-                TextButton(
-                    enabled = actions.isEnabled,
-                    onClick = { toolDialog = QueueToolDialog.SAVE_PLAYLIST },
-                    modifier = Modifier.testTag("queue-save-button"),
-                ) { Text("保存歌单") }
-            }
-        }
-
-        when {
-            queueProjection.snapshotStatus == QueueSnapshotStatus.NO_SNAPSHOT -> {
-                QueueStatusMessage(
-                    text = "正在等待服务器队列状态…",
-                    tag = "queue-state-loading",
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
-            queueProjection.snapshotStatus == QueueSnapshotStatus.INVALID -> {
-                QueueStatusMessage(
-                    text = "队列数据不可读取",
-                    tag = "queue-state-error",
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
-            else -> {
-                if (queueProjection.snapshotStatus == QueueSnapshotStatus.STALE) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        text = "服务器状态未确认；当前行不代表已确认播放",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = "剩余播放时间：--:--",
+                        modifier = Modifier.weight(1f).testTag("queue-remaining-time"),
+                        style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)
-                            .testTag("queue-stale-state"),
+                        maxLines = 1,
                     )
-                }
-                activities.lastOrNull { it.intentId.startsWith("queue:") }?.let { activity ->
-                    val feedback = when {
-                        activity.syncError != null -> "写入已确认，状态同步失败：${activity.syncError}"
-                        activity.status == MutationStatus.PENDING -> activity.message ?: "队列操作处理中…"
-                        activity.status == MutationStatus.UNKNOWN -> "操作结果未知：${activity.message ?: "请先确认服务器状态"}"
-                        activity.status == MutationStatus.FAILED -> "操作失败：${activity.message ?: "服务器拒绝请求"}"
-                        activity.status == MutationStatus.SUCCESS -> activity.message ?: "队列操作已确认"
-                        else -> null
-                    }
-                    feedback?.let { message ->
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (activity.status == MutationStatus.FAILED || activity.status == MutationStatus.UNKNOWN || activity.syncError != null)
-                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 3.dp)
-                                .testTag("queue-operation-feedback"),
-                        )
-                    }
-                }
-                when (playedReadStatus) {
-                    PlayedReadStatus.LOADING -> Text(
-                        text = "正在读取已播放记录…",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp)
-                            .testTag("queue-played-loading"),
-                    )
-                    PlayedReadStatus.FAILED -> Text(
-                        text = "已播放记录读取失败",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp)
-                            .testTag("queue-played-error"),
-                    )
-                    else -> Unit
-                }
-                if (visibleRows.isEmpty()) {
-                    QueueStatusMessage(
-                        text = "队列为空",
-                        tag = "queue-empty",
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxWidth().weight(1f).testTag("queue-list"),
-                        contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        items(
-                            items = visibleRows,
-                            key = { it.queueItemId },
-                            contentType = { "queue-occurrence" },
-                        ) { occurrence ->
-                            val entry = cacheEntries[occurrence.songId]
-                                ?.takeIf { it.identity == resourceIdentity }
-                            val song = entry?.song
-                            QueueOccurrenceRow(
-                                occurrence = occurrence,
-                                isCurrent = occurrence.position == 0,
-                                currentLabel = queueProjection.currentLabel,
-                                cacheEntry = entry,
-                                menuEnabled = actions.canShowMenu(occurrence.queueItemId),
-                                onPlay = { actions.play(occurrence.queueItemId, song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId) },
-                                onMenu = { selectedMenuItem = occurrence },
-                            )
+                        TextButton(
+                            enabled = actions.isEnabled,
+                            onClick = { toolDialog = QueueToolDialog.CLEAR },
+                            modifier = Modifier.testTag("queue-clear-button"),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                        ) {
+                            QueueToolbarActionIcon(kind = QueueToolbarActionKind.CLEAR, tag = "queue-clear-icon")
+                            Spacer(Modifier.width(4.dp))
+                            Text("清空待播", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
+                        }
+                        TextButton(
+                            enabled = actions.isEnabled,
+                            onClick = { toolDialog = QueueToolDialog.SAVE_PLAYLIST },
+                            modifier = Modifier.testTag("queue-save-button"),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                        ) {
+                            QueueToolbarActionIcon(kind = QueueToolbarActionKind.SAVE_PLAYLIST, tag = "queue-save-icon")
+                            Spacer(Modifier.width(4.dp))
+                            Text("保存歌单", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
                         }
                     }
                 }
             }
-        }
 
-        FullScreenBottomNavigation(
-            selectedDestination = FullScreenBottomNavigation.Destination.QUEUE,
-            onOutputClick = { showOutputDetails = true },
-            onNowPlayingClick = onOpenPlayer,
-            onQueueClick = {},
-        )
+            when {
+                queueProjection.snapshotStatus == QueueSnapshotStatus.NO_SNAPSHOT -> {
+                    QueueStatusMessage(
+                        text = "正在等待服务器队列状态…",
+                        tag = "queue-state-loading",
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+                queueProjection.snapshotStatus == QueueSnapshotStatus.INVALID -> {
+                    QueueStatusMessage(
+                        text = "队列数据不可读取",
+                        tag = "queue-state-error",
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+                else -> {
+                    if (queueProjection.snapshotStatus == QueueSnapshotStatus.STALE) {
+                        Text(
+                            text = "服务器状态未确认；当前行不代表已确认播放",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)
+                                .testTag("queue-stale-state"),
+                        )
+                    }
+                    activities.lastOrNull { it.intentId.startsWith("queue:") }?.let { activity ->
+                        val feedback = when {
+                            activity.syncError != null -> "写入已确认，状态同步失败：${activity.syncError}"
+                            activity.status == MutationStatus.PENDING -> activity.message ?: "队列操作处理中…"
+                            activity.status == MutationStatus.UNKNOWN -> "操作结果未知：${activity.message ?: "请先确认服务器状态"}"
+                            activity.status == MutationStatus.FAILED -> "操作失败：${activity.message ?: "服务器拒绝请求"}"
+                            activity.status == MutationStatus.SUCCESS -> activity.message ?: "队列操作已确认"
+                            else -> null
+                        }
+                        feedback?.let { message ->
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (activity.status == MutationStatus.FAILED || activity.status == MutationStatus.UNKNOWN || activity.syncError != null)
+                                    MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 3.dp)
+                                    .testTag("queue-operation-feedback"),
+                            )
+                        }
+                    }
+                    when (playedReadStatus) {
+                        PlayedReadStatus.LOADING -> Text(
+                            text = "正在读取已播放记录…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp)
+                                .testTag("queue-played-loading"),
+                        )
+                        PlayedReadStatus.FAILED -> Text(
+                            text = "已播放记录读取失败",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp)
+                                .testTag("queue-played-error"),
+                        )
+                        else -> Unit
+                    }
+                    if (visibleRows.isEmpty()) {
+                        QueueStatusMessage(
+                            text = "队列为空",
+                            tag = "queue-empty",
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxWidth().weight(1f).testTag("queue-list"),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            items(
+                                items = visibleRows,
+                                key = { it.queueItemId },
+                                contentType = { "queue-occurrence" },
+                            ) { occurrence ->
+                                val entry = cacheEntries[occurrence.songId]
+                                    ?.takeIf { it.identity == resourceIdentity }
+                                val song = entry?.song
+                                val menuTitle = song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
+                                QueueOccurrenceRow(
+                                    occurrence = occurrence,
+                                    isCurrent = occurrence.position == 0,
+                                    currentLabel = queueProjection.currentLabel,
+                                    cacheEntry = entry,
+                                    menuEnabled = actions.canShowMenu(occurrence.queueItemId),
+                                    menuTitle = menuTitle,
+                                    menuExpanded = selectedMenuItem?.queueItemId == occurrence.queueItemId,
+                                    onPlay = { actions.play(occurrence.queueItemId, menuTitle) },
+                                    onMenu = { selectedMenuItem = occurrence },
+                                    onDismissMenu = { selectedMenuItem = null },
+                                    onMoveNext = {
+                                        actions.move(occurrence.queueItemId, QueueMove.NEXT, menuTitle)
+                                        selectedMenuItem = null
+                                    },
+                                    onMoveToEnd = {
+                                        actions.move(occurrence.queueItemId, QueueMove.ADD, menuTitle)
+                                        selectedMenuItem = null
+                                    },
+                                    onRemove = {
+                                        actions.remove(occurrence.queueItemId, menuTitle)
+                                        selectedMenuItem = null
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            FullScreenBottomNavigation(
+                selectedDestination = FullScreenBottomNavigation.Destination.QUEUE,
+                onOutputClick = { showOutputDetails = true },
+                onNowPlayingClick = onOpenPlayer,
+                onQueueClick = {},
+            )
+        }
     }
     if (showOutputDetails) {
         OutputDetailsDialog(presentation = presentation, onDismiss = { showOutputDetails = false })
     }
-    QueueRowMenu(
-        item = selectedMenuItem,
-        title = cacheEntries[selectedMenuItem?.songId]?.song?.title.orEmpty(),
-        artist = cacheEntries[selectedMenuItem?.songId]?.song?.artists.orEmpty().joinToString(" / "),
-        album = cacheEntries[selectedMenuItem?.songId]?.song?.album.orEmpty(),
-        enabled = selectedMenuItem?.let { actions.canShowMenu(it.queueItemId) } == true,
-        onDismiss = { selectedMenuItem = null },
-        onMoveNext = {
-            selectedMenuItem?.let { item -> actions.move(item.queueItemId, QueueMove.NEXT, cacheEntries[item.songId]?.song?.title ?: item.songId) }
-            selectedMenuItem = null
-        },
-        onMoveToEnd = {
-            selectedMenuItem?.let { item -> actions.move(item.queueItemId, QueueMove.ADD, cacheEntries[item.songId]?.song?.title ?: item.songId) }
-            selectedMenuItem = null
-        },
-        onRemove = {
-            selectedMenuItem?.let { item -> actions.remove(item.queueItemId, cacheEntries[item.songId]?.song?.title ?: item.songId) }
-            selectedMenuItem = null
-        },
-    )
     QueueToolsDialog(
         dialog = toolDialog,
         enabled = actions.isEnabled,
@@ -477,6 +516,45 @@ internal fun QueueScreen(
             }
         },
     )
+}
+
+private enum class QueueToolbarActionKind { CLEAR, SAVE_PLAYLIST }
+
+@Composable
+private fun QueueToolbarActionIcon(kind: QueueToolbarActionKind, tag: String) {
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(modifier = Modifier.size(16.dp).testTag(tag)) {
+        val stroke = 1.5.dp.toPx()
+        fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
+            drawLine(
+                color = tint,
+                start = Offset(size.width * x1, size.height * y1),
+                end = Offset(size.width * x2, size.height * y2),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+        }
+        when (kind) {
+            QueueToolbarActionKind.CLEAR -> {
+                line(0.20f, 0.25f, 0.80f, 0.25f)
+                line(0.38f, 0.15f, 0.62f, 0.15f)
+                line(0.30f, 0.34f, 0.36f, 0.84f)
+                line(0.70f, 0.34f, 0.64f, 0.84f)
+                line(0.36f, 0.84f, 0.64f, 0.84f)
+                line(0.45f, 0.38f, 0.45f, 0.73f)
+                line(0.55f, 0.38f, 0.55f, 0.73f)
+            }
+            QueueToolbarActionKind.SAVE_PLAYLIST -> {
+                line(0.22f, 0.17f, 0.22f, 0.83f)
+                line(0.22f, 0.17f, 0.77f, 0.17f)
+                line(0.22f, 0.83f, 0.77f, 0.83f)
+                line(0.77f, 0.17f, 0.77f, 0.34f)
+                line(0.38f, 0.38f, 0.65f, 0.38f)
+                line(0.38f, 0.53f, 0.65f, 0.53f)
+                line(0.38f, 0.68f, 0.59f, 0.68f)
+            }
+        }
+    }
 }
 
 @Composable

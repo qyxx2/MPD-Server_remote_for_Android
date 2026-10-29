@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,7 +29,11 @@ fun ActivityStatusSheet(
     onDismiss: () -> Unit,
     onRetryUnknown: (String) -> Unit = {},
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.testTag("activity-status-sheet")) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("activity-status-sheet"),
+        containerColor = dialogSurfaceColor(),
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
