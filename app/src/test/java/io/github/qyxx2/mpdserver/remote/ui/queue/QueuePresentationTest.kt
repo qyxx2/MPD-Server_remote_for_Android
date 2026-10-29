@@ -12,6 +12,39 @@ import org.junit.Test
 
 class QueuePresentationTest {
     @Test
+    fun cacheKeyIgnoresPlaybackPositionTicksButTracksQueueAndPlaybackSemantics() {
+        val original = PlayerTestFixtures.state()
+        val originalKey = QueuePresentationCacheKey.from(original)
+        val playbackWithNewPosition = original.snapshot!!.wire.playback.toString()
+            .replace("\"position\":12.5", "\"position\":13.5")
+        val playbackTick = PlayerTestFixtures.state(
+            playback = playbackWithNewPosition,
+            capturedAt = "2026-10-29T10:00:02Z",
+        )
+        assertEquals(originalKey, QueuePresentationCacheKey.from(playbackTick))
+
+        val queueRevisionChanged = PlayerTestFixtures.state(
+            queue = PlayerTestFixtures.queueJson.replace("\"revision\":17", "\"revision\":18"),
+        )
+        assertFalse(originalKey == QueuePresentationCacheKey.from(queueRevisionChanged))
+
+        val autoplayChanged = PlayerTestFixtures.state(
+            playback = original.snapshot!!.wire.playback.toString()
+                .replace("\"autoplay_enabled\":false", "\"autoplay_enabled\":true"),
+        )
+        assertFalse(originalKey == QueuePresentationCacheKey.from(autoplayChanged))
+
+        val observedStateChanged = PlayerTestFixtures.state(
+            observation = PlayerTestFixtures.observationJson
+                .replace("\"actual_state\":\"playing\"", "\"actual_state\":\"paused\""),
+        )
+        assertFalse(originalKey == QueuePresentationCacheKey.from(observedStateChanged))
+        assertFalse(originalKey == QueuePresentationCacheKey.from(
+            PlayerTestFixtures.state(freshness = SnapshotFreshness.STALE),
+        ))
+    }
+
+    @Test
     fun manualPendingItemsTakePriorityAndPreserveOccurrenceIdentityAndPlayedOrder() {
         val state = stateWithQueue(
             items = listOf(

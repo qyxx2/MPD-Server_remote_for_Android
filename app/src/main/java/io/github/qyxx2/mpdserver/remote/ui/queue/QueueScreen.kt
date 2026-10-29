@@ -128,11 +128,17 @@ internal fun QueueScreen(
     var saveReadbackError by remember { mutableStateOf<String?>(null) }
     var saveReadbackOnlyRetry by remember { mutableStateOf(false) }
     var saveAlreadyConfirmed by remember { mutableStateOf(false) }
-    val canonicalProjection = remember(snapshotState) { QueuePresentation.deriveQueue(snapshotState) }
+    // A realtime playback-position tick replaces SnapshotStoreState even when Queue contents do
+    // not change. Keep the expensive Queue projection stable until a Queue revision, autoplay rule,
+    // confirmation semantic, or connection/freshness input actually changes.
+    val queueProjectionKey = QueuePresentationCacheKey.from(snapshotState)
+    val canonicalProjection = remember(queueProjectionKey) {
+        QueuePresentation.deriveQueue(snapshotState)
+    }
     var playedFallback by remember { mutableStateOf<List<QueueItemDto>?>(null) }
     var playedReadStatus by remember { mutableStateOf(PlayedReadStatus.WAITING) }
-    val queueProjection = remember(snapshotState, playedFallback) {
-        QueuePresentation.deriveQueue(snapshotState, playedFallback)
+    val queueProjection = remember(canonicalProjection, playedFallback) {
+        canonicalProjection.withPlayedFallback(playedFallback)
     }
 
     val currentOrigin: ServerOrigin = runtime.realtimeController.currentOrigin()
@@ -160,7 +166,7 @@ internal fun QueueScreen(
             addAll(queueProjection.next)
         }
     }
-    val reorderBaseline = remember(snapshotState) { QueueReorderBaseline.from(snapshotState) }
+    val reorderBaseline = remember(queueProjectionKey) { QueueReorderBaseline.from(snapshotState) }
     val visiblePendingIds = remember(visibleRows) { visibleRows.filter { it.position > 0 }.map { it.queueItemId } }
     var reorderDraft by remember(runtime) { mutableStateOf<QueueReorderDraft?>(null) }
     var dragPointerY by remember(runtime) { mutableStateOf<Float?>(null) }

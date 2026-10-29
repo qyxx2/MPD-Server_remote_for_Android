@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.queue
 import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSnapshotDto
+import io.github.qyxx2.mpdserver.remote.runtime.FullStateSnapshot
 import io.github.qyxx2.mpdserver.remote.runtime.MutationIntent
 import io.github.qyxx2.mpdserver.remote.runtime.MutationOutcome
 import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
@@ -29,7 +30,18 @@ internal class QueueActions(
     private val activitiesProvider: () -> List<OperationActivity>,
     private val submitter: (MutationIntent) -> MutationOutcome,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
+    private val queueDecoder: (FullStateSnapshot) -> QueueSnapshotDto? = { snapshot ->
+        runCatching {
+            JsonConfiguration.json.decodeFromJsonElement<QueueSnapshotDto>(snapshot.wire.queue)
+        }.getOrNull()
+    },
 ) {
+    private val queueCacheLock = Any()
+    private var hasCachedQueueKey = false
+    private var cachedSnapshotEpoch: String? = null
+    private var cachedQueueRevision: Long? = null
+    private var cachedQueue: QueueSnapshotDto? = null
+
     var lastSubmittedIntentId: String? = null
         private set
     val isEnabled: Boolean get() = baseline() != null && !hasUnresolvedMutation()
@@ -161,9 +173,23 @@ internal class QueueActions(
             state.snapshotConnectionGeneration != state.connectionGeneration
         ) return null
         val snapshot = state.snapshot ?: return null
-        val queue = runCatching {
-            JsonConfiguration.json.decodeFromJsonElement<QueueSnapshotDto>(snapshot.wire.queue)
-        }.getOrNull() ?: return null
+        val queue = synchronized(queueCacheLock) {
+            if (hasCachedQueueKey && cachedSnapshotEpoch == snapshot.epoch &&
+                cachedQueueRevision == snapshot.queueRevision
+            ) {
+                cachedQueue
+            } else {
+                // Playback-only realtime snapshots allocate a new FullStateSnapshot while Queue
+                // membership/order remain unchanged. Key this decode by the server's Queue version,
+                // so row eligibility checks and playback ticks do not repeatedly parse the full JSON.
+                val decoded = queueDecoder(snapshot)
+                cachedSnapshotEpoch = snapshot.epoch
+                cachedQueueRevision = snapshot.queueRevision
+                cachedQueue = decoded
+                hasCachedQueueKey = true
+                decoded
+            }
+        } ?: return null
         return state to queue
     }
 

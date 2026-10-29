@@ -66,6 +66,7 @@ import io.github.qyxx2.mpdserver.remote.ui.queue.QueueScreen
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueSongCache
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentation
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentationCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePrefetchWindow
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import io.github.qyxx2.mpdserver.remote.ui.queue.createQueueSongCache
@@ -172,7 +173,12 @@ fun AppNavHost(
             currentRoute != AppDestination.QUEUE.route
         ) return@LaunchedEffect
         runtime.snapshots.state
-            .map { state ->
+            // Filter playback-position-only snapshots before decoding Queue/Player facts. Mapping
+            // to the full projection and applying distinctUntilChanged afterwards still repeated
+            // all expensive work for every realtime tick.
+            .map { state -> state to QueuePresentationCacheKey.from(state) }
+            .distinctUntilChanged { previous, current -> previous.second == current.second }
+            .collect { (state, _) ->
                 val projection = QueuePresentation.deriveQueue(state)
                 val identity = QueueResourceIdentity(
                     epoch = projection.epoch ?: "no-snapshot",
@@ -185,12 +191,9 @@ fun AppNavHost(
                     addAll(projection.next)
                 }
                 val endExclusive = QueuePrefetchWindow.endExclusive(0, rows.size)
-                identity to rows.take(endExclusive)
+                val songIds = rows.take(endExclusive)
                     .mapNotNull { it.songId.takeIf(String::isNotBlank) }
                     .toSet()
-            }
-            .distinctUntilChanged()
-            .collect { (identity, songIds) ->
                 QueueArtworkThumbnailCache.updateIdentity(identity)
                 queueSongCache.updateScope(identity, songIds)
                 songIds.forEach(queueSongCache::load)

@@ -1,8 +1,8 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -36,8 +36,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -100,16 +99,18 @@ internal fun QueueOccurrenceRow(
                     )
                 }
             }
-            .graphicsLayer { alpha = if (isDragSource) 0.76f else 1f }
-            .pointerInput(occurrence.queueItemId) {
-                detectTapGestures(onTap = { onPlay() })
-            }
-            .semantics {
-                onClick(label = "播放队列条目") {
-                    onPlay()
-                    true
-                }
-            }
+            // A graphics layer for every non-dragging row adds layout/render-node work without
+            // changing its appearance. Allocate one only for the actively dragged occurrence.
+            .then(if (isDragSource) Modifier.graphicsLayer { alpha = 0.76f } else Modifier)
+            // Merge pointer handling and accessibility click semantics into one modifier node;
+            // keep the previous no-ripple row tap behavior.
+            .clickable(
+                interactionSource = null,
+                indication = null,
+                onClickLabel = "播放队列条目",
+                role = Role.Button,
+                onClick = onPlay,
+            )
             .padding(horizontal = 8.dp, vertical = 8.dp)
             .testTag("queue-row-${occurrence.queueItemId}"),
         verticalAlignment = Alignment.CenterVertically,
@@ -226,19 +227,22 @@ private fun QueueDragHandle(
     val currentOnDragDelta by rememberUpdatedState(onDragDelta)
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
     val currentOnDragCancel by rememberUpdatedState(onDragCancel)
-    Canvas(
-        modifier = modifier.pointerInput(enabled) {
-            if (enabled) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { currentOnDragStart() },
-                    onDragEnd = { currentOnDragEnd() },
-                    onDragCancel = { currentOnDragCancel() },
-                ) { change, dragAmount ->
-                    change.consume()
-                    currentOnDragDelta(dragAmount.y)
-                }
+    val dragGestureModifier = if (enabled) {
+        Modifier.pointerInput(enabled) {
+            detectDragGesturesAfterLongPress(
+                onDragStart = { currentOnDragStart() },
+                onDragEnd = { currentOnDragEnd() },
+                onDragCancel = { currentOnDragCancel() },
+            ) { change, dragAmount ->
+                change.consume()
+                currentOnDragDelta(dragAmount.y)
             }
-        },
+        }
+    } else {
+        Modifier
+    }
+    Canvas(
+        modifier = modifier.then(dragGestureModifier),
     ) {
         val dotRadius = 1.6.dp.toPx()
         val centerX = size.width / 2f

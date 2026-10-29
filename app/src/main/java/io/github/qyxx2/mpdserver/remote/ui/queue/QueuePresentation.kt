@@ -1,20 +1,79 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
-import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
-import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSnapshotDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.StateSnapshotDto
+import io.github.qyxx2.mpdserver.remote.runtime.RuntimeConnectionStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerFacts
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 enum class QueueSnapshotStatus { NO_SNAPSHOT, READY, STALE, INVALID }
 enum class QueuePlayedSource { SNAPSHOT, FALLBACK, UNAVAILABLE }
+
+/**
+ * Cheap invalidation key for Queue presentation work. Playback clock ticks and observation timestamps
+ * do not change the list's contents or current-row label; queue revision, autoplay, confirmation
+ * semantics and connection freshness do. Keeping those dimensions explicit prevents each realtime
+ * position update from rebuilding hundreds of row models and restarting scroll prefetch effects.
+ */
+internal data class QueuePresentationCacheKey(
+    val epoch: String?,
+    val queueRevision: Long?,
+    val libraryRevision: Long?,
+    val connectionGeneration: Long,
+    val snapshotConnectionGeneration: Long?,
+    val connectionStatus: RuntimeConnectionStatus,
+    val freshness: SnapshotFreshness,
+    val controlsEligible: Boolean,
+    val autoplayEnabled: Boolean,
+    val actualState: String?,
+    val observationFreshness: String?,
+    val actualFreshness: String?,
+    val matchesCurrent: Boolean?,
+    val boundQueueItemId: String?,
+    val syncStatus: String?,
+) {
+    companion object {
+        fun from(state: SnapshotStoreState): QueuePresentationCacheKey {
+            val snapshot = state.snapshot
+            val playback = snapshot?.wire?.playback as? JsonObject
+            val observation = snapshot?.wire?.playbackObservation as? JsonObject
+            fun stringField(owner: JsonObject?, name: String): String? =
+                owner?.get(name)?.let { value ->
+                    runCatching { value.jsonPrimitive.contentOrNull }.getOrNull()
+                }
+            fun booleanField(owner: JsonObject?, name: String): Boolean? =
+                (owner?.get(name) as? JsonPrimitive)?.let { value ->
+                    if (value.isString) null else value.booleanOrNull
+                }
+
+            return QueuePresentationCacheKey(
+                epoch = snapshot?.epoch,
+                queueRevision = snapshot?.queueRevision,
+                libraryRevision = snapshot?.libraryRevision,
+                connectionGeneration = state.connectionGeneration,
+                snapshotConnectionGeneration = state.snapshotConnectionGeneration,
+                connectionStatus = state.connectionStatus,
+                freshness = state.freshness,
+                controlsEligible = state.controlsEligible,
+                autoplayEnabled = booleanField(playback, "autoplay_enabled") == true,
+                actualState = stringField(observation, "actual_state"),
+                observationFreshness = stringField(observation, "freshness"),
+                actualFreshness = stringField(observation, "actual_freshness"),
+                matchesCurrent = booleanField(observation, "matches_current"),
+                boundQueueItemId = stringField(observation, "bound_queue_item_id"),
+                syncStatus = stringField(observation, "sync_status"),
+            )
+        }
+    }
+}
 
 /** Read-only projection of one canonical snapshot. It never mutates or reconstructs Queue occurrences. */
 data class QueuePresentation(
@@ -37,6 +96,15 @@ data class QueuePresentation(
             current?.let(::add)
             addAll(next)
         }
+
+    /** Apply the existing Played fallback without decoding/re-deriving the canonical Queue again. */
+    fun withPlayedFallback(playedFallback: List<QueueItemDto>?): QueuePresentation {
+        if (playedSource == QueuePlayedSource.SNAPSHOT || playedFallback == null) return this
+        return copy(
+            played = playedFallback.filter { it.position < 0 }.sortedByDescending { it.position },
+            playedSource = QueuePlayedSource.FALLBACK,
+        )
+    }
 
     companion object {
         fun deriveQueue(
@@ -66,10 +134,10 @@ data class QueuePresentation(
             }
 
             val wire: StateSnapshotDto = fullSnapshot.wire
-            val queueResult = runCatching {
-                JsonConfiguration.json.decodeFromJsonElement<QueueSnapshotDto>(wire.queue)
-            }
-            val queue = queueResult.getOrNull()
+            // Reuse PlayerFacts' decoded canonical Queue rather than separately decoding wire.queue
+            // here and then decoding it again inside PlayerPresentation.from(state).
+            val facts = PlayerFacts.from(state)
+            val queue = facts.queue
             val status = when {
                 queue == null -> QueueSnapshotStatus.INVALID
                 state.freshness == SnapshotFreshness.FRESH && state.controlsEligible -> QueueSnapshotStatus.READY
@@ -97,7 +165,7 @@ data class QueuePresentation(
             val playbackStatus = if (queue == null) {
                 ConfirmedPlaybackStatus.UNKNOWN
             } else {
-                PlayerPresentation.from(state).playbackStatus
+                PlayerPresentation.from(facts).playbackStatus
             }
             val confirmed = current != null && playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
                 items.count { it.position == 0 } == 1

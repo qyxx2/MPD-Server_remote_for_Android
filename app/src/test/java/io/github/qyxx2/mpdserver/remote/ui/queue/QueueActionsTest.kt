@@ -2,6 +2,8 @@ package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
+import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSnapshotDto
+import io.github.qyxx2.mpdserver.remote.runtime.FullStateSnapshot
 import io.github.qyxx2.mpdserver.remote.runtime.MutationIntent
 import io.github.qyxx2.mpdserver.remote.runtime.MutationOutcome
 import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
@@ -9,6 +11,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerTestFixtures
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
@@ -139,6 +142,45 @@ class QueueActionsTest {
         assertNull(lockedActions.clear())
         assertNull(lockedActions.save("Road Trip"))
         assertTrue(unknown.submitted.isEmpty())
+    }
+
+    @Test
+    fun repeatedRowEligibilityChecksDecodeEachCanonicalQueueSnapshotOnlyOnce() {
+        val firstState = PlayerTestFixtures.state()
+        var currentState = firstState
+        var decodeCount = 0
+        val actions = QueueActions(
+            stateProvider = { currentState },
+            activitiesProvider = { emptyList() },
+            submitter = { MutationOutcome.Submitted },
+            queueDecoder = { snapshot: FullStateSnapshot ->
+                decodeCount += 1
+                runCatching {
+                    JsonConfiguration.json.decodeFromJsonElement<QueueSnapshotDto>(snapshot.wire.queue)
+                }.getOrNull()
+            },
+        )
+
+        repeat(25) {
+            assertTrue(actions.isEnabled)
+            assertTrue(actions.canShowMenu("pending-a"))
+        }
+        assertEquals("same canonical snapshot should be decoded once across row checks", 1, decodeCount)
+
+        val progressedPlayback = PlayerTestFixtures.state().snapshot!!.wire.playback.toString()
+            .replace("\"position\":12.5", "\"position\":13.5")
+        currentState = PlayerTestFixtures.state(
+            playback = progressedPlayback,
+            capturedAt = "2026-10-29T10:00:02Z",
+        )
+        assertTrue(actions.isEnabled)
+        assertEquals("playback-only refresh must reuse the same Queue revision", 1, decodeCount)
+
+        currentState = PlayerTestFixtures.state(
+            queue = PlayerTestFixtures.queueJson.replace("\"revision\":17", "\"revision\":18"),
+        )
+        assertTrue(actions.isEnabled)
+        assertEquals("a replacement canonical snapshot must be decoded", 2, decodeCount)
     }
 
     private fun activity(id: String, status: MutationStatus) = OperationActivity(
