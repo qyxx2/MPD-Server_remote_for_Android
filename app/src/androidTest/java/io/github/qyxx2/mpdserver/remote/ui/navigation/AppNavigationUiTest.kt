@@ -31,10 +31,13 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
+import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,6 +51,51 @@ class AppNavigationUiTest {
 
     private lateinit var navController: NavHostController
     private lateinit var runtime: AppRuntime
+    private var savedServerOriginAddress: String? = null
+    private var savedServerOrigin: ServerOrigin? = null
+    private var savedThemePreference: ThemePreference? = null
+    private var savedStatusRingPreferences: StatusRingPreferences? = null
+
+    @Before
+    fun capturePersistedPreferences() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        runBlocking {
+            savedServerOriginAddress = application.uiPreferences.serverOrigin.first()
+            savedServerOrigin = ServerOrigin.parseAddress(requireNotNull(savedServerOriginAddress))
+            savedThemePreference = application.uiPreferences.themePreference.first()
+            savedStatusRingPreferences = application.uiPreferences.statusRingPreferences.first()
+        }
+    }
+
+    @After
+    fun restorePersistedPreferences() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        runBlocking {
+            val origin = requireNotNull(savedServerOrigin)
+            val address = requireNotNull(savedServerOriginAddress)
+            val theme = requireNotNull(savedThemePreference)
+            val ring = requireNotNull(savedStatusRingPreferences)
+
+            if (application.uiPreferences.themePreference.first() != theme) {
+                application.uiPreferences.setThemePreference(theme)
+            }
+            if (application.uiPreferences.statusRingPreferences.first() != ring) {
+                application.uiPreferences.setStatusRingPreferences(ring)
+            }
+            if (application.uiPreferences.serverOrigin.first() != address ||
+                application.runtime.realtimeController.currentOrigin().address != address
+            ) {
+                application.saveAndApplyServerOrigin(origin)
+            }
+
+            assertEquals("Instrumentation must preserve the user's saved MS server address", address,
+                application.uiPreferences.serverOrigin.first())
+            assertEquals("Instrumentation must preserve the user's theme", theme,
+                application.uiPreferences.themePreference.first())
+            assertEquals("Instrumentation must preserve the user's status-ring preferences", ring,
+                application.uiPreferences.statusRingPreferences.first())
+        }
+    }
 
     private fun launchNavigation() {
         val application = composeRule.activity.application as MpdServerRemoteApplication
@@ -146,7 +194,7 @@ class AppNavigationUiTest {
         )
         composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
         composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
-        composeRule.onNodeWithText("暂无播放曲目").assertIsDisplayed()
+        composeRule.onNodeWithTag("mini-player-body").assertIsDisplayed()
         composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled()
 
         val contentBounds = composeRule.onNodeWithTag("root-content").fetchSemanticsNode().boundsInRoot
@@ -173,10 +221,12 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
             if (destination == AppDestination.SETTINGS) {
                 composeRule.onNodeWithTag("status-ring-settings-content").assertIsDisplayed()
-                composeRule.onNodeWithTag("status-ring-size-slider").assertIsDisplayed()
-                composeRule.onNodeWithTag("status-ring-line-width-slider").assertIsDisplayed()
-                composeRule.onNodeWithTag("status-ring-horizontal-offset-slider").assertIsDisplayed()
-                composeRule.onNodeWithTag("status-ring-vertical-offset-slider").assertIsDisplayed()
+                listOf(
+                    "status-ring-size-slider",
+                    "status-ring-line-width-slider",
+                    "status-ring-horizontal-offset-slider",
+                    "status-ring-vertical-offset-slider",
+                ).forEach { tag -> composeRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed() }
                 composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
             } else {
                 assertTrue(
@@ -315,7 +365,7 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("mini-player-body").performClick()
         composeRule.waitForIdle()
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
-        composeRule.onNodeWithText("全屏播放器占位").assertIsDisplayed()
+        composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
         composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
     }
 
@@ -329,9 +379,8 @@ class AppNavigationUiTest {
 
         composeRule.onNodeWithText("连接与活动").assertIsDisplayed()
         composeRule.onNodeWithTag("activity-status-summary").assertIsDisplayed()
-        composeRule.onNodeWithText("当前状态：未连接").assertIsDisplayed()
-        composeRule.onNodeWithText("连接：未连接").assertIsDisplayed()
-        composeRule.onNodeWithText("快照：未确认").assertIsDisplayed()
+        // Connectivity/freshness labels are projections of the configured canonical Runtime.
+        // This test verifies the sheet and empty activity state without assuming localhost/offline.
         composeRule.onNodeWithTag("activity-status-empty").assertIsDisplayed()
         composeRule.onNodeWithTag("activity-status-close").performClick()
         composeRule.waitForIdle()

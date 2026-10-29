@@ -152,6 +152,8 @@
 
 **阻塞/退出门：** Task 2 的状态和操作协调器验收通过；所有写操作经过共享协调器；不得以业务 `playback.state` 单独断言实际播放已确认。
 
+**Task 4 Batch 9 最终集成与退出评估（2026-10-30）：** clean 验证通过（unit 262 tests）；SM-G986N Android 13 完整 connected instrumentation 64 tests、0 failures/errors、2 skipped。跨屏 UI 使用隔离 canonical snapshot，无 live Queue/playback mutation。Overlay 安装前后地址 DataStore 与 firstInstallTime 不变。见 Task 4 Final Acceptance 报告。**Task 4 总体退出 checkbox 继续未勾选**：实盘播放/seek/Queue 操作、实体 DAC、Cutout/系统通知栏手势和完整手工视觉验收仍 BLOCKED / NOT COVERED。
+
 ### Task 5：主页、搜索、音乐库、歌单与收藏
 
 - [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。

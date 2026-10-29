@@ -369,25 +369,27 @@
 
 ## Batch 9：集成回归、合同审计与 Task 4 退出门
 
-**目标：** 跨播放器、歌词、Queue 与 Runtime 做完整验证和边界审查；真实设备/服务验收逐项记录，未覆盖项不得假标为通过。
+**目标：** 跨播放器、歌词、Queue 与 Runtime 做完整自动化回归和边界审计，并如实记录未覆盖的真实服务/硬件验收。
 
-**Files：**
-- Update：`docs/superpowers/specs/2026-10-27-task-4-contract-matrix.md`（实际验证状态/证据）。
-- Update：`docs/superpowers/specs/2026-10-27-task-4-full-player-queue-visual-design.md`（仅修正文档与最终已验收信息，不能重开已冻结设计）。
-- Update：`docs/superpowers/plans/2026-10-24-android-client-master-plan.md`、`docs/superpowers/README.md`（Task4 状态与证据索引）。
-- Create/Update：`.superpowers/sdd/2026-10-27-task-4-full-player-queue/progress.md`、`docs/superpowers/reports/2026-10-27-task-4-final-acceptance.md`；必要时保存本次设备 evidence。
-- Test：全量现有 unit/UI/instrumentation test 与静态边界检查；不加与真实用户媒体相关的默认 fixture。
+**交付：** Task4CrossScreenIntegrationUiTest、AppNavigationUiTest 的状态安全修正、合同矩阵 B9 状态、最终验收报告与 progress ledger。没有生产源文件、Web/API/server/dependency/CI 更改。
 
-**Steps：**
-- [ ] 建立端到端 Compose/runtime 测试：根入口 → full player → lyrics ↔ artwork → Queue → reorder/menu → Back；共享 AppRuntime identity 保持，current/lyrics/artwork/Queue occurrence 不串身份。
-- [ ] 完整验证 stale/unknown、断线/重连、迟到资源、重复 song/occurrence、missing artwork/lyrics/read error、长标题/大字号/窄屏、seek/target 变化、UNKNOWN/retry 与 204/readback 语义。
-- [ ] 执行 clean 全验证：`./gradlew --no-daemon clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`；设备与 ADB 环境可用时另执行 `connectedDebugAndroidTest`。保存完整日志到 Task 4 的 `.superpowers/sdd/...` 目录，并阅读最终输出和 test result XML。
-- [ ] 扫描 app source/build 文件，确认未引入 Room/SQLite、WebView、Media3/ExoPlayer、额外 runtime/socket/client/coordinator owner、页面直接 HTTP/WS、持久化业务快照、伪数据、分页 endpoint 或 CI/服务器代码变更；运行 `git diff --check`。
-- [ ] 在真实设备上逐项检查封面模式、歌词模式、progress/control/footer 锚点、浅/深主题、Insets/Cutout、顶部退出和系统通知栏手势、Queue 定位、连续 Played 展开、六点柄、溢出菜单、拖拽、204/读回/断线错误反馈。
-- [ ] 与真实 MS 的播放/seek/Queue 变更只有在用户授权、状态可逆且风险可控时进行；不以“验收需要”为由播放、seek、清空或改动用户 Queue。未执行的真实操作、硬件 DAC 语义和缺失 Cutout 条件逐项记为 BLOCKED/NOT COVERED。
-- [ ] 逐项复核 T4-01 至 T4-17 在合同矩阵中是否都有 Batch、自动验证结果、人工验证结果与退出标准。标注剩余风险；仅在所有必需 gate 满足后更新 Task4 退出状态并单独提交 Batch 9。
+**自动化步骤：**
+- [x] 建立端到端 Compose/Runtime 测试：根入口 → full player → lyrics ↔ artwork → Queue → row menu / cancelled reorder → Now Playing → Back；同一 AppRuntime/SnapshotStore/Snapshot 实例贯穿路线。
+- [x] 执行 clean unit / lint / debug APK / AndroidTest Kotlin compile：BUILD SUCCESSFUL；unit XML 262 tests，failures/errors 为 0。
+- [x] 执行完整 connectedDebugAndroidTest：64 XML tests，failures/errors 为 0、skipped 2；两个 live-origin opt-in 用例按设计跳过，没有触发真实服务 mutation。
+- [x] 扫描 Room/SQLite、WebView、Media3/ExoPlayer、额外 runtime/socket/client/coordinator owner 以及生产服务/网页/依赖 diff；git diff --check 通过。
+- [x] 复核 T4-01 至 T4-17 自动化 evidence 与实盘边界，登记到合同矩阵和最终验收报告；没有对 MS 发出播放/seek/Queue 写操作。
+- [ ] 完整手工检查播放器/歌词/Queue 视觉、实体 Cutout、顶部退出与系统通知栏手势、大字体/窄屏及 DAC/输出设备。未完成项为 BLOCKED / NOT COVERED。
+- [ ] 真实 MS 播放、seek、Queue reorder/remove/clear、UNKNOWN/retry/readback：本轮无业务写操作授权，保持 BLOCKED / NOT COVERED。
 
-**退出门：** 无 Critical/Important 合同/代码问题；clean 构建、单测、Lint 和可运行的 instrumentation 有真实结果；共享 Runtime/状态/操作边界无违规；人工设备项及所有 BLOCKED/NOT COVERED 明确记录。自动化通过不代表未执行的真实服务/硬件验收通过。
+**验证日志：**
+- Clean：.superpowers/sdd/2026-10-27-task-4-full-player-queue/b9-clean-finalverify.log
+- 完整设备 instrumentation：.superpowers/sdd/2026-10-27-task-4-full-player-queue/b9-connected-finalverify.log
+- 独立 B9 跨屏：.superpowers/sdd/2026-10-27-task-4-full-player-queue/b9-cross-screen-green.log
+- Boundary：.superpowers/sdd/2026-10-27-task-4-full-player-queue/b9-boundary-audit.txt
+- Overlay/data preservation：.superpowers/sdd/2026-10-27-task-4-full-player-queue/b9-overlay-install.log
+
+**Batch 9 结论：** 自动化和架构边界 gate 关闭。Task 4 总体未通过最终退出门；见 Task 4 Final Acceptance。不得把未进行的实盘/硬件/完整手工验收标为通过。
 
 ## Batch 执行约定
 

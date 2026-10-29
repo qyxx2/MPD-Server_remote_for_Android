@@ -88,3 +88,31 @@
 - **未知结果与重试：** Queue mutation 在提交时记录基于 epoch、Runtime generation、explicit-stop generation、Queue revision、occurrence ID/song/position/source/playback-context 的 retry scope。共享活动面板仅当原 origin 和 retry scope 仍有效时启用显式重试；它复用原 intent、幂等 key、method/path/payload。相同连接下普通 read 变 stale 不单独使 intent 失效；断开、generation/epoch/revision/occurrence/context 变化或 snapshot freshness UNKNOWN 均阻止旧 intent 重发。
 - **证据路径：** 单测与编排测试见 app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/queue/QueueActionsTest.kt、QueueMenuPresentationTest.kt、app/src/test/java/io/github/qyxx2/mpdserver/remote/runtime/QueueMutationScopeTest.kt、MutationCoordinatorTest.kt、RuntimeReadApiTest.kt、ActivityPresentationTest.kt；Compose instrumentation 见 QueueScreenUiTest.kt 与 QueueActionsUiTest.kt。最终自动化结果及 NOT COVERED 范围以 Batch 6 Verification Report 为准。
 - 本 Batch 未发送到已配置的 MS 的实际 Queue write、清空、播放/切歌或歌单保存；所有写路由由 deterministic 单测/Compose fake 验证。真实 live Queue 操作/安全恢复验收需另行授权，不以自动化测试替代。
+
+## 9. Batch 9 集成回归结果（2026-10-30）
+
+- Clean 构建通过；unit XML 262 tests、failures/errors 为 0；完整设备 connected XML 64 tests、failures/errors 为 0、skipped 2。详见最终验收报告。
+- 新增跨屏回归覆盖 Home → Player → Lyrics/Artwork → Queue → 菜单/拖动取消 → Now Playing → Back；canonical Runtime/Store/Snapshot 对象身份不变，重复歌曲 occurrence ID 不混用，只读路径没有 mutation activity。
+- AppNavigationUiTest 遵循已配置 Runtime，不假定 server offline/空曲目；测试结束恢复用户 server origin、theme 和 status-ring preferences。opt-in live-origin 测试按设计跳过。
+
+| 合同 | 自动化证据 | 实机/真实服务状态 |
+|---|---|---|
+| T4-01 实际播放事实 | PlayerPresentation/PlayerFacts 单测；B9 使用 paused + fresh observation 验证投影 | 真实切歌漂移、断线恢复未主动触发：BLOCKED |
+| T4-02 当前曲目/封面/歌词一致性 | B9 同 canonical snapshot 与 occurrence identity；LRC ↔ Artwork UI 路径 | 真实快速切歌、旧资源迟到回包：NOT COVERED |
+| T4-03 全屏进入/退出与 Insets | MainActivityEdgeToEdgeUiTest、FullScreenPlayerNavigationUiTest、B9 返回路径 | 实体 Cutout/顶部手势与通知栏竞争：BLOCKED |
+| T4-04 封面布局 | 现有 Player presentation/ArtworkBackdrop Compose 回归 | 大字体、窄屏和完整视觉截图：NOT COVERED |
+| T4-05 进度与 controls | PlayerControlsUiTest 与现有 action/coordinator 单测 | 真实 play/pause/next/previous/seek：BLOCKED |
+| T4-06 源文件音频参数 | B9 DTO fixture 带 FLAC、24-bit、96kHz 元数据 | 真实媒体切换的源文件标签：NOT COVERED |
+| T4-07 DAC/输出观察 | 现有 output DTO/presentation 回归；B9 区分 source metadata 与 output observation | 实体 DAC、bit-perfect、硬件输出事实：BLOCKED |
+| T4-08 底部三个入口 | 播放器导航测试和 B9 Now Playing/Queue 路径 | 输出设备图标整体视觉人工验收：NOT COVERED |
+| T4-09 歌词呈现/回切 | LyricsStageUiTest、parser/presentation 单测；B9 两条 timed cue 与模式往返 | 真实 cue seek/offset/播放时钟联调：BLOCKED |
+| T4-10 Queue 初始定位与重入 | QueueScreenUiTest 与 B9 Queue → Now Playing → Back | 真实服务器历史 Queue 进入/重进：NOT COVERED |
+| T4-11 Queue/Played 同列表滚动 | PlayedRevealUiTest、QueueScreenUiTest、B8 设备回归；B9 合成 Played/current/pending | 真实快照没有负 position Played 项，实盘蒙版：NOT COVERED |
+| T4-12 Queue 拖拽排序 | QueueReorderUiTest 与 B9 pending occurrence 拖动取消 | 真实服务器排序和读回：BLOCKED |
+| T4-13 Queue 行菜单/播放 | QueueActionsUiTest；B9 验证 Next/Add/Remove 菜单并取消 | Play Now/Next/Add/Remove 实盘操作：BLOCKED |
+| T4-14 清空待播/Stop 边界 | QueueActions intent 单测；本轮未向 live MS 提交 clear/stop | 真实 clear/refill/readback：BLOCKED |
+| T4-15 歌曲/专辑/艺术家导航 | 现有播放器投影/路由交接测试 | 目标集合列表内容属 Task 5，端到端列表：NOT COVERED |
+| T4-16 资源缺失/异常 | 歌词解析/呈现与 artwork cache 单测/Compose 测试 | 真实 sidecar/read error/缺失媒体注入：NOT COVERED |
+| T4-17 操作活动/错误反馈 | MutationCoordinator、QueueActions 单测；B9 断言只读路线 mutation activities 为空 | 实盘 UNKNOWN、重试与 204/readback：BLOCKED |
+
+上述状态不代表未执行的实盘/硬件/视觉项目通过。Task 4 总体退出门仍 BLOCKED；见最终验收报告。

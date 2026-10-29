@@ -36,7 +36,7 @@
 - [Task 3 原生应用壳合同](specs/2026-10-25-task-3-native-app-shell.md)：冻结四入口、mini 显隐、主题、状态环/活动详情、runtime 所有权、Task 2 残余门槛与退出条件。
 - [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结 AppBar/导航/迷你播放器/资料库/状态环的视觉参数，并将集合播放、随机播放、歌曲排序与单曲菜单的行为映射到现有 Web/API 合同。
 - [Task 3 分批实施计划](plans/2026-10-25-task-3-native-app-shell.md)：拆分为合同映射、主题、导航、App Shell、mini 投影、活动状态、播放器占位和集成验收共 8 个 Batch。
-- [Task 4 合同矩阵与分析](specs/2026-10-27-task-4-contract-matrix.md)：全屏播放器、歌词、进度、Queue/Played 的权威来源、实现约束、机器/人工验收映射与风险。B0–B3 已实施；设备证据见 [Batch 2 验证报告](reports/2026-10-27-task-4-batch2-verification.md) 与 [Batch 3 验证报告](reports/2026-10-27-task-4-batch3-verification.md)，后续批次仍按计划推进。
+- [Task 4 合同矩阵与分析](specs/2026-10-27-task-4-contract-matrix.md)：汇总 T4-01 至 T4-17 合同、各 Batch 自动化 evidence 与未覆盖验收。Batch 9 已完成整机 UI 回归和架构边界审计；整体退出门仍 BLOCKED，见 [最终验收报告](reports/2026-10-27-task-4-final-acceptance.md)。此前阶段报告按各自 Batch 链接保留。
 - [Task 4 全屏播放器与 Queue 视觉/交互设计规格](specs/2026-10-27-task-4-full-player-queue-visual-design.md)：记录用户确认的 B 大封面方向、干净顶部、歌词替换主内容区、无重框布局、下滑退出、Queue 历史同列表滚动及拖拽/菜单约束。
 - [Task 4 Implementation Plan](plans/2026-10-27-task-4-full-player-queue.md)：按合同矩阵拆分 B0–B9，明确文件/接口、测试先行、逐批验证、实现边界与退出门；各批次完成状态与验证证据以计划勾选项及独立报告为准。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。

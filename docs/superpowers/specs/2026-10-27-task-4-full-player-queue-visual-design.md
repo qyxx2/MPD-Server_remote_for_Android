@@ -107,3 +107,8 @@ Task 4 负责全屏正在播放/歌词/Queue/Played 的呈现与交互，以及�
 - Queue 回归应覆盖 Played 显示顺序与 Web 一致、初始 viewport 定位 current、Played/current/pending 使用同一原生滚动列表、轻扫后的自然 fling、进入时预热最近历史、滚动时有界元数据预取、无 pointer-driven history GET、fresh snapshot 不重复读取、stale fallback generation guard 和稳定 occurrence key。
 - 视觉验收至少包括封面模式、歌词模式、Queue 当前项定位、Played 历史滚动、拖拽、三点菜单、下滑退出、切歌一致性、浅/深主题、窄屏与大字体。
 - 测试未运行、硬件场景未覆盖或后端没有提供的数据必须明确记为 BLOCKED/NOT COVERED，不能仅凭编译或静态预览标记通过。
+
+
+## 7. Batch 9 验证记录（2026-10-30）
+
+B9 自动化跨屏测试和完整设备 instrumentation 已完成：unit 262 tests；connected XML 64 tests，0 failures、0 errors、2 skipped。B9 只补验收测试与状态记录，没有重开已冻结的视觉/手势决策，也没有改动生产 UI 布局。全屏 Player、timed LRC ↔ Artwork、Queue 行菜单/取消拖动以合成 canonical snapshot 验证。实体 Cutout/系统通知栏手势、真实 Played 历史外观、大字体/窄屏、DAC 硬件和实盘播放/seek/Queue 写操作仍 BLOCKED / NOT COVERED；见最终验收报告。
