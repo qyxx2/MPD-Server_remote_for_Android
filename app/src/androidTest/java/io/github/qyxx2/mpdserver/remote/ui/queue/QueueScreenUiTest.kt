@@ -9,6 +9,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertCountEquals
@@ -48,6 +51,27 @@ import java.util.concurrent.atomic.AtomicInteger
 class QueueScreenUiTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun queueRowColorsKeepTheCurrentHueAndLightnessButSlightlyIncreaseSaturation() {
+        val original = Color(0xFFA84F0B)
+        val highlighted = queueOccurrenceBackgroundColor(isCurrent = true, primary = original)
+        val originalHsl = FloatArray(3)
+        val highlightedHsl = FloatArray(3)
+        ColorUtils.colorToHSL(original.toArgb(), originalHsl)
+        ColorUtils.colorToHSL(highlighted.toArgb(), highlightedHsl)
+
+        assertEquals("keep the current highlight opacity", 0.10f, highlighted.alpha, 0.003f)
+        assertEquals("keep its hue", originalHsl[0], highlightedHsl[0], 0.5f)
+        assertEquals("keep its lightness", originalHsl[2], highlightedHsl[2], 0.01f)
+        assertTrue("increase saturation without turning the color into a vivid orange", highlightedHsl[1] > originalHsl[1])
+        assertTrue("cap saturation to keep the selected row restrained", highlightedHsl[1] <= 0.93f)
+        assertEquals(
+            "non-current items must be fully transparent",
+            Color.Transparent,
+            queueOccurrenceBackgroundColor(isCurrent = false, primary = original),
+        )
+    }
 
     @Test
     fun freshSnapshotShowsCurrentThenWebNextUsingDistinctOccurrenceKeysAndDoesNotReadPlayedAgain() {
@@ -104,6 +128,8 @@ class QueueScreenUiTest {
         composeRule.onNodeWithTag("queue-row-occ-manual-first").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-occ-manual-late").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-current-label-occ-current").assertTextEquals("正在播放")
+        composeRule.onNodeWithTag("queue-row-divider-occ-current").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-row-divider-occ-manual-first").assertIsDisplayed()
         composeRule.onAllNodesWithTag("queue-row-occ-auto").assertCountEquals(0)
         composeRule.onAllNodesWithTag("queue-row-occ-played").assertCountEquals(0)
         composeRule.onAllNodesWithTag("queue-row-fallback-played").assertCountEquals(0)

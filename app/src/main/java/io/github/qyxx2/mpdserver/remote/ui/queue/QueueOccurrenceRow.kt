@@ -23,8 +23,11 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -37,6 +40,15 @@ import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** Keep the selected row's existing hue/lightness and opacity; strengthen only its saturation. */
+internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color): Color {
+    if (!isCurrent) return Color.Transparent
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(primary.toArgb(), hsl)
+    hsl[1] = (hsl[1] * 1.12f).coerceAtMost(0.92f)
+    return Color(ColorUtils.HSLToColor(hsl)).copy(alpha = 0.10f)
+}
 
 @Composable
 internal fun QueueOccurrenceRow(
@@ -56,11 +68,10 @@ internal fun QueueOccurrenceRow(
     modifier: Modifier = Modifier,
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
-    val background = if (isCurrent) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    val background = queueOccurrenceBackgroundColor(
+        isCurrent = isCurrent,
+        primary = MaterialTheme.colorScheme.primary,
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()

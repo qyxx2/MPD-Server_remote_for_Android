@@ -13,8 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -412,41 +413,53 @@ internal fun QueueScreen(
                             state = listState,
                             modifier = Modifier.fillMaxWidth().weight(1f).testTag("queue-list"),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
-                            items(
+                            itemsIndexed(
                                 items = visibleRows,
-                                key = { it.queueItemId },
-                                contentType = { "queue-occurrence" },
-                            ) { occurrence ->
+                                key = { _, item -> item.queueItemId },
+                                contentType = { _, _ -> "queue-occurrence" },
+                            ) { rowIndex, occurrence ->
                                 val entry = cacheEntries[occurrence.songId]
                                     ?.takeIf { it.identity == resourceIdentity }
                                 val song = entry?.song
                                 val menuTitle = song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
-                                QueueOccurrenceRow(
-                                    occurrence = occurrence,
-                                    isCurrent = occurrence.position == 0,
-                                    currentLabel = queueProjection.currentLabel,
-                                    cacheEntry = entry,
-                                    menuEnabled = actions.canShowMenu(occurrence.queueItemId),
-                                    menuTitle = menuTitle,
-                                    menuExpanded = selectedMenuItem?.queueItemId == occurrence.queueItemId,
-                                    onPlay = { actions.play(occurrence.queueItemId, menuTitle) },
-                                    onMenu = { selectedMenuItem = occurrence },
-                                    onDismissMenu = { selectedMenuItem = null },
-                                    onMoveNext = {
-                                        actions.move(occurrence.queueItemId, QueueMove.NEXT, menuTitle)
-                                        selectedMenuItem = null
-                                    },
-                                    onMoveToEnd = {
-                                        actions.move(occurrence.queueItemId, QueueMove.ADD, menuTitle)
-                                        selectedMenuItem = null
-                                    },
-                                    onRemove = {
-                                        actions.remove(occurrence.queueItemId, menuTitle)
-                                        selectedMenuItem = null
-                                    },
-                                )
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    QueueOccurrenceRow(
+                                        occurrence = occurrence,
+                                        isCurrent = occurrence.position == 0,
+                                        currentLabel = queueProjection.currentLabel,
+                                        cacheEntry = entry,
+                                        menuEnabled = actions.canShowMenu(occurrence.queueItemId),
+                                        menuTitle = menuTitle,
+                                        menuExpanded = selectedMenuItem?.queueItemId == occurrence.queueItemId,
+                                        onPlay = { actions.play(occurrence.queueItemId, menuTitle) },
+                                        onMenu = { selectedMenuItem = occurrence },
+                                        onDismissMenu = { selectedMenuItem = null },
+                                        onMoveNext = {
+                                            actions.move(occurrence.queueItemId, QueueMove.NEXT, menuTitle)
+                                            selectedMenuItem = null
+                                        },
+                                        onMoveToEnd = {
+                                            actions.move(occurrence.queueItemId, QueueMove.ADD, menuTitle)
+                                            selectedMenuItem = null
+                                        },
+                                        onRemove = {
+                                            actions.remove(occurrence.queueItemId, menuTitle)
+                                            selectedMenuItem = null
+                                        },
+                                    )
+                                    if (rowIndex < visibleRows.lastIndex) {
+                                        HorizontalDivider(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 8.dp)
+                                                .testTag("queue-row-divider-${occurrence.queueItemId}"),
+                                            thickness = 0.75.dp,
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
