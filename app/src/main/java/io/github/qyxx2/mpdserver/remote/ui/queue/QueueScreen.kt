@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,14 +40,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
@@ -68,6 +72,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private enum class PlayedReadStatus { WAITING, LOADING, CANONICAL, FALLBACK, FAILED }
 
@@ -289,24 +294,41 @@ internal fun QueueScreen(
     val reorderBaseline = remember(queueProjectionKey) { QueueReorderBaseline.from(snapshotState) }
     val visiblePendingIds = remember(visibleRows) { visibleRows.filter { it.position > 0 }.map { it.queueItemId } }
     var reorderDraft by remember(runtime) { mutableStateOf<QueueReorderDraft?>(null) }
+    // The ordered draft drives only the insertion marker. As in Web, the canonical rows stay in
+    // place until release; a separate masked proxy follows the pointer above the list.
     var dragPointerY by remember(runtime) { mutableStateOf<Float?>(null) }
+    var dragSourceTop by remember(runtime) { mutableStateOf<Float?>(null) }
+    var dragSourceHeight by remember(runtime) { mutableStateOf<Float?>(null) }
+    var dragOffsetX by remember(runtime) { mutableStateOf(0f) }
+    var dragOffsetY by remember(runtime) { mutableStateOf(0f) }
     val activeReorderDraft = reorderDraft?.takeIf {
         it.isCompatible(reorderBaseline, actions.isEnabled, visiblePendingIds)
     }
-    val renderedRows = remember(visibleRows, activeReorderDraft?.orderedVisiblePendingIds) {
-        val byId = visibleRows.filter { it.position > 0 }.associateBy { it.queueItemId }
-        val currentRows = visibleRows.filter { it.position <= 0 }
-        val order = activeReorderDraft?.orderedVisiblePendingIds ?: visiblePendingIds
-        buildList {
-            addAll(currentRows)
-            order.mapNotNullTo(this, byId::get)
-        }
+    val activeDraggedSongId = activeReorderDraft?.draggedQueueItemId?.let { id ->
+        visibleRows.firstOrNull { it.queueItemId == id }?.songId
     }
+    // Keep the proxy metadata in sync even when a resource read completes without pointer motion.
+    // The flow is narrowed to the dragged song so unrelated prefetch completions do not recompose
+    // the Queue screen during normal scrolling.
+    val draggedEntry by remember(cache, resourceIdentity, activeDraggedSongId) {
+        cache.state.map { entries ->
+            activeDraggedSongId?.let { entries[it]?.takeIf { entry -> entry.identity == resourceIdentity } }
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(
+        initialValue = activeDraggedSongId?.let { cache.currentEntry(it, resourceIdentity) },
+    )
+
+    fun resetReorderDrag() {
+        reorderDraft = null
+        dragPointerY = null
+        dragSourceTop = null
+        dragSourceHeight = null
+        dragOffsetX = 0f
+        dragOffsetY = 0f
+    }
+
     LaunchedEffect(reorderDraft, reorderBaseline, actions.isEnabled, visiblePendingIds) {
-        if (reorderDraft != null && activeReorderDraft == null) {
-            reorderDraft = null
-            dragPointerY = null
-        }
+        if (reorderDraft != null && activeReorderDraft == null) resetReorderDrag()
     }
 
     fun startReorder(queueItemId: String) {
@@ -316,19 +338,25 @@ internal fun QueueScreen(
         if (latestBaseline != reorderBaseline) return
         val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == queueItemId } ?: return
         val draft = QueueReorderDraft.begin(latestBaseline, queueItemId, visiblePendingIds) ?: return
+        dragSourceTop = itemInfo.offset.toFloat()
+        dragSourceHeight = itemInfo.size.toFloat()
         dragPointerY = itemInfo.offset + itemInfo.size / 2f
+        dragOffsetX = 0f
+        dragOffsetY = 0f
         reorderDraft = draft
     }
 
-    fun updateReorder(deltaY: Float) {
+    fun updateReorder(delta: Offset) {
         val draft = reorderDraft ?: return
         if (!draft.isCompatible(reorderBaseline, actions.isEnabled, visiblePendingIds)) {
-            reorderDraft = null
-            dragPointerY = null
+            resetReorderDrag()
             return
         }
-        val pointerY = (dragPointerY ?: return) + deltaY
+        val previousPointerY = dragPointerY ?: return
+        val pointerY = previousPointerY + delta.y
         dragPointerY = pointerY
+        dragOffsetX += delta.x
+        dragOffsetY += delta.y
         val remaining = draft.orderedVisiblePendingIds.filterNot { it == draft.draggedQueueItemId }.toSet()
         val rowCenters = listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
             val id = info.key.toString()
@@ -351,8 +379,7 @@ internal fun QueueScreen(
         }
         val latestVisiblePendingIds = latestRows.filter { it.position > 0 }.map { it.queueItemId }
         val commit = draft?.finish(latestBaseline, actions.isEnabled, latestVisiblePendingIds)
-        reorderDraft = null
-        dragPointerY = null
+        resetReorderDrag()
         if (commit != null) {
             val source = latestRows.firstOrNull { it.queueItemId == commit.queueItemId }
                 ?: latestProjection.pending.firstOrNull { it.queueItemId == commit.queueItemId }
@@ -364,8 +391,7 @@ internal fun QueueScreen(
     }
 
     fun cancelReorder() {
-        reorderDraft = null
-        dragPointerY = null
+        resetReorderDrag()
     }
 
     // Prefetch the first 100 queue resources immediately, then extend the cache window when
@@ -690,60 +716,65 @@ internal fun QueueScreen(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     } else {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxWidth().weight(1f)
-                                .nestedScroll(playedNestedScrollConnection)
-                                .pointerInput(revealStateHolder, freezeRevealAfterPointerState) {
-                                    awaitEachGesture {
-                                        freezeRevealAfterPointerState.value = false
-                                        val down = awaitFirstDown(requireUnconsumed = false)
-                                        playedPointerRegionState.value = when {
-                                            down.position.x < 44.dp.toPx() ->
-                                                PlayedRevealPointerRegion.DRAG_HANDLE
-                                            down.position.x > size.width - 56.dp.toPx() ->
-                                                PlayedRevealPointerRegion.ROW_ACTION
-                                            else -> PlayedRevealPointerRegion.QUEUE_BODY
-                                        }
-                                        try {
-                                            do {
-                                                val event = awaitPointerEvent()
-                                            } while (event.changes.any { it.pressed })
-                                        } finally {
-                                            if (revealStateHolder.value.gestureActive) {
-                                                freezeRevealAfterPointerState.value = true
-                                                revealStateHolder.value = revealStateHolder.value.freeze()
+                        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize()
+                                    .nestedScroll(playedNestedScrollConnection)
+                                    .pointerInput(revealStateHolder, freezeRevealAfterPointerState) {
+                                        awaitEachGesture {
+                                            freezeRevealAfterPointerState.value = false
+                                            val down = awaitFirstDown(requireUnconsumed = false)
+                                            playedPointerRegionState.value = when {
+                                                down.position.x < 44.dp.toPx() ->
+                                                    PlayedRevealPointerRegion.DRAG_HANDLE
+                                                down.position.x > size.width - 56.dp.toPx() ->
+                                                    PlayedRevealPointerRegion.ROW_ACTION
+                                                else -> PlayedRevealPointerRegion.QUEUE_BODY
                                             }
-                                            playedPointerRegionState.value = PlayedRevealPointerRegion.QUEUE_BODY
+                                            try {
+                                                do {
+                                                    val event = awaitPointerEvent()
+                                                } while (event.changes.any { it.pressed })
+                                            } finally {
+                                                if (revealStateHolder.value.gestureActive) {
+                                                    freezeRevealAfterPointerState.value = true
+                                                    revealStateHolder.value = revealStateHolder.value.freeze()
+                                                }
+                                                playedPointerRegionState.value = PlayedRevealPointerRegion.QUEUE_BODY
+                                            }
                                         }
                                     }
+                                    .testTag("queue-list"),
+                                contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                            ) {
+                                if (playedRows.isNotEmpty()) {
+                                    item(
+                                        key = "played-history-reveal",
+                                        contentType = "played-history-reveal",
+                                    ) {
+                                        PlayedRevealRegion(
+                                            rows = visiblePlayedRows,
+                                            revealedHeightPx = revealState.revealedHeightPx,
+                                            cache = cache,
+                                            resourceIdentity = resourceIdentity,
+                                            actions = actions,
+                                            selectedMenuItem = selectedMenuItem,
+                                            onSelectedMenuItem = { selectedMenuItem = it },
+                                            onNaturalHeightMeasured = { heightPx, rowCount ->
+                                                if (measuredHistoryHeightPx != heightPx) {
+                                                    measuredHistoryHeightPx = heightPx
+                                                }
+                                                if (measuredHistoryWindowCount != rowCount) {
+                                                    measuredHistoryWindowCount = rowCount
+                                                }
+                                            },
+                                        )
+                                    }
                                 }
-                                .testTag("queue-list"),
-                            contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(0.dp),
-                        ) {
-                            if (playedRows.isNotEmpty()) {
-                                item(
-                                    key = "played-history-reveal",
-                                    contentType = "played-history-reveal",
-                                ) {
-                                    PlayedRevealRegion(
-                                        rows = visiblePlayedRows,
-                                        revealedHeightPx = revealState.revealedHeightPx,
-                                        cache = cache,
-                                        resourceIdentity = resourceIdentity,
-                                        actions = actions,
-                                        selectedMenuItem = selectedMenuItem,
-                                        onSelectedMenuItem = { selectedMenuItem = it },
-                                        onNaturalHeightMeasured = { heightPx, rowCount ->
-                                            if (measuredHistoryHeightPx != heightPx) measuredHistoryHeightPx = heightPx
-                                            if (measuredHistoryWindowCount != rowCount) measuredHistoryWindowCount = rowCount
-                                        },
-                                    )
-                                }
-                            }
                             itemsIndexed(
-                                items = renderedRows,
+                                items = visibleRows,
                                 key = { _, item -> item.queueItemId },
                                 contentType = { _, _ -> "queue-occurrence" },
                             ) { rowIndex, occurrence ->
@@ -812,6 +843,29 @@ internal fun QueueScreen(
                                         )
                                     }
                                 }
+                            }
+                            }
+
+                            val draggedOccurrence = activeReorderDraft?.let { draft ->
+                                visibleRows.firstOrNull { it.queueItemId == draft.draggedQueueItemId }
+                            }
+                            val ghostTop = dragSourceTop
+                            val ghostHeightPx = dragSourceHeight
+                            if (draggedOccurrence != null && ghostTop != null && ghostHeightPx != null) {
+                                val density = LocalDensity.current
+                                QueueOccurrenceDragGhost(
+                                    occurrence = draggedOccurrence,
+                                    cacheEntry = draggedEntry,
+                                    rowHeight = with(density) { ghostHeightPx.toDp() },
+                                    modifier = Modifier
+                                        .offset {
+                                            IntOffset(
+                                                dragOffsetX.roundToInt(),
+                                                (ghostTop + dragOffsetY).roundToInt(),
+                                            )
+                                        }
+                                        .zIndex(4f),
+                                )
                             }
                         }
                     }

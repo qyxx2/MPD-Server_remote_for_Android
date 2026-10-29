@@ -5,12 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,12 +30,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.Dp
 import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -77,7 +82,7 @@ internal fun QueueOccurrenceRow(
     isDropTarget: Boolean = false,
     dropAtEnd: Boolean = false,
     onReorderStart: () -> Unit = {},
-    onReorderDelta: (Float) -> Unit = {},
+    onReorderDelta: (Offset) -> Unit = {},
     onReorderEnd: () -> Unit = {},
     onReorderCancel: () -> Unit = {},
 ) {
@@ -116,7 +121,7 @@ internal fun QueueOccurrenceRow(
             }
             // A graphics layer for every non-dragging row adds layout/render-node work without
             // changing its appearance. Allocate one only for the actively dragged occurrence.
-            .then(if (isDragSource) Modifier.graphicsLayer { alpha = 0.76f } else Modifier)
+            .then(if (isDragSource) Modifier.graphicsLayer { alpha = 0.30f } else Modifier)
             // Merge pointer handling and accessibility click semantics into one modifier node;
             // keep the previous no-ripple row tap behavior.
             .clickable(
@@ -225,6 +230,96 @@ internal fun QueueOccurrenceRow(
     }
 }
 
+/** A Web-equivalent floating drag proxy with a translucent white mask; never owns row actions. */
+@Composable
+internal fun QueueOccurrenceDragGhost(
+    occurrence: QueueItemDto,
+    cacheEntry: QueueSongCacheEntry?,
+    rowHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
+    val title = song?.title?.takeIf { it.isNotBlank() }
+        ?: if (cacheEntry?.status == QueueSongLoadStatus.FAILED) "曲目信息不可用" else "正在读取曲目信息…"
+    val artists = song?.artists.orEmpty().filter(String::isNotBlank).joinToString(" / ")
+    val album = song?.album.orEmpty()
+    val subline = listOf(artists, album).filter { it.isNotBlank() }.joinToString(" · ")
+        .ifBlank { if (cacheEntry?.status == QueueSongLoadStatus.FAILED) "无法读取艺术家或专辑信息" else " " }
+    val format = listOfNotNull(
+        song?.codec?.takeIf { it.isNotBlank() },
+        song?.bitDepth?.takeIf { it > 0 }?.let { "$it bit" },
+        song?.sampleRateHz?.takeIf { it > 0 }?.let { formatSampleRate(it) },
+    ).joinToString(" · ").ifBlank {
+        song?.availabilityStatus?.name?.takeIf { it in setOf("MISSING", "UNREADABLE") } ?: " "
+    }
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(rowHeight)
+            .shadow(12.dp, shape)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.92f), shape)
+            .testTag("queue-drag-ghost-${occurrence.queueItemId}"),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            QueueDragHandle(
+                enabled = false,
+                onDragStart = {},
+                onDragDelta = {},
+                onDragEnd = {},
+                onDragCancel = {},
+                modifier = Modifier.size(width = 28.dp, height = 40.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            QueueRowArtwork(
+                entry = cacheEntry,
+                modifier = Modifier.size(54.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subline,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = format,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                QueueMoreGlyph()
+            }
+        }
+        Box(
+            modifier = Modifier.matchParentSize()
+                .background(Color.White.copy(alpha = 0.24f), shape)
+                .testTag("queue-drag-ghost-mask-${occurrence.queueItemId}"),
+        )
+    }
+}
+
 private fun formatSampleRate(rate: Int): String =
     if (rate % 1000 == 0) "${rate / 1000} kHz" else "${rate} Hz"
 
@@ -232,7 +327,7 @@ private fun formatSampleRate(rate: Int): String =
 private fun QueueDragHandle(
     enabled: Boolean,
     onDragStart: () -> Unit,
-    onDragDelta: (Float) -> Unit,
+    onDragDelta: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -250,7 +345,7 @@ private fun QueueDragHandle(
                 onDragCancel = { currentOnDragCancel() },
             ) { change, dragAmount ->
                 change.consume()
-                currentOnDragDelta(dragAmount.y)
+                currentOnDragDelta(dragAmount)
             }
         }
     } else {
