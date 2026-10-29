@@ -1,10 +1,10 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
@@ -12,6 +12,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSourceDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.StateRevisionsDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.StateSnapshotDto
 import io.github.qyxx2.mpdserver.remote.runtime.FullStateSnapshot
@@ -23,6 +24,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.theme.MpdServerRemoteTheme
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -37,23 +39,24 @@ class PlayedRevealUiTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun dragReleaseCancelAndReverseMovementPreserveFractionalRevealAndShiftQueueLinearly() {
+    fun playedRowsShareTheQueueScrollAndNaturalFlingShowsRecentHistoryFirst() {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         val queueItems = listOf(
-            item("played-oldest", "same-song", -3, QueueSourceDto.MANUAL),
-            item("played-middle", "same-song", -2, QueueSourceDto.MANUAL),
-            item("played-recent", "same-song", -1, QueueSourceDto.MANUAL),
-            item("current", "same-song", 0, QueueSourceDto.MANUAL),
+            item("played-oldest", "oldest-song", -3, QueueSourceDto.MANUAL),
+            item("played-middle", "middle-song", -2, QueueSourceDto.MANUAL),
+            item("played-recent", "recent-song", -1, QueueSourceDto.MANUAL),
+            item("current", "current-song", 0, QueueSourceDto.MANUAL),
             item("pending", "next-song", 1, QueueSourceDto.MANUAL),
         )
         val state = snapshotState(queueItems, SnapshotFreshness.FRESH)
         val playedReads = AtomicInteger()
+        val resourceLoads = AtomicInteger()
         val submitted = mutableListOf<MutationIntent>()
         val actions = QueueActions(
             stateProvider = { state },
             activitiesProvider = { emptyList() },
             submitter = { intent -> submitted += intent; MutationOutcome.Submitted },
-            idFactory = { "b8-ui-test" },
+            idFactory = { "history-natural-scroll-test" },
         )
         composeRule.setContent {
             MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
@@ -66,115 +69,78 @@ class PlayedRevealUiTest {
                     playedReader = {
                         playedReads.incrementAndGet()
                         ApiResult.Success(
-                            QueueListDto(items = queueItems.filter { it.position < 0 }.sortedBy { it.position },
-                                count = queueItems.count { it.position < 0 }),
+                            QueueListDto(
+                                items = queueItems.filter { it.position < 0 }.sortedBy { it.position },
+                                count = queueItems.count { it.position < 0 },
+                            ),
                             200,
                         )
                     },
-                    songResourceLoader = { _, _ -> throw IllegalStateException("Use fixed-height metadata placeholder") },
+                    songResourceLoader = { _, songId ->
+                        resourceLoads.incrementAndGet()
+                        QueueSongResource(
+                            song = JsonConfiguration.json.decodeFromString<SongDto>(
+                                songJson(songId, "Prefetched $songId"),
+                            ),
+                        )
+                    },
                     snapshotProvider = { state },
                     queueActionsFactory = { actions },
                 )
             }
         }
-        composeRule.waitForIdle()
         composeRule.waitUntil(5_000) {
             runCatching { composeRule.onNodeWithTag("queue-row-current").fetchSemanticsNode() }.isSuccess
         }
 
-        val reveal = composeRule.onNodeWithTag("queue-played-reveal-region")
+        val list = composeRule.onNodeWithTag("queue-list")
         val current = composeRule.onNodeWithTag("queue-row-current")
-        val initialRevealHeight = reveal.fetchSemanticsNode().boundsInRoot.height
+        composeRule.waitUntil(5_000) {
+            runCatching {
+                val listTop = list.fetchSemanticsNode().boundsInRoot.top
+                val currentTop = current.fetchSemanticsNode().boundsInRoot.top
+                currentTop - listTop in 0f..80f
+            }.getOrDefault(false)
+        }
+        composeRule.waitForIdle()
+        val initialListTop = list.fetchSemanticsNode().boundsInRoot.top
         val initialCurrentTop = current.fetchSemanticsNode().boundsInRoot.top
-        assertEquals("fresh canonical Played is reused without a history GET", 0, playedReads.get())
-
-        // Starting on a row action or drag handle must never be reinterpreted as Played reveal.
-        composeRule.onNodeWithTag("queue-row-menu-current").performTouchInput {
-            down(center)
-            moveBy(Offset(0f, 80f))
-            advanceEventTime(60)
-            up()
-        }
-        assertEquals(initialRevealHeight, reveal.fetchSemanticsNode().boundsInRoot.height, 0.5f)
-        composeRule.onNodeWithTag("queue-row-drag-handle-current", useUnmergedTree = true).performTouchInput {
-            down(center)
-            moveBy(Offset(0f, 80f))
-            advanceEventTime(60)
-            up()
-        }
-        composeRule.waitForIdle()
-        assertEquals(initialRevealHeight, reveal.fetchSemanticsNode().boundsInRoot.height, 0.5f)
-
-        composeRule.onNodeWithTag("queue-list").performTouchInput {
-            down(center)
-            moveBy(Offset(0f, 80f))
-            advanceEventTime(80)
-            up()
-        }
-        composeRule.waitForIdle()
-        val firstHeight = reveal.fetchSemanticsNode().boundsInRoot.height
-        val firstCurrentTop = current.fetchSemanticsNode().boundsInRoot.top
         assertTrue(
-            "finger movement continuously reveals a partial history region: initial=$initialRevealHeight first=$firstHeight currentTop=$initialCurrentTop newCurrentTop=$firstCurrentTop",
-            firstHeight > initialRevealHeight + 45f,
+            "current must open at the top of the scroll viewport: list=$initialListTop current=$initialCurrentTop delta=${initialCurrentTop - initialListTop}",
+            initialCurrentTop - initialListTop in 0f..80f,
         )
-        assertEquals("the current row moves by the same revealed height", firstHeight - initialRevealHeight,
-            firstCurrentTop - initialCurrentTop, 2f)
-        composeRule.onNodeWithTag("queue-history-row-played-recent").assertExists()
-        composeRule.onNodeWithTag("queue-history-row-played-oldest").assertExists()
-        assertTrue(
-            "the most recently Played occurrence stays closest to the current row, matching Web",
-            composeRule.onNodeWithTag("queue-history-row-played-recent")
-                .fetchSemanticsNode().boundsInRoot.top <
-                composeRule.onNodeWithTag("queue-history-row-played-middle")
-                    .fetchSemanticsNode().boundsInRoot.top,
-        )
+        assertTrue("history must not be a separately clipped reveal region",
+            runCatching { composeRule.onNodeWithTag("queue-played-reveal-region").fetchSemanticsNode() }.isFailure)
+        assertEquals("fresh canonical history is reused without an extra GET", 0, playedReads.get())
+        composeRule.waitUntil(5_000) { resourceLoads.get() >= queueItems.size }
+        val prewarmedResourceLoads = resourceLoads.get()
+        assertTrue("metadata should begin loading before any scroll gesture", prewarmedResourceLoads >= queueItems.size)
 
-        composeRule.onNodeWithTag("queue-list").performTouchInput {
-            down(center)
-            moveBy(Offset(0f, 60f))
-            advanceEventTime(60)
-            up()
+        val fingerTravelPx = 220f
+        current.performTouchInput {
+            swipeDown(
+                startY = center.y,
+                endY = center.y + fingerTravelPx,
+                durationMillis = 100,
+            )
+        }
+        composeRule.waitUntil(5_000) {
+            runCatching { composeRule.onNodeWithTag("queue-history-row-played-recent").fetchSemanticsNode() }.isSuccess
         }
         composeRule.waitForIdle()
-        val releasedHeight = reveal.fetchSemanticsNode().boundsInRoot.height
-        assertTrue("the next gesture continues from the frozen fractional extent", releasedHeight > firstHeight + 25f)
 
-        composeRule.onNodeWithTag("queue-list").performTouchInput {
-            down(center)
-            moveBy(Offset(0f, 60f))
-            advanceEventTime(60)
-            cancel()
-        }
-        composeRule.waitForIdle()
-        val cancelledHeight = reveal.fetchSemanticsNode().boundsInRoot.height
+        val recentTop = composeRule.onNodeWithTag("queue-history-row-played-recent").fetchSemanticsNode().boundsInRoot.top
+        val currentTopAfterFling = current.fetchSemanticsNode().boundsInRoot.top
+        assertTrue("the most recent Played row should be immediately before current", recentTop < currentTopAfterFling)
         assertTrue(
-            "ACTION_CANCEL must freeze the partially revealed history at its current position",
-            cancelledHeight > releasedHeight + 20f,
+            "LazyColumn fling should continue beyond finger travel: initial=$initialCurrentTop " +
+                "final=$currentTopAfterFling finger=$fingerTravelPx",
+            currentTopAfterFling - initialCurrentTop > fingerTravelPx + 32f,
         )
-        composeRule.waitForIdle()
-        assertEquals(
-            "cancel must not snap or continue moving after the pointer is gone",
-            cancelledHeight,
-            reveal.fetchSemanticsNode().boundsInRoot.height,
-            0.5f,
-        )
-
-        composeRule.onNodeWithTag("queue-list").performTouchInput {
-            down(center)
-            moveBy(Offset(0f, -60f))
-            advanceEventTime(60)
-            up()
-        }
-        composeRule.waitForIdle()
-        val reverseHeight = reveal.fetchSemanticsNode().boundsInRoot.height
-        assertTrue(
-            "reverse drag reduces only the already revealed extent",
-            reverseHeight < cancelledHeight - 20f,
-        )
-        assertTrue("reverse drag cannot create a negative history height", reverseHeight >= 0f)
-        assertEquals("pointer movement never issues Played GETs", 0, playedReads.get())
-        assertTrue("history reveal must remain presentation-only", submitted.isEmpty())
+        assertEquals("scrolling does not trigger another Played GET", 0, playedReads.get())
+        assertEquals("prewarmed song metadata must not be fetched again during scrolling",
+            prewarmedResourceLoads, resourceLoads.get())
+        assertTrue("history scrolling never submits playback or Queue mutations", submitted.isEmpty())
     }
 
     private fun snapshotState(

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** 按 Superpowers `executing-plans` 的顺序逐 Batch 执行；所有行为改动遵守 TDD RED→GREEN，每个 Batch 独立验证并单独提交。用户禁止使用或查询其它编程代理；后续实施由当前执行者直接在指定工作区完成，不派发代理。勾选项用于记录执行状态。
 
-**Goal：** 在不创建第二套播放/Queue 权威的前提下，完成原生全屏播放器、歌词、进度控制、Queue/Played、现有队列操作与连续历史展开，并逐项满足 Task 4 合同矩阵。
+**Goal：** 在不创建第二套播放/Queue 权威的前提下，完成原生全屏播放器、歌词、进度控制、Queue/Played、现有队列操作与历史同列表原生滚动，并逐项满足 Task 4 合同矩阵。
 
 **Architecture：** Android 只读取 MPD-Server 的 canonical snapshot 与现有资源 API；所有播放/Queue 写操作只经 Application 级同一 AppRuntime 的 MutationCoordinator，成功后以服务端回执及权威读回确定结果。页面内临时状态仅包含布局、seek 草稿、拖拽草稿和历史 reveal 高度，不成为业务状态或持久化副本。
 
@@ -340,31 +340,33 @@
 
 **退出门：** T4-12 的 reducer/UI 和 revision guards 通过；只有 pending 项可拖，服务端结果是最终顺序。
 
-## Batch 8：连续 Played 历史 reveal 与手势互斥
+## Batch 8：Played 历史同列表展示、原生惯性滚动与资源预热
 
-**目标：** 实现由手指位移连续控制的浮点历史可见高度；释放/取消冻结原位置，下一次操作续接；在已有 API 限制下避免重复读取和伪分页。历史行（position 小于零）额外叠加极薄白色蒙版（alpha 0.045）以区别 current/pending，不改变行行为。
+**目标：** 将 position<0 的真实 Played occurrence 从手势触发的零高度 reveal 区移入当前 Queue 的同一个 LazyColumn。初始视口仍锚定 current(position 0)，列表数据按 oldest→newest→current→pending 排列；用户从 current 向下滚动即可进入历史，并保留原生 fling 惯性。最近历史元数据在触摸前开始预热；滚动时只按可见范围扩展有界缓存，不为每次下拉/滚动发出 history GET。
 
 **Files：**
-- Create：`ui/queue/PlayedRevealState.kt`、`PlayedRevealGesture.kt`（若有必要分离 gesture reducer）。
-- Modify：`ui/queue/QueueScreen.kt` 与 queue row/placeholder 布局。
-- Test：`app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/queue/PlayedRevealStateTest.kt`、`app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/queue/PlayedRevealGestureTest.kt`、Compose `app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/queue/PlayedRevealUiTest.kt`。
+- Modify：ui/queue/QueueScreen.kt、PlayedHistoryOrder.kt、Queue 行复用与缓存预取逻辑。
+- Remove：不再需要的 PlayedRevealState.kt、PlayedRevealGesture.kt 与 PlayedRevealRegion.kt（以及专属 reducer/gesture 测试）。
+- Test：app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/queue/PlayedHistoryOrderTest.kt、Compose app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/queue/PlayedRevealUiTest.kt。
 
 **Interfaces：**
-- Store 状态至少分离：当前可见历史窗口、已准备的 occurrence/metadata、float `revealedHeightPx`/等价 dp、列表 scroll offset、gesture active/cancelled、请求 generation。行的真实 measured height 用于计算部分显示；不得假设不同字体/标题行高固定。
-- 每个显示帧只消费累计 pointer delta 并更新轻量 reveal state；pointer move 不触发 HTTP、完整列表重建或按整行阈值 reveal。实际历史存在时 current/pending 行随历史区域高度 1:1 位移。
-- 只使用 fresh snapshot 中 position<0 数据；不 fresh 时根据合同读取现有全量 `GET /api/history/played` 一次并合并请求，客户端再限制 reveal window；reveal 窗口边界只改变已加载数据的本地显示，不触发任何网络请求。未取到/加载中的已有项目可用等高 placeholder，资源替换不能二次改变布局；数据终点之后不创建虚假 history item。
-- ACTION_UP/ACTION_CANCEL 冻结释放瞬间浮点高度、部分行 clip 与 scroll offset；不 snap、不 settle、不 bounce、不在 release 回调改成另一套整数行计数。下一手势从被冻结高度继续。离开 Queue 后重进才重置；按合同需要 epoch/revision/context 重置时必须显式处理。
-- gesture source 限定在 Queue 正文顶部，列表确实处于顶部且开始的手势才 reveal Played。Queue 标题/WindowInsets 定义的应用顶部带才可下滑退出；两种手势不能同时触发；真实系统状态栏手势不被拦截。
+- Runtime/QueuePresentation 仍是唯一服务端状态入口。fresh snapshot 直接复用 position<0；数据不 fresh 时沿用现有一次性 GET /api/history/played fallback 和 request-generation guard；不添加数据 owner、API 或服务端分页。
+- Played 与 current/pending 是同一 LazyColumn 的真实行。Played 使用稳定 occurrence key（历史语义前缀 + queue_item_id），先按 position 从旧到新排列，再接 current/next。首次进入与重进时将 current 定位到首个可见位置；列表滚动不修改 canonical Queue。
+- 移除拦截 history reveal 的自定义 pointer/nested-scroll reducer，不消费 pointer-up 的 fling。滚动与惯性全部由 LazyColumn 提供，Played/current/pending 共用一套滚动状态。
+- 在 Queue entry 时预热最近 20 个 Played song ID 的元数据，并按 viewport 两侧有限邻域扩展预取。缓存并发/容量仍由既有 QueueSongCache 约束；封面与元数据替换不得重置滚动位置；pointer movement 不触发请求。
+- current 与 pending 行不足以填满视口时，在列表尾部添加透明的纯布局 scroll buffer，使 current 可锚定顶部并保留向前滚动范围。该 spacer 不是 Queue occurrence，不参与 canonical 状态或操作。
+- Played 行继续使用当前的超薄白色蒙版（alpha 0.045）、分隔线与现有行操作；current/pending 视觉、排序与 mutation owner 不变。
 
 **Steps：**
-- [x] 先为 reducer 写 RED 测试：0.2H/1.0H/1.75H 等任意 fractional reveal、正向/反向连续 delta、停住、release freeze、ACTION_CANCEL freeze、第二次 drag 从同一 fractional state 续接。
-- [x] 为数据窗口/请求策略写测试：fresh snapshot 不发 Played GET、stale 数据最多一个合并 GET、pointer move 不发请求、迟到响应因 epoch/revision/request generation 不匹配而丢弃、无历史末端不会出现幽灵行。
-- [x] 为布局写测试：真实测量行高、部分行 clip、已有行与 placeholder 的 1:1 位移；metadata 成功/失败替换不引起第二次跳变，release 后下一帧位置相同。
-- [x] 运行测试见证 RED；实现纯连续状态 reducer，再用 Compose frame-clock 或等效机制合并每帧 UI 更新。不要把 Web 原来的每 64px 增行行为搬到 Android。
-- [x] 测试触摸起始区域优先级、top exit vs body reveal、seek/drag handle 与历史展开冲突；取消时冻结除非合同定义的页面退出/业务重置同时发生。
-- [x] 执行离线全套验证和 git diff --check；SM-G986N / Android 13 的 Queue 包 instrumentation 共 21 项通过。已启动实际应用并只读检查 Queue，执行真实触摸下拉；当前服务端 fresh snapshot 未包含 position<0 历史项，因此真实历史蒙版/展开的内容验收记为 NOT COVERED，未通过额外历史 GET 或写操作人为制造数据。独立提交 Batch 8。
+- [x] 先写显示顺序测试，将 Web 的 newest-first canonical Played 变成列表 oldest→newest；写 instrumentation 断言没有单独的 queue-played-reveal-region。
+- [x] 验证 RED：历史排序期望与旧 reveal 交互测试先失败；随后用同列表排序与渲染替换旧实现。
+- [x] 真机 Compose instrumentation 覆盖 current 初始锚点、原生轻扫惯性、position -1 紧邻 current、fresh snapshot 无 Played GET、元数据在手势前预热且滚动时不重复加载、历史滚动不提交 mutation。
+- [x] 验证预热在 Queue entry 即启动、资源缓存按 viewport 邻域扩展；保留的 PlayedReadGeneration 延迟响应保护单测随完整 unit suite 通过。既有非 fresh fallback 未改动。
+- [x] 执行 ./gradlew --offline --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin 和 PlayedRevealUiTest connected instrumentation，均通过；git diff --check 通过。未增加服务端/Web/API、依赖或权威状态 owner。
+- [x] 在 SM-G986N / Android 13 执行 adb install -r，安装成功且未清除数据。firstInstallTime 始终为 2026-10-24 18:47:26；DataStore 文件安装前后 SHA-256 均为 86f0fc14d00b146e90ec67736c0103fbeffe9a57ef5309fb2f44aa1460e1666c。未执行真实播放或 Queue 写入；UI 验收使用合成历史快照，真实服务端历史外观未人工验收。
 
-**退出门：** T4-10/T4-11/T4-03 的连续位移、冻结、续接、请求边界与手势互斥有确定性测试；无分页假象、release 二次跳变或额外数据写入。
+**退出门：** Played 作为真实 occurrence 与 Queue 共用列表和滚动惯性；初始 current 锚点、Web 排序、触摸前资源预热、读取代际与无额外写入都有测试证据；未覆盖的真实历史数据场景如实记录。
+
 ## Batch 9：集成回归、合同审计与 Task 4 退出门
 
 **目标：** 跨播放器、歌词、Queue 与 Runtime 做完整验证和边界审查；真实设备/服务验收逐项记录，未覆盖项不得假标为通过。

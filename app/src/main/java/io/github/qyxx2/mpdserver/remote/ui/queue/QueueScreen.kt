@@ -1,8 +1,6 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,10 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,13 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
@@ -175,120 +168,47 @@ internal fun QueueScreen(
     val blurredArtworkBitmap = (artworkCacheState as? PlayerArtworkCacheState.Ready)
         ?.takeIf { it.key == currentArtworkKey }
         ?.blurred
-    val listState = rememberLazyListState()
     val visibleRows = remember(queueProjection.current, queueProjection.next) {
         buildList {
             queueProjection.current?.let(::add)
             addAll(queueProjection.next)
         }
     }
+    // Display order runs oldest -> newest -> current -> pending, matching Web's reversal of
+    // its newest-first Played prefix. The current occurrence remains the initial viewport anchor.
     val playedRows = remember(queueProjection.played) {
-        PlayedRevealWindow.ordered(queueProjection.played)
+        PlayedHistoryOrder.inDisplayOrder(queueProjection.played)
     }
-    // Reveal state is route-local presentation only. It resets when canonical queue identity or
-    // playback context changes, and never writes back to the server-owned Queue/Played state.
-    val revealResetKey = listOf(
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (queueProjection.current != null) playedRows.size else 0,
+    )
+    val queueRowIds = remember(playedRows, visibleRows) {
+        playedRows.map { it.queueItemId } + visibleRows.map { it.queueItemId }
+    }
+    var listViewportHeightPx by remember(
         queueProjection.epoch,
         queueProjection.queueRevision,
         queueProjection.current?.queueItemId,
-        queueProjection.current?.playbackContextId,
-        snapshotState.snapshot?.explicitStopGeneration,
-        snapshotState.connectionGeneration,
-        currentOrigin.address,
-    )
-    val revealStateHolder = remember(revealResetKey) { mutableStateOf(PlayedRevealState()) }
-    val revealState by revealStateHolder
-    var historyWindowCount by remember(revealResetKey) { mutableIntStateOf(0) }
-    var measuredHistoryHeightPx by remember(revealResetKey) { mutableFloatStateOf(0f) }
-    var measuredHistoryWindowCount by remember(revealResetKey) { mutableIntStateOf(0) }
-    val freezeRevealAfterPointerState = remember(revealResetKey) { mutableStateOf(false) }
-    val playedPointerRegionState = remember(revealResetKey) {
-        mutableStateOf(PlayedRevealPointerRegion.QUEUE_BODY)
-    }
-
-    LaunchedEffect(revealResetKey, playedRows.size) {
-        if (playedRows.isEmpty()) {
-            historyWindowCount = 0
-            measuredHistoryHeightPx = 0f
-            measuredHistoryWindowCount = 0
-            revealStateHolder.value = PlayedRevealState()
-        } else if (historyWindowCount == 0) {
-            historyWindowCount = PlayedRevealWindow.initialCount(playedRows.size)
-        } else {
-            historyWindowCount = historyWindowCount.coerceAtMost(playedRows.size)
-        }
-    }
-    val visiblePlayedRows = remember(playedRows, historyWindowCount) {
-        playedRows.take(historyWindowCount)
-    }
-    // Do not prefetch hidden history metadata before the user reveals the Played region.
-    // Fractional drags do not change this Boolean, so they cannot restart the resource scope.
-    val historyVisible = revealState.revealedHeightPx > 0f
-    LaunchedEffect(historyWindowCount, playedRows.size, measuredHistoryWindowCount,
-        measuredHistoryHeightPx, revealState.revealedHeightPx) {
-        if (playedRows.isEmpty() || measuredHistoryHeightPx <= 0f ||
-            measuredHistoryWindowCount != historyWindowCount ||
-            revealState.revealedHeightPx <= measuredHistoryHeightPx
-        ) return@LaunchedEffect
-
-        if (historyWindowCount < playedRows.size) {
-            // Extend from the already-read list in local batches; never issue another Played GET.
-            historyWindowCount = PlayedRevealWindow.nextCount(historyWindowCount, playedRows.size)
-        } else {
-            // The complete canonical/fallback data set is exhausted. Do not reveal phantom rows.
-            revealStateHolder.value = revealStateHolder.value.clampToMeasuredEnd(measuredHistoryHeightPx)
-        }
-    }
-
-    val playedNestedScrollConnection = remember(
-        listState, revealStateHolder, playedRows.size, historyWindowCount, freezeRevealAfterPointerState,
-        playedPointerRegionState,
+        queueRowIds,
+    ) { mutableIntStateOf(0) }
+    LaunchedEffect(
+        listState,
+        queueProjection.epoch,
+        queueProjection.queueRevision,
+        queueProjection.current?.queueItemId,
+        queueRowIds,
     ) {
-        object : NestedScrollConnection {
-            private fun listIsAtTop(): Boolean {
-                if (listState.firstVisibleItemScrollOffset != 0) return false
-                return listState.firstVisibleItemIndex == 0 ||
-                    (revealStateHolder.value.revealedHeightPx <= 0f &&
-                        historyWindowCount > 0 && listState.firstVisibleItemIndex == 1)
-            }
-
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.UserInput) return Offset.Zero
-                val current = revealStateHolder.value
-                val atTop = listIsAtTop()
-                val hasHistory = playedRows.isNotEmpty()
-                // Compose's nested-scroll delta uses the pointer-motion sign here: a downward
-                // pull at the list top is positive, and reverse/upward motion is negative.
-                val fingerDeltaY = available.y
-                if (!PlayedRevealGesture.shouldCapture(
-                        region = playedPointerRegionState.value,
-                        listAtTop = atTop,
-                        hasHistory = hasHistory,
-                        deltaY = fingerDeltaY,
-                        revealedHeightPx = current.revealedHeightPx,
-                    )
-                ) return Offset.Zero
-
-                val consumedFingerDeltaY = PlayedRevealGesture.consumedDeltaY(
-                    deltaY = fingerDeltaY,
-                    listAtTop = atTop,
-                    hasHistory = hasHistory,
-                    revealedHeightPx = current.revealedHeightPx,
-                )
-                if (consumedFingerDeltaY == 0f) return Offset.Zero
-                revealStateHolder.value = current.beginGesture().dragBy(consumedFingerDeltaY)
-                freezeRevealAfterPointerState.value = true
-                return Offset(x = 0f, y = consumedFingerDeltaY)
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                if (!freezeRevealAfterPointerState.value && !revealStateHolder.value.gestureActive) {
-                    return Velocity.Zero
-                }
-                revealStateHolder.value = revealStateHolder.value.freeze()
-                freezeRevealAfterPointerState.value = false
-                return available
-            }
+        listViewportHeightPx = snapshotFlow { listState.layoutInfo.viewportSize.height }
+            .first { height -> height > 0 }
+    }
+    val density = LocalDensity.current
+    // If current + pending rows do not fill the viewport, preserve enough transparent space
+    // after the pending rows for the current row to anchor at the top while Played stays scrollable
+    // above it. This spacer is layout-only and is never a Queue occurrence.
+    val bottomScrollBufferHeightPx = with(density) {
+        if (queueProjection.current == null || listViewportHeightPx == 0) 0 else {
+            (listViewportHeightPx - visibleRows.size * 84.dp.roundToPx() - 8.dp.roundToPx())
+                .coerceAtLeast(0)
         }
     }
     val reorderBaseline = remember(queueProjectionKey) { QueueReorderBaseline.from(snapshotState) }
@@ -394,25 +314,45 @@ internal fun QueueScreen(
         resetReorderDrag()
     }
 
-    // Prefetch the first 100 queue resources immediately, then extend the cache window when
-    // the user approaches its end. This is client-side staging over the canonical snapshot, not
-    // server pagination. Requests stay bounded by QueueSongCache's semaphore.
-    LaunchedEffect(cache, resourceIdentity, visibleRows, visiblePlayedRows, historyVisible) {
+    // History occurrences are already in the same LazyColumn as current/pending rows. Warm a
+    // small recent-history neighborhood before the first gesture; as ordinary scrolling exposes
+    // older history, extend prefetch around the viewport without making pointer-driven requests.
+    LaunchedEffect(cache, resourceIdentity, visibleRows, playedRows) {
         QueueArtworkThumbnailCache.updateIdentity(resourceIdentity)
+        val newestHistorySongIds = playedRows.takeLast(20)
+            .mapNotNull { it.songId.takeIf(String::isNotBlank) }
+            .toSet()
         snapshotFlow {
-            QueuePrefetchWindow.endExclusive(
-                lastVisibleIndex = (listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0) -
-                    if (playedRows.isNotEmpty()) 1 else 0,
+            val layout = listState.layoutInfo
+            val visibleIndices = layout.visibleItemsInfo.map { it.index }
+            val visibleHistoryIndices = visibleIndices.filter { it in 0 until playedRows.size }
+            val firstHistoryIndex = visibleHistoryIndices.minOrNull()
+            val lastHistoryIndex = visibleHistoryIndices.maxOrNull()
+            val historyStart = if (firstHistoryIndex == null) {
+                (playedRows.size - 20).coerceAtLeast(0)
+            } else {
+                (firstHistoryIndex - 20).coerceAtLeast(0)
+            }
+            val historyEnd = if (playedRows.isEmpty()) 0 else
+                ((lastHistoryIndex ?: playedRows.lastIndex) + 21).coerceAtMost(playedRows.size)
+            val nearbyHistorySongIds = if (historyStart < historyEnd) {
+                playedRows.subList(historyStart, historyEnd)
+                    .mapNotNull { it.songId.takeIf(String::isNotBlank) }
+            } else {
+                emptyList()
+            }
+            val lastVisibleIndex = visibleIndices.maxOrNull() ?: playedRows.size
+            val lastVisibleQueueIndex = (lastVisibleIndex - playedRows.size).coerceAtLeast(0)
+            val queueEndExclusive = QueuePrefetchWindow.endExclusive(
+                lastVisibleIndex = lastVisibleQueueIndex,
                 totalItems = visibleRows.size,
             )
-        }.collect { endExclusive ->
-            val historySongIds = if (historyVisible) {
-                visiblePlayedRows.mapNotNull { it.songId.takeIf(String::isNotBlank) }.toSet()
-            } else {
-                emptySet()
-            }
-            val songIds = historySongIds +
-                visibleRows.take(endExclusive).mapNotNull { it.songId.takeIf(String::isNotBlank) }.toSet()
+            (
+                newestHistorySongIds +
+                    nearbyHistorySongIds +
+                    visibleRows.take(queueEndExclusive).mapNotNull { it.songId.takeIf(String::isNotBlank) }
+            ).toSet()
+        }.distinctUntilChanged().collect { songIds ->
             cache.updateScope(resourceIdentity, songIds)
             songIds.forEach(cache::load)
         }
@@ -507,8 +447,28 @@ internal fun QueueScreen(
         }
     }
 
-    LaunchedEffect(queueProjection.epoch, queueProjection.queueRevision, queueProjection.current?.queueItemId) {
-        listState.scrollToItem(0)
+    LaunchedEffect(
+        queueProjection.epoch,
+        queueProjection.queueRevision,
+        queueProjection.current?.queueItemId,
+        playedRows.size,
+        listViewportHeightPx,
+        bottomScrollBufferHeightPx,
+    ) {
+        val targetIndex = if (queueProjection.current != null) playedRows.size else 0
+        // Wait for real list rows and, when short Queue content needs it, a measured transparent
+        // footer. Without enough scroll range LazyColumn clamps current back to index 0.
+        if (queueProjection.current != null) {
+            snapshotFlow { listState.layoutInfo.totalItemsCount }
+                .first { totalItems -> totalItems > targetIndex }
+            if (bottomScrollBufferHeightPx > 0) {
+                snapshotFlow {
+                    listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.key == "queue-viewport-scroll-buffer" }?.size ?: 0
+                }.first { height -> height >= bottomScrollBufferHeightPx }
+            }
+        }
+        listState.scrollToItem(targetIndex)
     }
     LaunchedEffect(
         selectedMenuItem?.queueItemId,
@@ -719,60 +679,62 @@ internal fun QueueScreen(
                         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                             LazyColumn(
                                 state = listState,
-                                modifier = Modifier.fillMaxSize()
-                                    .nestedScroll(playedNestedScrollConnection)
-                                    .pointerInput(revealStateHolder, freezeRevealAfterPointerState) {
-                                        awaitEachGesture {
-                                            freezeRevealAfterPointerState.value = false
-                                            val down = awaitFirstDown(requireUnconsumed = false)
-                                            playedPointerRegionState.value = when {
-                                                down.position.x < 44.dp.toPx() ->
-                                                    PlayedRevealPointerRegion.DRAG_HANDLE
-                                                down.position.x > size.width - 56.dp.toPx() ->
-                                                    PlayedRevealPointerRegion.ROW_ACTION
-                                                else -> PlayedRevealPointerRegion.QUEUE_BODY
-                                            }
-                                            try {
-                                                do {
-                                                    val event = awaitPointerEvent()
-                                                } while (event.changes.any { it.pressed })
-                                            } finally {
-                                                if (revealStateHolder.value.gestureActive) {
-                                                    freezeRevealAfterPointerState.value = true
-                                                    revealStateHolder.value = revealStateHolder.value.freeze()
-                                                }
-                                                playedPointerRegionState.value = PlayedRevealPointerRegion.QUEUE_BODY
-                                            }
-                                        }
-                                    }
-                                    .testTag("queue-list"),
+                                modifier = Modifier.fillMaxSize().testTag("queue-list"),
                                 contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                             ) {
-                                if (playedRows.isNotEmpty()) {
-                                    item(
-                                        key = "played-history-reveal",
-                                        contentType = "played-history-reveal",
-                                    ) {
-                                        PlayedRevealRegion(
-                                            rows = visiblePlayedRows,
-                                            revealedHeightPx = revealState.revealedHeightPx,
-                                            cache = cache,
-                                            resourceIdentity = resourceIdentity,
-                                            actions = actions,
-                                            selectedMenuItem = selectedMenuItem,
-                                            onSelectedMenuItem = { selectedMenuItem = it },
-                                            onNaturalHeightMeasured = { heightPx, rowCount ->
-                                                if (measuredHistoryHeightPx != heightPx) {
-                                                    measuredHistoryHeightPx = heightPx
-                                                }
-                                                if (measuredHistoryWindowCount != rowCount) {
-                                                    measuredHistoryWindowCount = rowCount
-                                                }
-                                            },
+                            itemsIndexed(
+                                items = playedRows,
+                                key = { _, occurrence -> "played-history-${occurrence.queueItemId}" },
+                                contentType = { _, _ -> "played-history" },
+                            ) { historyIndex, occurrence ->
+                                val entryFlow = remember(cache, resourceIdentity, occurrence.songId) {
+                                    cache.state.map { entries ->
+                                        entries[occurrence.songId]?.takeIf { it.identity == resourceIdentity }
+                                    }.distinctUntilChanged()
+                                }
+                                val entry by entryFlow.collectAsStateWithLifecycle(
+                                    initialValue = cache.currentEntry(occurrence.songId, resourceIdentity),
+                                )
+                                val menuTitle = entry?.song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
+                                Column(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .testTag("queue-history-row-${occurrence.queueItemId}"),
+                                ) {
+                                    QueueOccurrenceRow(
+                                        occurrence = occurrence,
+                                        isCurrent = false,
+                                        currentLabel = "",
+                                        cacheEntry = entry,
+                                        menuEnabled = actions.canShowMenu(occurrence.queueItemId),
+                                        menuTitle = menuTitle,
+                                        menuExpanded = selectedMenuItem?.queueItemId == occurrence.queueItemId,
+                                        onPlay = { actions.play(occurrence.queueItemId, menuTitle) },
+                                        onMenu = { selectedMenuItem = occurrence },
+                                        onDismissMenu = { selectedMenuItem = null },
+                                        onMoveNext = {
+                                            actions.move(occurrence.queueItemId, QueueMove.NEXT, menuTitle)
+                                            selectedMenuItem = null
+                                        },
+                                        onMoveToEnd = {
+                                            actions.move(occurrence.queueItemId, QueueMove.ADD, menuTitle)
+                                            selectedMenuItem = null
+                                        },
+                                        onRemove = {
+                                            actions.remove(occurrence.queueItemId, menuTitle)
+                                            selectedMenuItem = null
+                                        },
+                                    )
+                                    if (historyIndex < playedRows.lastIndex || visibleRows.isNotEmpty()) {
+                                        HorizontalDivider(
+                                            modifier = Modifier.fillMaxWidth()
+                                                .testTag("queue-history-divider-${occurrence.queueItemId}"),
+                                            thickness = 0.75.dp,
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.64f),
                                         )
                                     }
                                 }
+                            }
                             itemsIndexed(
                                 items = visibleRows,
                                 key = { _, item -> item.queueItemId },
@@ -844,6 +806,17 @@ internal fun QueueScreen(
                                     }
                                 }
                             }
+                                item(
+                                    key = "queue-viewport-scroll-buffer",
+                                    contentType = "queue-scroll-buffer",
+                                ) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(with(density) { bottomScrollBufferHeightPx.toDp() })
+                                            .testTag("queue-viewport-scroll-buffer"),
+                                    )
+                                }
                             }
 
                             val draggedOccurrence = activeReorderDraft?.let { draft ->
