@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.queue
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -103,6 +104,10 @@ class PlayedRevealUiTest {
             }.getOrDefault(false)
         }
         composeRule.waitForIdle()
+        assertTrue(
+            "history jump action stays hidden while the Queue is at its initial current anchor",
+            runCatching { composeRule.onNodeWithTag("queue-history-jump-button").fetchSemanticsNode() }.isFailure,
+        )
         val initialListTop = list.fetchSemanticsNode().boundsInRoot.top
         val initialCurrentTop = current.fetchSemanticsNode().boundsInRoot.top
         assertTrue(
@@ -141,6 +146,20 @@ class PlayedRevealUiTest {
         assertEquals("prewarmed song metadata must not be fetched again during scrolling",
             prewarmedResourceLoads, resourceLoads.get())
         assertTrue("history scrolling never submits playback or Queue mutations", submitted.isEmpty())
+
+        composeRule.onNodeWithTag("queue-history-jump-button").performClick()
+        composeRule.waitUntil(5_000) {
+            val returnedToCurrent = runCatching {
+                val listTop = list.fetchSemanticsNode().boundsInRoot.top
+                val currentTop = current.fetchSemanticsNode().boundsInRoot.top
+                currentTop - listTop in 0f..80f
+            }.getOrDefault(false)
+            val jumpActionHidden = runCatching {
+                composeRule.onNodeWithTag("queue-history-jump-button").fetchSemanticsNode()
+            }.isFailure
+            returnedToCurrent && jumpActionHidden
+        }
+        assertTrue("jumping back hides Played rows without mutating canonical Queue state", submitted.isEmpty())
     }
 
     private fun snapshotState(

@@ -53,10 +53,10 @@ class QueueScreenUiTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun playedRowsUseOnlyAnUltraThinWhiteVeil() {
+    fun playedRowsUseAClearlyVisibleTranslucentWhiteVeil() {
         val overlay = queuePlayedOverlayColor(isPlayed = true)
         val transparent = queuePlayedOverlayColor(isPlayed = false)
-        assertEquals("historical veil stays white", Color.White.copy(alpha = 0.045f), overlay)
+        assertEquals("historical veil is clearly visible without becoming opaque", Color.White.copy(alpha = 0.14f), overlay)
         assertEquals("current and pending rows do not get the Played veil", Color.Transparent, transparent)
     }
 
@@ -94,6 +94,8 @@ class QueueScreenUiTest {
         val state = snapshotState(items, freshness = SnapshotFreshness.FRESH)
         val songReads = AtomicInteger()
         val playedReads = AtomicInteger()
+        val duplicateSongReads = AtomicInteger()
+        val historySongReads = AtomicInteger()
         val metadataGate = CompletableDeferred<Unit>()
 
         launchQueue(
@@ -103,6 +105,12 @@ class QueueScreenUiTest {
             playedReads,
             listOf(item("fallback-played", "fallback", -1, QueueSourceDto.MANUAL)),
             songLoadGate = metadataGate,
+            songLoadObserver = { songId ->
+                when (songId) {
+                    "song-duplicate" -> duplicateSongReads.incrementAndGet()
+                    "song-old" -> historySongReads.incrementAndGet()
+                }
+            },
         )
 
         try {
@@ -139,14 +147,14 @@ class QueueScreenUiTest {
         composeRule.onNodeWithTag("queue-row-divider-occ-current").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-divider-occ-manual-first").assertIsDisplayed()
         composeRule.onAllNodesWithTag("queue-row-occ-auto").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("queue-row-occ-played").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("queue-row-fallback-played").assertCountEquals(0)
+        assertQueueRowsOutsideViewport("queue-row-occ-played", "queue-row-fallback-played")
 
         val currentTop = composeRule.onNodeWithTag("queue-row-occ-current").fetchSemanticsNode().boundsInRoot.top
         val firstPendingTop = composeRule.onNodeWithTag("queue-row-occ-manual-first").fetchSemanticsNode().boundsInRoot.top
         assertTrue("the business current stays at the top of the list", currentTop < firstPendingTop)
         composeRule.waitForIdle()
-        assertEquals("all duplicate occurrences share one metadata read by song_id", 1, songReads.get())
+        assertEquals("all duplicate occurrences share one metadata read by song_id", 1, duplicateSongReads.get())
+        assertEquals("the single recent Played occurrence is prefetched once", 1, historySongReads.get())
         assertEquals("a fresh canonical Played resource must be reused", 0, playedReads.get())
     }
 
@@ -190,8 +198,7 @@ class QueueScreenUiTest {
         composeRule.onNodeWithTag("queue-row-current-label-occ-current", useUnmergedTree = true)
             .assertTextEquals("业务当前 · 实际播放未确认")
         composeRule.onNodeWithTag("queue-row-occ-current").assertIsDisplayed()
-        composeRule.onAllNodesWithTag("queue-row-snapshot-played").assertCountEquals(0)
-        composeRule.onAllNodesWithTag("queue-row-fallback-played").assertCountEquals(0)
+        assertQueueRowsOutsideViewport("queue-row-snapshot-played", "queue-row-fallback-played")
         composeRule.waitForIdle()
         assertEquals("stale Played is fetched at most once for this route/session", 1, playedReads.get())
     }
@@ -290,6 +297,10 @@ class QueueScreenUiTest {
         composeRule.onNodeWithTag("queue-save-button").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-save-icon", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onAllNodesWithText("队列").assertCountEquals(0)
+        assertTrue(
+            "history jump action stays hidden when no Played history exists",
+            runCatching { composeRule.onNodeWithTag("queue-history-jump-button").fetchSemanticsNode() }.isFailure,
+        )
     }
 
     @Test
@@ -356,6 +367,7 @@ class QueueScreenUiTest {
         playedReads: AtomicInteger,
         played: List<QueueItemDto>,
         songLoadGate: CompletableDeferred<Unit>? = null,
+        songLoadObserver: ((String) -> Unit)? = null,
         queueActionsFactory: (() -> QueueActions)? = null,
     ) {
         val presentation = PlayerPresentation.from(state)
@@ -373,6 +385,7 @@ class QueueScreenUiTest {
                     },
                     songResourceLoader = { _, songId ->
                         songReads.incrementAndGet()
+                        songLoadObserver?.invoke(songId)
                         songLoadGate?.await()
                         QueueSongResource(song(songId, "Title $songId"))
                     },
@@ -451,6 +464,19 @@ class QueueScreenUiTest {
 
     private fun song(id: String, title: String): SongDto =
         JsonConfiguration.json.decodeFromString(songJson(id, title))
+
+    private fun assertQueueRowsOutsideViewport(vararg tags: String) {
+        val viewport = composeRule.onNodeWithTag("queue-list").fetchSemanticsNode().boundsInRoot
+        tags.forEach { tag ->
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().forEach { row ->
+                val bounds = row.boundsInRoot
+                assertTrue(
+                    "$tag must remain outside the initial Queue viewport: row=$bounds viewport=$viewport",
+                    bounds.bottom <= viewport.top || bounds.top >= viewport.bottom,
+                )
+            }
+        }
+    }
 
     private fun item(id: String, songId: String, position: Int, source: QueueSourceDto) =
         QueueItemDto(id, songId, position, source, null)

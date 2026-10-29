@@ -57,9 +57,9 @@ internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color):
     return Color(ColorUtils.HSLToColor(hsl)).copy(alpha = 0.10f)
 }
 
-/** A deliberately subtle white veil distinguishes Played history without creating opaque cards. */
+/** A clearly visible but translucent white veil separates Played history while keeping text readable. */
 internal fun queuePlayedOverlayColor(isPlayed: Boolean): Color =
-    if (isPlayed) Color.White.copy(alpha = 0.045f) else Color.Transparent
+    if (isPlayed) Color.White.copy(alpha = 0.14f) else Color.Transparent
 
 @Composable
 internal fun QueueOccurrenceRow(

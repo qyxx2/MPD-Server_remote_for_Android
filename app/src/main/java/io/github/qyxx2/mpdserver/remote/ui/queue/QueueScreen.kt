@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -179,9 +183,21 @@ internal fun QueueScreen(
     val playedRows = remember(queueProjection.played) {
         PlayedHistoryOrder.inDisplayOrder(queueProjection.played)
     }
+    val queueListTopPadding = 4.dp
+    val hasQueueAnchor = queueProjection.current != null || visibleRows.isNotEmpty()
+    val queueAnchorScrollOffsetPx = with(LocalDensity.current) {
+        if (hasQueueAnchor) queueListTopPadding.roundToPx() else 0
+    }
     val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = if (queueProjection.current != null) playedRows.size else 0,
+        initialFirstVisibleItemIndex = if (hasQueueAnchor) playedRows.size else 0,
+        initialFirstVisibleItemScrollOffset = queueAnchorScrollOffsetPx,
     )
+    val showHistoryJumpButton by remember(listState, playedRows.size, visibleRows.isNotEmpty()) {
+        derivedStateOf {
+            playedRows.isNotEmpty() && visibleRows.isNotEmpty() &&
+                listState.firstVisibleItemIndex < playedRows.size
+        }
+    }
     val queueRowIds = remember(playedRows, visibleRows) {
         playedRows.map { it.queueItemId } + visibleRows.map { it.queueItemId }
     }
@@ -451,14 +467,15 @@ internal fun QueueScreen(
         queueProjection.epoch,
         queueProjection.queueRevision,
         queueProjection.current?.queueItemId,
+        visibleRows.map { it.queueItemId },
         playedRows.size,
         listViewportHeightPx,
         bottomScrollBufferHeightPx,
     ) {
-        val targetIndex = if (queueProjection.current != null) playedRows.size else 0
+        val targetIndex = if (hasQueueAnchor) playedRows.size else 0
         // Wait for real list rows and, when short Queue content needs it, a measured transparent
         // footer. Without enough scroll range LazyColumn clamps current back to index 0.
-        if (queueProjection.current != null) {
+        if (hasQueueAnchor) {
             snapshotFlow { listState.layoutInfo.totalItemsCount }
                 .first { totalItems -> totalItems > targetIndex }
             if (bottomScrollBufferHeightPx > 0) {
@@ -468,7 +485,10 @@ internal fun QueueScreen(
                 }.first { height -> height >= bottomScrollBufferHeightPx }
             }
         }
-        listState.scrollToItem(targetIndex)
+        listState.scrollToItem(
+            index = targetIndex,
+            scrollOffset = queueAnchorScrollOffsetPx,
+        )
     }
     LaunchedEffect(
         selectedMenuItem?.queueItemId,
@@ -680,7 +700,7 @@ internal fun QueueScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize().testTag("queue-list"),
-                                contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
+                                contentPadding = PaddingValues(top = queueListTopPadding, bottom = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(0.dp),
                             ) {
                             itemsIndexed(
@@ -839,6 +859,39 @@ internal fun QueueScreen(
                                         }
                                         .zIndex(4f),
                                 )
+                            }
+                            if (showHistoryJumpButton) {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val targetIndex = playedRows.size
+                                            if (targetIndex < listState.layoutInfo.totalItemsCount) {
+                                                listState.animateScrollToItem(
+                                                    index = targetIndex,
+                                                    scrollOffset = queueAnchorScrollOffsetPx,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 16.dp)
+                                        .zIndex(5f)
+                                        .testTag("queue-history-jump-button"),
+                                    shape = CircleShape,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    ),
+                                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp),
+                                    contentPadding = PaddingValues(horizontal = 22.dp, vertical = 9.dp),
+                                ) {
+                                    Text(
+                                        text = "跳转至待播放项目",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
+                                        maxLines = 1,
+                                    )
+                                }
                             }
                         }
                     }
