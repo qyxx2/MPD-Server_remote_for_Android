@@ -28,4 +28,14 @@ Only the outstanding Batch 6 Android UI corrections and related UI tests/specifi
 ## Boundaries
 
 - No Web, MS server, API contract, database, playback engine, Queue business semantics, or mutation-coordinator implementation was changed.
-- No live Queue/playback write was issued during validation. The device's saved server configuration and app data were preserved.
+- The original popup/edge-to-edge test run used fake submitters and issued no live Queue/playback writes. A separate follow-up manual screenshot-navigation attempt is documented below because it briefly changed the live playback position.
+
+
+## Follow-up — Queue row surfaces and final-source verification (2026-10-29)
+
+- Adjusted only the current Queue row background: preserved the primary color hue and lightness, increased saturation by 12% with a restrained cap, and retained 10% background opacity. Non-current rows now use a fully transparent background so the shared artwork backdrop remains visible; 0.75dp dividers distinguish adjacent rows. The visual contract and `QueueScreenUiTest` were updated to assert these requirements.
+- Final local verification on the current `task4` HEAD: `./gradlew --offline --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin` — **BUILD SUCCESSFUL**; 242 unit tests remain green (the unit-test task was up-to-date), lint/APK assembly/Android-test Kotlin compilation passed; `git diff --check` and Queue ownership/route scans passed.
+- Focused instrumentation on **SM-G986N / Android 13** ran `QueueActionsUiTest`, `QueueScreenUiTest`, and `MainActivityEdgeToEdgeUiTest`: **19 tests completed, 0 skipped, 0 failed**. This includes the new row-color/divider assertions, compact row popup and outside-tap dismissal, toolbar checks, and edge-to-edge/safe-inset checks. Gradle log: `.superpowers/sdd/2026-10-27-task-4-full-player-queue/b6-connected-current.log`.
+- Instrumentation overlaid the same package rather than reinstalling from scratch. `firstInstallTime` remained `2026-10-24 18:47:26`; `lastUpdateTime` advanced from `12:18:52` to `12:26:20`. DataStore preference SHA-256 stayed identical at `ebe11ce30740f434681d1ac22c99fea61870cdef04cd5164588312c5f815bf45`. Final debug APK SHA-256: `f5c4ca49aa67220856219a6cdb1388ae1caa4aa3d56530caa4889a34f7c8718e`.
+- No live Queue clear, remove, reorder, or save-as-playlist action was submitted. During a separate manual screenshot-navigation attempt, a screen-coordinate tap unintentionally activated Next on the live player; Previous returned to `迷人的危险`, then seek restored playback to approximately the earlier `1:28` position (the screen subsequently showed `1:31` as playback continued). This was an actual transient playback-state change, not a Batch 6 Queue-action test; the player was then returned to the root screen. The live screenshot attempt is not claimed as Queue visual acceptance.
+- Batch 7 drag reorder and Batch 8 Played reveal remain untouched. No Web/API/server code or new Android state/network owner was added.
