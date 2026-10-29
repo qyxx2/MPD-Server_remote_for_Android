@@ -342,7 +342,7 @@
 
 ## Batch 8：连续 Played 历史 reveal 与手势互斥
 
-**目标：** 实现由手指位移连续控制的浮点历史可见高度；释放/取消冻结原位置，下一次操作续接；在已有 API 限制下避免重复读取和伪分页。
+**目标：** 实现由手指位移连续控制的浮点历史可见高度；释放/取消冻结原位置，下一次操作续接；在已有 API 限制下避免重复读取和伪分页。历史行（position 小于零）额外叠加极薄白色蒙版（alpha 0.045）以区别 current/pending，不改变行行为。
 
 **Files：**
 - Create：`ui/queue/PlayedRevealState.kt`、`PlayedRevealGesture.kt`（若有必要分离 gesture reducer）。
@@ -357,15 +357,14 @@
 - gesture source 限定在 Queue 正文顶部，列表确实处于顶部且开始的手势才 reveal Played。Queue 标题/WindowInsets 定义的应用顶部带才可下滑退出；两种手势不能同时触发；真实系统状态栏手势不被拦截。
 
 **Steps：**
-- [ ] 先为 reducer 写 RED 测试：0.2H/1.0H/1.75H 等任意 fractional reveal、正向/反向连续 delta、停住、release freeze、ACTION_CANCEL freeze、第二次 drag 从同一 fractional state 续接。
-- [ ] 为数据窗口/请求策略写测试：fresh snapshot 不发 Played GET、stale 数据最多一个合并 GET、pointer move 不发请求、迟到响应因 epoch/revision/request generation 不匹配而丢弃、无历史末端不会出现幽灵行。
-- [ ] 为布局写测试：真实测量行高、部分行 clip、已有行与 placeholder 的 1:1 位移；metadata 成功/失败替换不引起第二次跳变，release 后下一帧位置相同。
-- [ ] 运行测试见证 RED；实现纯连续状态 reducer，再用 Compose frame-clock 或等效机制合并每帧 UI 更新。不要把 Web 原来的每 64px 增行行为搬到 Android。
-- [ ] 测试触摸起始区域优先级、top exit vs body reveal、seek/drag handle 与历史展开冲突；取消时冻结除非合同定义的页面退出/业务重置同时发生。
-- [ ] 运行 `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin`、`git diff --check`；设备可用时执行慢拖/快拖/停住/抬手/取消/继续拖真机验证，不以 Compose 单测冒充人工验收；单独提交 Batch 8。
+- [x] 先为 reducer 写 RED 测试：0.2H/1.0H/1.75H 等任意 fractional reveal、正向/反向连续 delta、停住、release freeze、ACTION_CANCEL freeze、第二次 drag 从同一 fractional state 续接。
+- [x] 为数据窗口/请求策略写测试：fresh snapshot 不发 Played GET、stale 数据最多一个合并 GET、pointer move 不发请求、迟到响应因 epoch/revision/request generation 不匹配而丢弃、无历史末端不会出现幽灵行。
+- [x] 为布局写测试：真实测量行高、部分行 clip、已有行与 placeholder 的 1:1 位移；metadata 成功/失败替换不引起第二次跳变，release 后下一帧位置相同。
+- [x] 运行测试见证 RED；实现纯连续状态 reducer，再用 Compose frame-clock 或等效机制合并每帧 UI 更新。不要把 Web 原来的每 64px 增行行为搬到 Android。
+- [x] 测试触摸起始区域优先级、top exit vs body reveal、seek/drag handle 与历史展开冲突；取消时冻结除非合同定义的页面退出/业务重置同时发生。
+- [x] 执行离线全套验证和 git diff --check；SM-G986N / Android 13 的 Queue 包 instrumentation 共 21 项通过。已启动实际应用并只读检查 Queue，执行真实触摸下拉；当前服务端 fresh snapshot 未包含 position<0 历史项，因此真实历史蒙版/展开的内容验收记为 NOT COVERED，未通过额外历史 GET 或写操作人为制造数据。独立提交 Batch 8。
 
 **退出门：** T4-10/T4-11/T4-03 的连续位移、冻结、续接、请求边界与手势互斥有确定性测试；无分页假象、release 二次跳变或额外数据写入。
-
 ## Batch 9：集成回归、合同审计与 Task 4 退出门
 
 **目标：** 跨播放器、歌词、Queue 与 Runtime 做完整验证和边界审查；真实设备/服务验收逐项记录，未覆盖项不得假标为通过。

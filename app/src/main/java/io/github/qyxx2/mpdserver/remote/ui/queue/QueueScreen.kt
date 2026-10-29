@@ -1,6 +1,8 @@
 package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -30,8 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -137,6 +147,7 @@ internal fun QueueScreen(
     }
     var playedFallback by remember { mutableStateOf<List<QueueItemDto>?>(null) }
     var playedReadStatus by remember { mutableStateOf(PlayedReadStatus.WAITING) }
+    var playedReadRequestGeneration by remember(runtime) { mutableLongStateOf(0L) }
     val queueProjection = remember(canonicalProjection, playedFallback) {
         canonicalProjection.withPlayedFallback(playedFallback)
     }
@@ -164,6 +175,115 @@ internal fun QueueScreen(
         buildList {
             queueProjection.current?.let(::add)
             addAll(queueProjection.next)
+        }
+    }
+    val playedRows = remember(queueProjection.played) {
+        PlayedRevealWindow.ordered(queueProjection.played)
+    }
+    // Reveal state is route-local presentation only. It resets when canonical queue identity or
+    // playback context changes, and never writes back to the server-owned Queue/Played state.
+    val revealResetKey = listOf(
+        queueProjection.epoch,
+        queueProjection.queueRevision,
+        queueProjection.current?.queueItemId,
+        queueProjection.current?.playbackContextId,
+        snapshotState.snapshot?.explicitStopGeneration,
+        snapshotState.connectionGeneration,
+        currentOrigin.address,
+    )
+    val revealStateHolder = remember(revealResetKey) { mutableStateOf(PlayedRevealState()) }
+    val revealState by revealStateHolder
+    var historyWindowCount by remember(revealResetKey) { mutableIntStateOf(0) }
+    var measuredHistoryHeightPx by remember(revealResetKey) { mutableFloatStateOf(0f) }
+    var measuredHistoryWindowCount by remember(revealResetKey) { mutableIntStateOf(0) }
+    val freezeRevealAfterPointerState = remember(revealResetKey) { mutableStateOf(false) }
+    val playedPointerRegionState = remember(revealResetKey) {
+        mutableStateOf(PlayedRevealPointerRegion.QUEUE_BODY)
+    }
+
+    LaunchedEffect(revealResetKey, playedRows.size) {
+        if (playedRows.isEmpty()) {
+            historyWindowCount = 0
+            measuredHistoryHeightPx = 0f
+            measuredHistoryWindowCount = 0
+            revealStateHolder.value = PlayedRevealState()
+        } else if (historyWindowCount == 0) {
+            historyWindowCount = PlayedRevealWindow.initialCount(playedRows.size)
+        } else {
+            historyWindowCount = historyWindowCount.coerceAtMost(playedRows.size)
+        }
+    }
+    val visiblePlayedRows = remember(playedRows, historyWindowCount) {
+        playedRows.take(historyWindowCount)
+    }
+    // Do not prefetch hidden history metadata before the user reveals the Played region.
+    // Fractional drags do not change this Boolean, so they cannot restart the resource scope.
+    val historyVisible = revealState.revealedHeightPx > 0f
+    LaunchedEffect(historyWindowCount, playedRows.size, measuredHistoryWindowCount,
+        measuredHistoryHeightPx, revealState.revealedHeightPx) {
+        if (playedRows.isEmpty() || measuredHistoryHeightPx <= 0f ||
+            measuredHistoryWindowCount != historyWindowCount ||
+            revealState.revealedHeightPx <= measuredHistoryHeightPx
+        ) return@LaunchedEffect
+
+        if (historyWindowCount < playedRows.size) {
+            // Extend from the already-read list in local batches; never issue another Played GET.
+            historyWindowCount = PlayedRevealWindow.nextCount(historyWindowCount, playedRows.size)
+        } else {
+            // The complete canonical/fallback data set is exhausted. Do not reveal phantom rows.
+            revealStateHolder.value = revealStateHolder.value.clampToMeasuredEnd(measuredHistoryHeightPx)
+        }
+    }
+
+    val playedNestedScrollConnection = remember(
+        listState, revealStateHolder, playedRows.size, historyWindowCount, freezeRevealAfterPointerState,
+        playedPointerRegionState,
+    ) {
+        object : NestedScrollConnection {
+            private fun listIsAtTop(): Boolean {
+                if (listState.firstVisibleItemScrollOffset != 0) return false
+                return listState.firstVisibleItemIndex == 0 ||
+                    (revealStateHolder.value.revealedHeightPx <= 0f &&
+                        historyWindowCount > 0 && listState.firstVisibleItemIndex == 1)
+            }
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                val current = revealStateHolder.value
+                val atTop = listIsAtTop()
+                val hasHistory = playedRows.isNotEmpty()
+                // Compose's nested-scroll delta uses the pointer-motion sign here: a downward
+                // pull at the list top is positive, and reverse/upward motion is negative.
+                val fingerDeltaY = available.y
+                if (!PlayedRevealGesture.shouldCapture(
+                        region = playedPointerRegionState.value,
+                        listAtTop = atTop,
+                        hasHistory = hasHistory,
+                        deltaY = fingerDeltaY,
+                        revealedHeightPx = current.revealedHeightPx,
+                    )
+                ) return Offset.Zero
+
+                val consumedFingerDeltaY = PlayedRevealGesture.consumedDeltaY(
+                    deltaY = fingerDeltaY,
+                    listAtTop = atTop,
+                    hasHistory = hasHistory,
+                    revealedHeightPx = current.revealedHeightPx,
+                )
+                if (consumedFingerDeltaY == 0f) return Offset.Zero
+                revealStateHolder.value = current.beginGesture().dragBy(consumedFingerDeltaY)
+                freezeRevealAfterPointerState.value = true
+                return Offset(x = 0f, y = consumedFingerDeltaY)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (!freezeRevealAfterPointerState.value && !revealStateHolder.value.gestureActive) {
+                    return Velocity.Zero
+                }
+                revealStateHolder.value = revealStateHolder.value.freeze()
+                freezeRevealAfterPointerState.value = false
+                return available
+            }
         }
     }
     val reorderBaseline = remember(queueProjectionKey) { QueueReorderBaseline.from(snapshotState) }
@@ -251,17 +371,22 @@ internal fun QueueScreen(
     // Prefetch the first 100 queue resources immediately, then extend the cache window when
     // the user approaches its end. This is client-side staging over the canonical snapshot, not
     // server pagination. Requests stay bounded by QueueSongCache's semaphore.
-    LaunchedEffect(cache, resourceIdentity, visibleRows) {
+    LaunchedEffect(cache, resourceIdentity, visibleRows, visiblePlayedRows, historyVisible) {
         QueueArtworkThumbnailCache.updateIdentity(resourceIdentity)
         snapshotFlow {
             QueuePrefetchWindow.endExclusive(
-                lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0,
+                lastVisibleIndex = (listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0) -
+                    if (playedRows.isNotEmpty()) 1 else 0,
                 totalItems = visibleRows.size,
             )
         }.collect { endExclusive ->
-            val songIds = visibleRows.take(endExclusive)
-                .mapNotNull { it.songId.takeIf(String::isNotBlank) }
-                .toSet()
+            val historySongIds = if (historyVisible) {
+                visiblePlayedRows.mapNotNull { it.songId.takeIf(String::isNotBlank) }.toSet()
+            } else {
+                emptySet()
+            }
+            val songIds = historySongIds +
+                visibleRows.take(endExclusive).mapNotNull { it.songId.takeIf(String::isNotBlank) }.toSet()
             cache.updateScope(resourceIdentity, songIds)
             songIds.forEach(cache::load)
         }
@@ -299,6 +424,8 @@ internal fun QueueScreen(
         snapshotState.connectionGeneration,
         snapshotState.controlsEligible,
     ) {
+        val requestGeneration = playedReadRequestGeneration + 1L
+        playedReadRequestGeneration = requestGeneration
         if (canonicalProjection.snapshotStatus == QueueSnapshotStatus.READY) {
             playedFallback = null
             playedReadStatus = PlayedReadStatus.CANONICAL
@@ -312,15 +439,34 @@ internal fun QueueScreen(
 
         playedFallback = null
         playedReadStatus = PlayedReadStatus.LOADING
+        val readGeneration = PlayedReadGeneration(
+            epoch = queueProjection.epoch,
+            queueRevision = queueProjection.queueRevision,
+            connectionGeneration = snapshotState.connectionGeneration,
+            explicitStopGeneration = snapshotState.snapshot?.explicitStopGeneration,
+            originAddress = currentOrigin.address,
+            requestGeneration = requestGeneration,
+        )
         try {
             val result = (playedReader ?: { runtime.reads.getPlayed() }).invoke()
             currentCoroutineContext().ensureActive()
             val now = snapshotProvider()
-            val sameReadScope = now.connectionGeneration == resourceIdentity.connectionGeneration &&
-                now.snapshot?.epoch == resourceIdentity.epoch &&
-                runtime.realtimeController.currentOrigin().address == resourceIdentity.originAddress &&
-                QueuePresentation.deriveQueue(now).snapshotStatus != QueueSnapshotStatus.READY
-            if (!sameReadScope) return@LaunchedEffect
+            val latestProjection = QueuePresentation.deriveQueue(now)
+            val sameReadScope = readGeneration.stillMatches(
+                currentEpoch = latestProjection.epoch,
+                currentQueueRevision = latestProjection.queueRevision,
+                currentConnectionGeneration = now.connectionGeneration,
+                currentExplicitStopGeneration = now.snapshot?.explicitStopGeneration,
+                currentOriginAddress = runtime.realtimeController.currentOrigin().address,
+                currentRequestGeneration = playedReadRequestGeneration,
+                currentSnapshotReady = latestProjection.snapshotStatus == QueueSnapshotStatus.READY,
+            )
+            if (!sameReadScope) {
+                // Keep the one-read-per-freshness-transition boundary; stale results wait for a
+                // later connection/freshness transition instead of triggering a duplicate GET.
+                playedReadStatus = PlayedReadStatus.WAITING
+                return@LaunchedEffect
+            }
             when (result) {
                 is ApiResult.Success -> {
                     playedFallback = result.value.items.filter { it.position < 0 }.sortedByDescending { it.position }
@@ -338,9 +484,15 @@ internal fun QueueScreen(
     LaunchedEffect(queueProjection.epoch, queueProjection.queueRevision, queueProjection.current?.queueItemId) {
         listState.scrollToItem(0)
     }
-    LaunchedEffect(selectedMenuItem?.queueItemId, queueProjection.visibleRows.map { it.queueItemId }) {
+    LaunchedEffect(
+        selectedMenuItem?.queueItemId,
+        queueProjection.visibleRows.map { it.queueItemId },
+        playedRows.map { it.queueItemId },
+    ) {
         val selectedId = selectedMenuItem?.queueItemId ?: return@LaunchedEffect
-        if (queueProjection.visibleRows.none { it.queueItemId == selectedId }) {
+        if (queueProjection.visibleRows.none { it.queueItemId == selectedId } &&
+            playedRows.none { it.queueItemId == selectedId }
+        ) {
             selectedMenuItem = null
         }
     }
@@ -531,7 +683,7 @@ internal fun QueueScreen(
                         )
                         else -> Unit
                     }
-                    if (visibleRows.isEmpty()) {
+                    if (visibleRows.isEmpty() && playedRows.isEmpty()) {
                         QueueStatusMessage(
                             text = "队列为空",
                             tag = "queue-empty",
@@ -540,10 +692,56 @@ internal fun QueueScreen(
                     } else {
                         LazyColumn(
                             state = listState,
-                            modifier = Modifier.fillMaxWidth().weight(1f).testTag("queue-list"),
+                            modifier = Modifier.fillMaxWidth().weight(1f)
+                                .nestedScroll(playedNestedScrollConnection)
+                                .pointerInput(revealStateHolder, freezeRevealAfterPointerState) {
+                                    awaitEachGesture {
+                                        freezeRevealAfterPointerState.value = false
+                                        val down = awaitFirstDown(requireUnconsumed = false)
+                                        playedPointerRegionState.value = when {
+                                            down.position.x < 44.dp.toPx() ->
+                                                PlayedRevealPointerRegion.DRAG_HANDLE
+                                            down.position.x > size.width - 56.dp.toPx() ->
+                                                PlayedRevealPointerRegion.ROW_ACTION
+                                            else -> PlayedRevealPointerRegion.QUEUE_BODY
+                                        }
+                                        try {
+                                            do {
+                                                val event = awaitPointerEvent()
+                                            } while (event.changes.any { it.pressed })
+                                        } finally {
+                                            if (revealStateHolder.value.gestureActive) {
+                                                freezeRevealAfterPointerState.value = true
+                                                revealStateHolder.value = revealStateHolder.value.freeze()
+                                            }
+                                            playedPointerRegionState.value = PlayedRevealPointerRegion.QUEUE_BODY
+                                        }
+                                    }
+                                }
+                                .testTag("queue-list"),
                             contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(0.dp),
                         ) {
+                            if (playedRows.isNotEmpty()) {
+                                item(
+                                    key = "played-history-reveal",
+                                    contentType = "played-history-reveal",
+                                ) {
+                                    PlayedRevealRegion(
+                                        rows = visiblePlayedRows,
+                                        revealedHeightPx = revealState.revealedHeightPx,
+                                        cache = cache,
+                                        resourceIdentity = resourceIdentity,
+                                        actions = actions,
+                                        selectedMenuItem = selectedMenuItem,
+                                        onSelectedMenuItem = { selectedMenuItem = it },
+                                        onNaturalHeightMeasured = { heightPx, rowCount ->
+                                            if (measuredHistoryHeightPx != heightPx) measuredHistoryHeightPx = heightPx
+                                            if (measuredHistoryWindowCount != rowCount) measuredHistoryWindowCount = rowCount
+                                        },
+                                    )
+                                }
+                            }
                             itemsIndexed(
                                 items = renderedRows,
                                 key = { _, item -> item.queueItemId },

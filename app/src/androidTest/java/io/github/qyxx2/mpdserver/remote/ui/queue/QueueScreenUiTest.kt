@@ -53,6 +53,14 @@ class QueueScreenUiTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun playedRowsUseOnlyAnUltraThinWhiteVeil() {
+        val overlay = queuePlayedOverlayColor(isPlayed = true)
+        val transparent = queuePlayedOverlayColor(isPlayed = false)
+        assertEquals("historical veil stays white", Color.White.copy(alpha = 0.045f), overlay)
+        assertEquals("current and pending rows do not get the Played veil", Color.Transparent, transparent)
+    }
+
+    @Test
     fun queueRowColorsKeepTheCurrentHueAndLightnessButSlightlyIncreaseSaturation() {
         val original = Color(0xFFA84F0B)
         val highlighted = queueOccurrenceBackgroundColor(isCurrent = true, primary = original)
@@ -100,7 +108,7 @@ class QueueScreenUiTest {
         try {
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 runCatching {
-                    composeRule.onNodeWithTag("queue-row-title-occ-current")
+                    composeRule.onNodeWithTag("queue-row-title-occ-current", useUnmergedTree = true)
                         .fetchSemanticsNode().config[SemanticsProperties.Text]
                         .any { it.text == "正在读取曲目信息…" }
                 }.getOrDefault(false)
@@ -110,7 +118,7 @@ class QueueScreenUiTest {
             metadataGate.complete(Unit)
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 runCatching {
-                    composeRule.onNodeWithTag("queue-row-title-occ-current")
+                    composeRule.onNodeWithTag("queue-row-title-occ-current", useUnmergedTree = true)
                         .fetchSemanticsNode().config[SemanticsProperties.Text]
                         .any { it.text == "Title song-duplicate" }
                 }.getOrDefault(false)
@@ -124,10 +132,10 @@ class QueueScreenUiTest {
         composeRule.onNodeWithTag("queue-screen").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-occ-current").assertIsDisplayed()
-        composeRule.onNodeWithTag("queue-row-title-occ-current").assertTextEquals("Title song-duplicate")
+        composeRule.onNodeWithTag("queue-row-title-occ-current", useUnmergedTree = true).assertTextEquals("Title song-duplicate")
         composeRule.onNodeWithTag("queue-row-occ-manual-first").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-occ-manual-late").assertIsDisplayed()
-        composeRule.onNodeWithTag("queue-row-current-label-occ-current").assertTextEquals("正在播放")
+        composeRule.onNodeWithTag("queue-row-current-label-occ-current", useUnmergedTree = true).assertTextEquals("正在播放")
         composeRule.onNodeWithTag("queue-row-divider-occ-current").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-divider-occ-manual-first").assertIsDisplayed()
         composeRule.onAllNodesWithTag("queue-row-occ-auto").assertCountEquals(0)
@@ -179,7 +187,7 @@ class QueueScreenUiTest {
 
         composeRule.waitUntil(timeoutMillis = 5_000) { playedReads.get() == 1 }
         composeRule.onNodeWithTag("queue-stale-state").assertIsDisplayed()
-        composeRule.onNodeWithTag("queue-row-current-label-occ-current")
+        composeRule.onNodeWithTag("queue-row-current-label-occ-current", useUnmergedTree = true)
             .assertTextEquals("业务当前 · 实际播放未确认")
         composeRule.onNodeWithTag("queue-row-occ-current").assertIsDisplayed()
         composeRule.onAllNodesWithTag("queue-row-snapshot-played").assertCountEquals(0)

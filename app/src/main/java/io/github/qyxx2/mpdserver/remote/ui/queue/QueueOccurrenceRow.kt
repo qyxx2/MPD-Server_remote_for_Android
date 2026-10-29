@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
@@ -50,6 +51,10 @@ internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color):
     hsl[1] = (hsl[1] * 1.12f).coerceAtMost(0.92f)
     return Color(ColorUtils.HSLToColor(hsl)).copy(alpha = 0.10f)
 }
+
+/** A deliberately subtle white veil distinguishes Played history without creating opaque cards. */
+internal fun queuePlayedOverlayColor(isPlayed: Boolean): Color =
+    if (isPlayed) Color.White.copy(alpha = 0.045f) else Color.Transparent
 
 @Composable
 internal fun QueueOccurrenceRow(
@@ -87,6 +92,16 @@ internal fun QueueOccurrenceRow(
             .fillMaxWidth()
             .defaultMinSize(minHeight = 84.dp)
             .background(background)
+            .then(
+                if (occurrence.position < 0) {
+                    Modifier.drawWithContent {
+                        drawContent()
+                        drawRect(queuePlayedOverlayColor(isPlayed = true))
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .drawBehind {
                 if (isDropTarget) {
                     val stroke = 2.dp.toPx()
