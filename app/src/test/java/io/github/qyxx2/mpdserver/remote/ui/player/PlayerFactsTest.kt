@@ -49,4 +49,31 @@ class PlayerFactsTest {
         assertNull(facts.currentOccurrence)
         assertNull(facts.playbackObservation)
     }
+
+    @Test fun reusesDecodedFactsForTheSameCanonicalSnapshotAcrossFreshnessChanges() {
+        val state = PlayerTestFixtures.state()
+        val original = PlayerFacts.from(state)
+        val stale = PlayerFacts.from(state.copy(freshness = SnapshotFreshness.STALE))
+
+        assertSame("unchanged canonical Queue DTO should be decoded once", original.queue, stale.queue)
+        assertSame("unchanged playback observation should be reused", original.playbackObservation, stale.playbackObservation)
+        assertSame("unchanged current song DTO should be reused", original.currentSong, stale.currentSong)
+        assertEquals(SnapshotFreshness.FRESH, original.snapshotFreshness)
+        assertEquals(SnapshotFreshness.STALE, stale.snapshotFreshness)
+        assertTrue(original.controlsEligible)
+        assertFalse(stale.controlsEligible)
+    }
+
+    @Test fun replacesDecodedFactsWhenCanonicalSnapshotIdentityChanges() {
+        val state = PlayerTestFixtures.state()
+        val original = PlayerFacts.from(state)
+        val replacementSnapshot = io.github.qyxx2.mpdserver.remote.runtime.FullStateSnapshot.from(
+            requireNotNull(state.snapshot).wire,
+        )
+        val replacement = PlayerFacts.from(state.copy(snapshot = replacementSnapshot))
+
+        assertNotSame("a new canonical snapshot must not reuse prior decoded DTOs", original.queue, replacement.queue)
+        assertEquals(original.queue?.revision, replacement.queue?.revision)
+    }
+
 }

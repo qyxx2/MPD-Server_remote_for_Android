@@ -68,8 +68,9 @@ class PlayerClock(
         }
 
     fun update(next: SnapshotStoreState) {
-        val nextPresentation = PlayerPresentation.from(next)
-        val nextObservation = PlayerFacts.from(next).playbackObservation
+        val nextFacts = PlayerFacts.from(next)
+        val nextPresentation = PlayerPresentation.from(nextFacts)
+        val nextObservation = nextFacts.playbackObservation
         val nextIdentity = next.snapshot?.let {
             SampleIdentity(
                 epoch = it.epoch,

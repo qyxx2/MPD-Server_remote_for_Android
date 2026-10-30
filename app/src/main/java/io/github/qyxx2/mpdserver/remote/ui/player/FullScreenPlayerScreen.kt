@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -58,6 +59,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Native presentation of the same app-scoped canonical snapshot as Web. The bounded media handoff
@@ -70,6 +72,7 @@ fun FullScreenPlayerScreen(
     mediaPresentation: PlayerPresentation = presentation,
     mediaHandoffActive: Boolean = false,
     mediaHandoffPositionSeconds: Double? = null,
+    clockUpdatesEnabled: Boolean = true,
     actions: PlayerActions? = null,
     onExit: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -95,22 +98,38 @@ fun FullScreenPlayerScreen(
         PlayerActionsState()
     }
     val playerClock = remember(runtime) { PlayerClock() }
-    var clockPosition by remember(playerClock) { mutableStateOf<Double?>(null) }
+    val clockPosition = remember(playerClock) {
+        kotlinx.coroutines.flow.MutableStateFlow(playerClock.positionSeconds)
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val lifecycleScope = androidx.compose.runtime.rememberCoroutineScope()
+    var lifecycleStarted by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
 
     val clockSnapshot = actions?.currentSnapshot() ?: snapshotState
+    // One typed projection per immutable canonical snapshot. PlayerFacts internally caches the
+    // decoded Queue/song/observation DTOs, and this local reference also avoids rebuilding wrappers
+    // several times while rendering the same player frame.
+    val clockFacts = remember(clockSnapshot) { PlayerFacts.from(clockSnapshot) }
     LaunchedEffect(playerClock, snapshotState, actionState) {
         playerClock.update(clockSnapshot)
-        clockPosition = playerClock.positionSeconds
+        clockPosition.value = playerClock.positionSeconds
     }
-    LaunchedEffect(playerClock) {
+    // The high-frequency clock is deliberately a StateFlow, not Compose state owned by this
+    // screen. Only the progress and lyrics regions collect it, so clock ticks cannot recompose
+    // artwork, song identity, controls, or the rest of FullScreenPlayerScreen.
+    LaunchedEffect(playerClock, clockUpdatesEnabled, lifecycleStarted) {
+        if (!clockUpdatesEnabled || !lifecycleStarted) {
+            clockPosition.value = playerClock.positionSeconds
+            return@LaunchedEffect
+        }
         while (true) {
             delay(100)
-            clockPosition = playerClock.positionSeconds
+            clockPosition.value = playerClock.positionSeconds
         }
     }
-    val clockObservation = PlayerFacts.from(snapshotState).playbackObservation
+    val clockObservation = clockFacts.playbackObservation
     LaunchedEffect(runtime, snapshotState.controlsEligible, clockObservation?.actualState) {
         // Match the Web session: establish a timing baseline on mount/writable recovery when
         // playback is active. The shared coordinator coalesces this with any pending invalidation read.
@@ -123,7 +142,7 @@ fun FullScreenPlayerScreen(
                 // The existing SnapshotStore/StateReadCoordinator retain the authoritative read error.
             }
             playerClock.update(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
-            clockPosition = playerClock.positionSeconds
+            clockPosition.value = playerClock.positionSeconds
         }
     }
     DisposableEffect(lifecycleOwner, playerClock, runtime) {
@@ -132,22 +151,25 @@ fun FullScreenPlayerScreen(
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
                     backgrounded = true
+                    lifecycleStarted = false
                     playerClock.setVisible(false)
-                    clockPosition = playerClock.positionSeconds
+                    clockPosition.value = playerClock.positionSeconds
                 }
                 Lifecycle.Event.ON_START -> if (backgrounded) {
                     backgrounded = false
+                    lifecycleStarted = true
                     playerClock.setVisible(true)
                     lifecycleScope.launch {
                         runtime.refreshSnapshot()
                         playerClock.completeForegroundRead(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
+                        clockPosition.value = playerClock.positionSeconds
                         // If the coalesced request had begun before foregrounding, its timing is
                         // intentionally rejected by PlayerClock. Start one post-foreground read.
                         if (playerClock.isAwaitingForegroundRead) {
                             runtime.refreshSnapshot()
                             playerClock.completeForegroundRead(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
+                            clockPosition.value = playerClock.positionSeconds
                         }
-                        clockPosition = playerClock.positionSeconds
                     }
                 }
                 else -> Unit
@@ -158,9 +180,7 @@ fun FullScreenPlayerScreen(
     }
     // The slider preview is local presentation only. The base position always comes from a fresh,
     // target-bound server observation and is never written into SnapshotStore.
-    val displayedPosition = actionState.displayPositionSeconds ?:
-        if (mediaHandoffActive) mediaHandoffPositionSeconds else clockPosition
-    val observed = PlayerFacts.from(clockSnapshot).playbackObservation
+    val observed = clockFacts.playbackObservation
     val displayedDuration = if (mediaHandoffActive) {
         media.song?.durationSeconds?.takeIf { it.isFinite() && it > 0.0 }
     } else observed?.durationSeconds?.takeIf {
@@ -188,10 +208,7 @@ fun FullScreenPlayerScreen(
         presentation.currentOccurrenceId != null &&
         presentation.currentOccurrenceId == media.currentOccurrenceId &&
         clockSnapshot.controlsEligible
-    val lyricsPositionSeconds = clockPosition.takeIf {
-        lyricsPlaybackConfirmed && it != null && it.isFinite() && it >= 0.0
-    }
-    val lyricsPlaybackObservation = PlayerFacts.from(clockSnapshot).playbackObservation
+    val lyricsPlaybackObservation = clockFacts.playbackObservation
     val lyricsDurationSeconds = lyricsPlaybackObservation?.durationSeconds?.takeIf {
         lyricsPlaybackConfirmed && it.isFinite() && it > 0.0
     }
@@ -255,7 +272,8 @@ fun FullScreenPlayerScreen(
                         LyricsStage(
                             song = media.song,
                             resourceIdentity = lyricsResourceIdentity,
-                            positionSeconds = lyricsPositionSeconds,
+                            positionSeconds = null,
+                            clockPosition = clockPosition.takeIf { lyricsPlaybackConfirmed },
                             durationSeconds = lyricsDurationSeconds,
                             seekEnabled = lyricsPlaybackConfirmed &&
                                 actions?.isEnabled(PlayerAction.SEEK) == true,
@@ -307,7 +325,8 @@ fun FullScreenPlayerScreen(
 
             PlayerProgressControl(
                 presentation = media,
-                positionSeconds = displayedPosition,
+                positionSeconds = mediaHandoffPositionSeconds.takeIf { mediaHandoffActive },
+                clockPosition = clockPosition.takeUnless { mediaHandoffActive },
                 durationSeconds = displayedDuration,
                 actions = actions,
                 modifier = Modifier.padding(horizontal = 24.dp),
@@ -480,6 +499,7 @@ private fun PlayerSongIdentity(
 private fun PlayerProgressControl(
     presentation: PlayerPresentation,
     positionSeconds: Double?,
+    clockPosition: StateFlow<Double?>?,
     durationSeconds: Double?,
     actions: PlayerActions?,
     modifier: Modifier = Modifier,
@@ -490,10 +510,6 @@ private fun PlayerProgressControl(
         remember { mutableStateOf(PlayerActionsState()) }
     }
     val validDuration = durationSeconds?.takeIf { it.isFinite() && it > 0.0 }
-    val validPosition = positionSeconds?.takeIf { it.isFinite() && it >= 0.0 }
-    val progress = if (validDuration != null && validPosition != null) {
-        (validPosition / validDuration).coerceIn(0.0, 1.0).toFloat()
-    } else 0f
     val interactions = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     LaunchedEffect(interactions, actions) {
         interactions.interactions.collect { interaction ->
@@ -503,113 +519,143 @@ private fun PlayerProgressControl(
         }
     }
     val seekEnabled = actions?.isEnabled(PlayerAction.SEEK) == true && validDuration != null
-    Column(modifier = modifier.fillMaxWidth()) {
-        // The visible track is independent of Material3's default slider artwork; the transparent
-        // Slider remains the sole accessible touch/seek surface and uses the shared PlayerActions.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp),
-            contentAlignment = Alignment.Center,
-        ) {
+    val progressFillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.96f)
+
+    PlayerProgressClockRegion(
+        clockPosition = clockPosition,
+        durationSeconds = validDuration,
+        fallbackPositionSeconds = positionSeconds,
+        previewPositionSeconds = actionState.displayPositionSeconds,
+    ) { readoutPositionSeconds, drawProgress ->
+        val validPosition = readoutPositionSeconds?.takeIf { it.isFinite() && it >= 0.0 }
+        // Slider semantics and time labels need second-level precision. The custom fill below
+        // reads drawProgress only in its draw phase, so 100ms samples do not trigger layout or
+        // recomposition of the Slider, labels, or the rest of this progress control.
+        val progress = if (validDuration != null && validPosition != null) {
+            (validPosition / validDuration).coerceIn(0.0, 1.0).toFloat()
+        } else 0f
+
+        Column(modifier = modifier.fillMaxWidth()) {
+            // The transparent Slider remains the sole accessible touch/seek surface and uses
+            // the shared PlayerActions. The visible fill is a draw-only child of the fixed track.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(percent = 50))
-                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f))
-                    .testTag("player-progress-track"),
+                    .heightIn(min = 48.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                if (progress > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f))
+                        .testTag("player-progress-track"),
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(progress)
+                            .fillMaxWidth()
                             .fillMaxHeight()
-                            .clip(RoundedCornerShape(percent = 50))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.96f))
+                            .drawWithContent {
+                                val fraction = drawProgress.value.coerceIn(0f, 1f)
+                                if (fraction > 0f) {
+                                    drawRoundRect(
+                                        color = progressFillColor,
+                                        size = androidx.compose.ui.geometry.Size(
+                                            width = size.width * fraction,
+                                            height = size.height,
+                                        ),
+                                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(
+                                            x = size.height / 2f,
+                                            y = size.height / 2f,
+                                        ),
+                                    )
+                                }
+                            }
                             .testTag("player-progress-fill"),
                     )
                 }
+                Slider(
+                    value = progress,
+                    onValueChange = { fraction ->
+                        if (actions?.state?.value?.seekDraftSeconds == null) actions?.beginSeek()
+                        if (validDuration != null) actions?.previewSeek(fraction * validDuration)
+                    },
+                    onValueChangeFinished = { actions?.finishSeek() },
+                    enabled = seekEnabled,
+                    valueRange = 0f..1f,
+                    interactionSource = interactions,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.Transparent,
+                        activeTrackColor = Color.Transparent,
+                        inactiveTrackColor = Color.Transparent,
+                        activeTickColor = Color.Transparent,
+                        inactiveTickColor = Color.Transparent,
+                        disabledThumbColor = Color.Transparent,
+                        disabledActiveTrackColor = Color.Transparent,
+                        disabledInactiveTrackColor = Color.Transparent,
+                        disabledActiveTickColor = Color.Transparent,
+                        disabledInactiveTickColor = Color.Transparent,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("player-progress-slider")
+                        .semantics {
+                            contentDescription = "播放进度"
+                        },
+                )
             }
-            Slider(
-                value = progress,
-                onValueChange = { fraction ->
-                    if (actions?.state?.value?.seekDraftSeconds == null) actions?.beginSeek()
-                    if (validDuration != null) actions?.previewSeek(fraction * validDuration)
-                },
-                onValueChangeFinished = { actions?.finishSeek() },
-                enabled = seekEnabled,
-                valueRange = 0f..1f,
-                interactionSource = interactions,
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.Transparent,
-                    activeTrackColor = Color.Transparent,
-                    inactiveTrackColor = Color.Transparent,
-                    activeTickColor = Color.Transparent,
-                    inactiveTickColor = Color.Transparent,
-                    disabledThumbColor = Color.Transparent,
-                    disabledActiveTrackColor = Color.Transparent,
-                    disabledInactiveTrackColor = Color.Transparent,
-                    disabledActiveTickColor = Color.Transparent,
-                    disabledInactiveTickColor = Color.Transparent,
-                ),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("player-progress-slider")
-                    .semantics {
-                        contentDescription = "播放进度"
-                    },
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 2.dp)
-                .testTag("player-progress-readout"),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+                    .padding(top = 2.dp)
+                    .testTag("player-progress-readout"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatPlayerTime(validPosition),
+                    modifier = Modifier.testTag("player-elapsed-time"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SourceFormatLabel(
+                    presentation = presentation,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = formatPlayerRemainingTime(validPosition, validDuration),
+                    modifier = Modifier.testTag("player-remaining-time"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            val status = when {
+                actionState.unknown -> "操作结果未知 · 可从应用状态环查看并重试原操作"
+                actionState.failed -> actionState.message?.let { "操作失败 · $it" } ?: "操作失败"
+                actionState.readFailed -> "操作已确认 · 状态同步失败"
+                actionState.syncing -> "操作已确认 · 等待新的播放观察"
+                actionState.pending -> actionState.action?.let(::playerActionPendingText) ?: "操作进行中"
+                else -> ""
+            }
             Text(
-                text = formatPlayerTime(validPosition),
-                modifier = Modifier.testTag("player-elapsed-time"),
+                text = status,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 0.dp)
+                    .testTag("player-action-status"),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            SourceFormatLabel(
-                presentation = presentation,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = formatPlayerRemainingTime(validPosition, validDuration),
-                modifier = Modifier.testTag("player-remaining-time"),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (actionState.unknown || actionState.failed || actionState.readFailed) {
+                    MaterialTheme.colorScheme.error
+                } else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        val status = when {
-            actionState.unknown -> "操作结果未知 · 可从应用状态环查看并重试原操作"
-            actionState.failed -> actionState.message?.let { "操作失败 · $it" } ?: "操作失败"
-            actionState.readFailed -> "操作已确认 · 状态同步失败"
-            actionState.syncing -> "操作已确认 · 等待新的播放观察"
-            actionState.pending -> actionState.action?.let(::playerActionPendingText) ?: "操作进行中"
-            else -> ""
-        }
-        Text(
-            text = status,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 0.dp)
-                .testTag("player-action-status"),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (actionState.unknown || actionState.failed || actionState.readFailed) {
-                MaterialTheme.colorScheme.error
-            } else MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
+
 private fun formatPlayerTime(seconds: Double?): String {
     if (seconds == null || !seconds.isFinite() || seconds < 0.0) return "--:--"
     val whole = seconds.toLong()

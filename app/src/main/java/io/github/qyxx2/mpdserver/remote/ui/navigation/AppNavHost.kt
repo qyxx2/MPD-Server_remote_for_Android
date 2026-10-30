@@ -537,6 +537,7 @@ fun AppNavHost(
                                     mediaPresentation = mediaProjection.mediaPresentation,
                                     mediaHandoffActive = mediaProjection.isHandoff,
                                     mediaHandoffPositionSeconds = mediaProjection.positionSeconds,
+                                    clockUpdatesEnabled = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route,
                                     actions = playerActions,
                                     artworkCacheKey = artworkCacheKey,
                                     artworkCache = artworkCache,

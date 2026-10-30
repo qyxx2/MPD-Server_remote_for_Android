@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,11 +52,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsDisplayStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsFollowReducer
+import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsClockPresentation
+import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.lyricsClockPresentationFlow
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.activeCueIndexes
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.presentLyrics
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.seekTargetSeconds
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -68,6 +73,7 @@ fun LyricsStage(
     song: PlayerSongPresentation?,
     resourceIdentity: String,
     positionSeconds: Double?,
+    clockPosition: StateFlow<Double?>? = null,
     durationSeconds: Double?,
     seekEnabled: Boolean,
     onSeek: (Double) -> Unit,
@@ -77,11 +83,27 @@ fun LyricsStage(
     val presentation = remember(song) { presentLyrics(song) }
     val document = presentation.document
     val timed = document.formatSupported && document.synchronized
+    val lyricsClockFlow = remember(document, clockPosition, positionSeconds) {
+        lyricsClockPresentationFlow(
+            document = document,
+            positions = clockPosition ?: flowOf(positionSeconds),
+        )
+    }
+    val initialLyricsClock = remember(document, positionSeconds) {
+        LyricsClockPresentation(
+            activeCueIndexes = activeCueIndexes(document, positionSeconds),
+            positionKnown = positionSeconds?.isFinite() == true && positionSeconds >= 0.0,
+        )
+    }
+    // The StateFlow ticks every 100ms, but this derived flow emits only at lyric cue boundaries.
+    // That keeps LazyColumn, selection, text measurement and follow-scroll logic out of the
+    // high-frequency playback path.
+    val lyricsClock by lyricsClockFlow.collectAsStateWithLifecycle(initialLyricsClock)
     var followState by remember(resourceIdentity) { mutableStateOf(LyricsFollowReducer.initialState()) }
     var selectionEndedAtMillis by remember(resourceIdentity) { mutableStateOf<Long?>(null) }
     val listState = rememberLazyListState()
     var programmaticScroll by remember(resourceIdentity) { mutableStateOf(false) }
-    val activeIndexes = activeCueIndexes(document, positionSeconds)
+    val activeIndexes = lyricsClock.activeCueIndexes
     val activeIndex = activeIndexes.firstOrNull()
     val accent = MaterialTheme.colorScheme.primary
 
@@ -173,7 +195,7 @@ fun LyricsStage(
             StatusLine(
                 presentation = presentation,
                 timed = timed,
-                positionKnown = positionSeconds != null,
+                positionKnown = lyricsClock.positionKnown,
             )
 
             if (timed) {
@@ -226,7 +248,7 @@ fun LyricsStage(
                                 items = document.cues,
                                 key = { index, cue -> index.toString() + ":" + cue.seconds + ":" + cue.text },
                             ) { index, cue ->
-                                val current = index in activeIndexes && positionSeconds != null
+                                val current = index in activeIndexes && lyricsClock.positionKnown
                                 val target = cue.seekTargetSeconds(
                                     offsetMs = document.offsetMs,
                                     durationSeconds = durationSeconds,
