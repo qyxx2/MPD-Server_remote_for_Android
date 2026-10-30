@@ -339,7 +339,7 @@ fun AppNavHost(
         }
     }
 
-    fun updateMiniPlayerExpansion(distancePx: Float) {
+    fun updateMiniPlayerExpansion(distancePx: Float, upwardVelocityDpPerSecond: Float) {
         if (!distancePx.isFinite()) return
         val activeRoute = navController.currentDestination?.route ?: currentRoute
         if (!isMiniPlayerExpansionPreview) {
@@ -354,20 +354,25 @@ fun AppNavHost(
             upwardDistancePx = distancePx,
             miniPlayerTopPx = miniPlayerTopPx,
         )
-        if (MiniPlayerExpansionPolicy.shouldExpand(
-                upwardDistancePx = distancePx,
-                windowHeightPx = appWindowHeightPx,
-            )
-        ) {
+        val shouldExpandFromGesture = MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = distancePx,
+            windowHeightPx = appWindowHeightPx,
+            upwardVelocityDpPerSecond = upwardVelocityDpPerSecond,
+        )
+        if (shouldExpandFromGesture) {
             navigateToExpandedPlayer()
         }
     }
 
-    fun finishMiniPlayerExpansionGesture(distancePx: Float) {
+    fun finishMiniPlayerExpansionGesture(
+        distancePx: Float,
+        upwardVelocityDpPerSecond: Float,
+    ) {
         if (!isMiniPlayerExpansionPreview) return
         val expand = MiniPlayerExpansionPolicy.shouldExpand(
             upwardDistancePx = distancePx,
             windowHeightPx = appWindowHeightPx,
+            upwardVelocityDpPerSecond = upwardVelocityDpPerSecond,
         )
         if (expand) {
             navigateToExpandedPlayer()
@@ -388,7 +393,10 @@ fun AppNavHost(
     }
 
     fun cancelMiniPlayerExpansionGesture() {
-        finishMiniPlayerExpansionGesture(distancePx = 0f)
+        finishMiniPlayerExpansionGesture(
+            distancePx = 0f,
+            upwardVelocityDpPerSecond = 0f,
+        )
     }
 
     fun updatePlayerDismissDrag(deltaPx: Float) {

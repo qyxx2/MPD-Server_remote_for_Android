@@ -23,8 +23,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -40,13 +43,14 @@ fun MiniPlayer(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     onBoundsChanged: (topPx: Float, heightPx: Float) -> Unit = { _, _ -> },
-    onExpandDragDistanceChanged: (distancePx: Float) -> Unit = {},
-    onExpandDragEnd: (distancePx: Float) -> Unit = {},
+    onExpandDragDistanceChanged: (distancePx: Float, upwardVelocityDpPerSecond: Float) -> Unit = { _, _ -> },
+    onExpandDragEnd: (distancePx: Float, upwardVelocityDpPerSecond: Float) -> Unit = { _, _ -> },
     onExpandDragCancel: () -> Unit = {},
 ) {
     val currentOnOpen = rememberUpdatedState(onOpen)
     val currentOnDragDistanceChanged = rememberUpdatedState(onExpandDragDistanceChanged)
     val currentOnDragEnd = rememberUpdatedState(onExpandDragEnd)
+    val density = LocalDensity.current.density
     val currentOnDragCancel = rememberUpdatedState(onExpandDragCancel)
 
     Column(
@@ -70,13 +74,16 @@ fun MiniPlayer(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .pointerInput(Unit) {
+                    .pointerInput(density) {
                         awaitEachGesture {
                             val down = awaitFirstDown(
                                 requireUnconsumed = false,
                                 pass = PointerEventPass.Initial,
                             )
                             val touchSlop = viewConfiguration.touchSlop
+                            val velocityTracker = VelocityTracker().apply {
+                                addPointerInputChange(down)
+                            }
                             var lastPosition = down.position
                             var totalX = 0f
                             var totalY = 0f
@@ -88,6 +95,9 @@ fun MiniPlayer(
                                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                     val delta = change.position - lastPosition
                                     lastPosition = change.position
+                                    velocityTracker.addPointerInputChange(change)
+                                    val upwardVelocityDpPerSecond =
+                                        (-velocityTracker.calculateVelocity().y / density).coerceAtLeast(0f)
                                     totalX += delta.x
                                     totalY += delta.y
 
@@ -98,14 +108,20 @@ fun MiniPlayer(
                                         dragging = true
                                     }
                                     if (dragging) {
-                                        currentOnDragDistanceChanged.value((-totalY).coerceAtLeast(0f))
+                                        currentOnDragDistanceChanged.value(
+                                            (-totalY).coerceAtLeast(0f),
+                                            upwardVelocityDpPerSecond,
+                                        )
                                         change.consume()
                                     }
 
                                     if (!change.pressed) {
                                         finished = true
                                         if (dragging) {
-                                            currentOnDragEnd.value((-totalY).coerceAtLeast(0f))
+                                            currentOnDragEnd.value(
+                                                (-totalY).coerceAtLeast(0f),
+                                                upwardVelocityDpPerSecond,
+                                            )
                                         } else if (
                                             totalX * totalX + totalY * totalY < touchSlop * touchSlop
                                         ) {

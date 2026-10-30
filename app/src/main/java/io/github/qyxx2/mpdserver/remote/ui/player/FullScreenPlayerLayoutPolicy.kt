@@ -41,11 +41,21 @@ internal object MiniPlayerExpansionPolicy {
         return height * 0.5f
     }
 
-    fun shouldExpand(upwardDistancePx: Float, windowHeightPx: Float): Boolean {
-        return upwardDistancePx.isFinite() &&
+    /** A quick upward flick may enter the Player before the distance threshold is reached. */
+    const val UPWARD_FLING_THRESHOLD_DP_PER_SECOND = 1000f
+
+    fun shouldExpand(
+        upwardDistancePx: Float,
+        windowHeightPx: Float,
+        upwardVelocityDpPerSecond: Float = 0f,
+    ): Boolean {
+        val distanceThresholdReached = upwardDistancePx.isFinite() &&
             windowHeightPx.isFinite() &&
             windowHeightPx > 0f &&
             upwardDistancePx >= thresholdPx(windowHeightPx)
+        val velocityThresholdReached = upwardVelocityDpPerSecond.isFinite() &&
+            upwardVelocityDpPerSecond >= UPWARD_FLING_THRESHOLD_DP_PER_SECOND
+        return distanceThresholdReached || velocityThresholdReached
     }
 }
 

@@ -56,3 +56,4 @@
 ## Task 4 follow-up interaction improvements
 
 - [Downward-dismiss navigation reveal and opacity correction](plans/2026-10-30-downward-dismiss-navigation-opacity.md) and [verification report](reports/2026-10-30-downward-dismiss-navigation-opacity-verification.md): preserve the 50% mini-player entry threshold, keep the accepted reverse navigation-bar motion, and avoid Material 3 disabled-state dimming during dismissal.
+- [Mini-player velocity-triggered expansion](plans/2026-10-30-mini-player-velocity-expansion.md), [design](specs/2026-10-30-mini-player-velocity-expansion-design.md), and [verification report](reports/2026-10-30-mini-player-velocity-expansion-verification.md): keep the 50% slow-drag threshold and allow an upward flick at 1000 dp/s to enter the full-screen Player during the drag.

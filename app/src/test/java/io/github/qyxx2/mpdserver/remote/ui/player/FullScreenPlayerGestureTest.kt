@@ -21,6 +21,49 @@ class FullScreenPlayerGestureTest {
     }
 
     @Test
+    fun miniPlayerExpansionAcceptsFastUpwardVelocityWithoutHalfWindowDistance() {
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 250f,
+            windowHeightPx = 1000f,
+            upwardVelocityDpPerSecond = 999f,
+        ))
+        assertTrue(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 250f,
+            windowHeightPx = 1000f,
+            upwardVelocityDpPerSecond = 1000f,
+        ))
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 250f,
+            windowHeightPx = 1000f,
+            upwardVelocityDpPerSecond = -1500f,
+        ))
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 250f,
+            windowHeightPx = 1000f,
+            upwardVelocityDpPerSecond = Float.NaN,
+        ))
+        assertTrue(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 250f,
+            windowHeightPx = 0f,
+            upwardVelocityDpPerSecond = 1200f,
+        ))
+    }
+
+    @Test
+    fun miniPlayerExpansionStillUsesDistanceForSlowPulls() {
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 300f,
+            windowHeightPx = 1000f,
+            upwardVelocityDpPerSecond = 400f,
+        ))
+        assertTrue(MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = 500f,
+            windowHeightPx = 1000f,
+            upwardVelocityDpPerSecond = 400f,
+        ))
+    }
+
+    @Test
     fun playerDismissProgressDrivesBackdropBlurAndTopCornerRadius() {
         assertEquals(0f, FullScreenPlayerDismissPolicy.dragProgress(0f, 1000f), 0.001f)
         assertEquals(0.5f, FullScreenPlayerDismissPolicy.dragProgress(500f, 1000f), 0.001f)

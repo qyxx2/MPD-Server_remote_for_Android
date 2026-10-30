@@ -255,7 +255,7 @@ class FullScreenPlayerNavigationUiTest {
 
         composeRule.onNodeWithTag("mini-player-body").performTouchInput {
             down(center)
-            moveTo(Offset(center.x, center.y - dragDistancePx), 180L)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 800L)
         }
         composeRule.waitForIdle()
 
@@ -284,6 +284,31 @@ class FullScreenPlayerNavigationUiTest {
         val navAfter = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
         assertEquals("early release restores navigation to its original position", navBefore.top, navAfter.top, 2f)
         composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
+    }
+
+    @Test
+    fun fastUpwardFlickEntersFullScreenBeforeHalfWindowDistanceWhileFingerIsHeld() {
+        launchNavigation()
+        val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
+        val dragDistancePx = windowHeightPx * 0.28f
+
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y - dragDistancePx * 0.45f), 40L)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 40L)
+        }
+
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route
+        }
+        assertTrue(
+            "the fast-flick path must trigger before the 50% distance and before finger release",
+            dragDistancePx < windowHeightPx * 0.5f,
+        )
+        composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
+
+        composeRule.waitForIdle()
     }
 
     @Test
@@ -392,7 +417,7 @@ class FullScreenPlayerNavigationUiTest {
 
         composeRule.onNodeWithTag("mini-player-body").performTouchInput {
             down(center)
-            moveTo(Offset(center.x, center.y - dragDistancePx), 220L)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 900L)
             up()
         }
         composeRule.waitUntil(timeoutMillis = 20_000) {
