@@ -47,19 +47,25 @@ fun RootNavigationBar(
     ) {
         AppDestination.rootDestinations.forEach { destination ->
             val selected = currentRoute == destination.route
+            val selectedContentColor = MaterialTheme.colorScheme.primary
+            val unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             NavigationBarItem(
                 modifier = Modifier.testTag("root-nav-${destination.route}"),
                 selected = selected,
                 enabled = interactionEnabled,
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    selectedIconColor = selectedContentColor,
+                    selectedTextColor = selectedContentColor,
+                    unselectedIconColor = unselectedContentColor,
+                    unselectedTextColor = unselectedContentColor,
+                    // Material 3's default disabled colors use 38% alpha. Transition copies
+                    // must stay non-interactive without dimming the navigation content.
+                    disabledIconColor = if (selected) selectedContentColor else unselectedContentColor,
+                    disabledTextColor = if (selected) selectedContentColor else unselectedContentColor,
                     indicatorColor = Color.Transparent,
                 ),
                 onClick = {
-                    if (currentRoute != destination.route) {
+                    if (interactionEnabled && currentRoute != destination.route) {
                         navController.navigate(destination.route) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true

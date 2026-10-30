@@ -232,6 +232,7 @@ fun AppNavHost(
     var isMiniPlayerExpansionPreview by remember { mutableStateOf(false) }
     var enterPlayerFromMini by remember { mutableStateOf(false) }
     var isExitingFullScreen by remember { mutableStateOf(false) }
+    var isPlayerDismissTransitionActive by remember { mutableStateOf(false) }
     val dismissDistancePx = with(LocalDensity.current) { 120.dp.toPx() }
     val fallbackNavigationHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
@@ -390,6 +391,12 @@ fun AppNavHost(
         finishMiniPlayerExpansionGesture(distancePx = 0f)
     }
 
+    fun updatePlayerDismissDrag(deltaPx: Float) {
+        if (!deltaPx.isFinite()) return
+        playerDragOffsetPx = (playerDragOffsetPx + deltaPx).coerceIn(0f, playerLayerHeightPx)
+        isPlayerDismissTransitionActive = playerDragOffsetPx > 0f
+    }
+
     fun openFullScreenPlayer() {
         val activeRoute = navController.currentDestination?.route ?: currentRoute
         if (activeRoute == AppDestination.FULL_SCREEN_PLAYER.route) return
@@ -417,6 +424,7 @@ fun AppNavHost(
                 ),
             ) { value, _ -> playerDragOffsetPx = value }
             playerDragOffsetPx = 0f
+            isPlayerDismissTransitionActive = false
         }
     }
 
@@ -427,6 +435,7 @@ fun AppNavHost(
                 screenHeightPx = playerLayerHeightPx,
                 minimumDistancePx = dismissDistancePx,
             ) && totalVerticalDistancePx > 0f
+            isPlayerDismissTransitionActive = playerDragOffsetPx > 0f
             animate(
                 initialValue = playerDragOffsetPx,
                 targetValue = if (dismiss) playerLayerHeightPx else 0f,
@@ -443,8 +452,10 @@ fun AppNavHost(
                 if (!navController.popBackStack(rootBeforeFullScreen, inclusive = false)) {
                     navController.popBackStack()
                 }
+                isPlayerDismissTransitionActive = false
             } else {
                 playerDragOffsetPx = 0f
+                isPlayerDismissTransitionActive = false
             }
         }
     }
@@ -559,7 +570,8 @@ fun AppNavHost(
                     windowGeometry = windowGeometry,
                     onApplyServerOrigin = applyServerOrigin,
                     blurRadiusDp = backdropBlurDp,
-                    hideNavigationBar = enterPlayerFromMini && entryProgress < 0.999f,
+                    hideNavigationBar = (enterPlayerFromMini && entryProgress < 0.999f) ||
+                        isPlayerDismissTransitionActive,
                     modifier = Modifier.fillMaxSize(),
                 )
                 Box(
@@ -625,10 +637,7 @@ fun AppNavHost(
                                     },
                                     onArtistClick = ::requestArtistNavigation,
                                     onEntityNavigationRequest = onPlayerEntityNavigationRequest,
-                                    onDismissDragDelta = { delta ->
-                                        playerDragOffsetPx =
-                                            (playerDragOffsetPx + delta).coerceIn(0f, playerLayerHeightPx)
-                                    },
+                                    onDismissDragDelta = ::updatePlayerDismissDrag,
                                     onDismissGestureEnd = ::finishPlayerDismissGesture,
                                     onDismissGestureCancel = ::animatePlayerDragBack,
                                     contentPadding = playerEntryContentPadding,
@@ -652,10 +661,7 @@ fun AppNavHost(
                                     artworkCache = artworkCache,
                                     songCache = queueSongCache,
                                     contentPadding = safeContentPadding,
-                                    onDismissDragDelta = { delta ->
-                                        playerDragOffsetPx =
-                                            (playerDragOffsetPx + delta).coerceIn(0f, playerLayerHeightPx)
-                                    },
+                                    onDismissDragDelta = ::updatePlayerDismissDrag,
                                     onDismissGestureEnd = ::finishPlayerDismissGesture,
                                     onDismissGestureCancel = ::animatePlayerDragBack,
                                 )
@@ -663,6 +669,21 @@ fun AppNavHost(
                         }
                     }
                 }
+            }
+            if (isPlayerDismissTransitionActive) {
+                PullUpRootNavigationOverlay(
+                    currentRoute = rootBeforeFullScreen,
+                    navController = navController,
+                    revealProgress = 1f - FullScreenPlayerDismissPolicy.dragProgress(
+                        offsetPx = playerDragOffsetPx,
+                        screenHeightPx = playerLayerHeightPx,
+                    ),
+                    navigationHeightPx = rootNavigationBarHeightPx.takeIf { it > 0f }
+                        ?: fallbackNavigationHeightPx,
+                    safeStartPx = safeInsets.left,
+                    safeEndPx = safeInsets.right,
+                    safeBottomPx = safeInsets.bottom,
+                )
             }
             if (enterPlayerFromMini && entryProgress < 0.999f) {
                 PullUpRootNavigationOverlay(

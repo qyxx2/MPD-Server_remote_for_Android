@@ -3,8 +3,10 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -282,6 +284,103 @@ class FullScreenPlayerNavigationUiTest {
         val navAfter = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
         assertEquals("early release restores navigation to its original position", navBefore.top, navAfter.top, 2f)
         composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
+    }
+
+    @Test
+    fun downwardDismissNavigationBarUsesNormalEnabledColors() {
+        launchNavigation()
+        val normalPixels = composeRule.onNodeWithTag("root-nav-home")
+            .captureToImage().toPixelMap()
+        openPlayerAndWaitForArtwork()
+
+        val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
+        val gesture = composeRule.onNodeWithTag("full-screen-exit-gesture-band")
+        gesture.performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + windowHeightPx * 0.99f), 320L)
+        }
+        composeRule.waitForIdle()
+
+        val transitionPixels = composeRule.onNodeWithTag("root-nav-home")
+            .captureToImage().toPixelMap()
+        assertEquals(normalPixels.width, transitionPixels.width)
+        assertEquals(normalPixels.height, transitionPixels.height)
+        var differingPixels = 0
+        for (x in 0 until normalPixels.width) {
+            for (y in 0 until normalPixels.height) {
+                if (normalPixels[x, y] != transitionPixels[x, y]) differingPixels++
+            }
+        }
+        assertEquals(
+            "the moving navigation item must keep the same icon/text colors as its enabled root copy",
+            0,
+            differingPixels,
+        )
+        gesture.performTouchInput { up() }
+    }
+
+    @Test
+    fun downwardDismissRevealsNavigationBarFromBottomInSyncWithPlayer() {
+        launchNavigation()
+        val navigationBefore = composeRule.onNodeWithTag("root-navigation-bar")
+            .fetchSemanticsNode().boundsInRoot
+        openPlayerAndWaitForArtwork()
+        val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
+        val gesture = composeRule.onNodeWithTag("full-screen-exit-gesture-band")
+
+        // A short dismissal must pull the navigation bar up with the player, then return it
+        // below the window along with the player's spring-back.
+        gesture.performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + windowHeightPx * 0.10f), 240L)
+        }
+        composeRule.waitForIdle()
+        val navigationDuringCancelledDrag = composeRule.onNodeWithTag("root-navigation-bar")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "the navigation bar must move up from below the window during a short downward drag",
+            navigationDuringCancelledDrag.top > navigationBefore.top,
+        )
+        gesture.performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                composeRule.onAllNodesWithTag("root-navigation-bar")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isEmpty()
+        }
+
+        gesture.performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + windowHeightPx * 0.12f), 240L)
+        }
+        composeRule.waitForIdle()
+        val navigationAtFirstDrag = composeRule.onNodeWithTag("root-navigation-bar")
+            .fetchSemanticsNode().boundsInRoot
+
+        gesture.performTouchInput {
+            moveTo(Offset(center.x, center.y + windowHeightPx * 0.30f), 390L)
+        }
+        composeRule.waitForIdle()
+        val navigationAtSecondDrag = composeRule.onNodeWithTag("root-navigation-bar")
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue(
+            "the navigation bar must begin below its resting position as the player moves down: before=$navigationBefore first=$navigationAtFirstDrag",
+            navigationAtFirstDrag.top > navigationBefore.top,
+        )
+        assertTrue(
+            "the navigation bar must rise as the player continues down: first=$navigationAtFirstDrag second=$navigationAtSecondDrag",
+            navigationAtSecondDrag.top < navigationAtFirstDrag.top,
+        )
+
+        gesture.performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.HOME.route &&
+                composeRule.onAllNodesWithTag("root-navigation-bar")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        val navigationAfter = composeRule.onNodeWithTag("root-navigation-bar")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("the completed transition must end at the root navigation resting position", navigationBefore.top, navigationAfter.top, 2f)
     }
 
     @Test
