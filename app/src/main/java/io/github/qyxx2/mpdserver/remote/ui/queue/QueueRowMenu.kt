@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
+import io.github.qyxx2.mpdserver.remote.ui.components.queueRowMenuSurfaceColor
 
 internal enum class QueueToolDialog { CLEAR, SAVE_PLAYLIST }
 
@@ -55,7 +56,7 @@ internal fun QueueRowMenu(
             .widthIn(min = 216.dp, max = 264.dp)
             .testTag("queue-row-menu-dialog"),
         shape = RoundedCornerShape(22.dp),
-        containerColor = dialogSurfaceColor(),
+        containerColor = queueRowMenuSurfaceColor(),
         tonalElevation = 0.dp,
         shadowElevation = 10.dp,
         properties = PopupProperties(
@@ -67,20 +68,20 @@ internal fun QueueRowMenu(
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("queue-row-menu-panel"),
             shape = RoundedCornerShape(22.dp),
-            color = dialogSurfaceColor(),
+            color = queueRowMenuSurfaceColor(),
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 0.dp,
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 Text(
                     text = title.ifBlank { item.songId },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                        .padding(horizontal = 2.dp, vertical = 3.dp)
                         .testTag("queue-menu-title"),
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontSize = 18.sp,
@@ -93,36 +94,36 @@ internal fun QueueRowMenu(
                 if (QueueMenuAction.PLAY_NEXT in presentation.actions) {
                     TextButton(
                         onClick = onMoveNext,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("queue-menu-next"),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("queue-menu-next"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
                     ) {
-                        Text("移为下一首", modifier = Modifier.testTag("queue-menu-next-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp))
+                        Text("移为下一首", modifier = Modifier.testTag("queue-menu-next-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp))
                     }
                 }
                 if (QueueMenuAction.ADD_TO_END in presentation.actions) {
                     TextButton(
                         onClick = onMoveToEnd,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("queue-menu-add"),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("queue-menu-add"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
                     ) {
-                        Text("移到队尾", modifier = Modifier.testTag("queue-menu-add-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp))
+                        Text("移到队尾", modifier = Modifier.testTag("queue-menu-add-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp))
                     }
                 }
                 if (QueueMenuAction.REMOVE in presentation.actions) {
                     TextButton(
                         onClick = onRemove,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("queue-menu-remove"),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("queue-menu-remove"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
                     ) {
-                        Text("删除此条目", modifier = Modifier.testTag("queue-menu-remove-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp))
+                        Text("删除此条目", modifier = Modifier.testTag("queue-menu-remove-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp))
                     }
                 }
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag("queue-menu-cancel"),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("queue-menu-cancel"),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
                 ) {
-                    Text("取消", modifier = Modifier.testTag("queue-menu-cancel-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp))
+                    Text("取消", modifier = Modifier.testTag("queue-menu-cancel-label"), style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp))
                 }
             }
         }

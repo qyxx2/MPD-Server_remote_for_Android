@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -12,6 +13,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
@@ -245,6 +248,63 @@ class LyricsStageUiTest {
             .fetchSemanticsNode().boundsInRoot.height / density
         assertTrue("inactive lyric type should be large (at least 50dp row height)", shortCueHeightDp >= 50f)
         assertTrue("a long lyric row must stay at two lines or fewer", longCueHeightDp <= 100f)
+    }
+
+    @Test
+    fun lyricsUseTheFullPlayerMediaWidth() {
+        val presentation = playerPresentation(
+            song("[00:01]沉浸式歌词内容", "lrc"),
+        )
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                FullScreenPlayerScreen(
+                    runtime = (composeRule.activity.application as MpdServerRemoteApplication).runtime,
+                    presentation = presentation,
+                    mediaPresentation = presentation,
+                    onExit = {},
+                    onOpenQueue = {},
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("player-artwork-stage").performClick()
+        composeRule.waitForIdle()
+
+        val mediaBounds = composeRule.onNodeWithTag("full-screen-player-media-region")
+            .fetchSemanticsNode().boundsInRoot
+        val lyricsBounds = composeRule.onNodeWithTag("lyrics-stage")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(
+            "lyrics should occupy the complete media region rather than inherit the artwork side gutters",
+            mediaBounds.width,
+            lyricsBounds.width,
+            1.5f,
+        )
+    }
+
+    @Test
+    fun longLyricCueRetainsItsCompleteTextWithinTheTwoLinePresentation() {
+        val longCue = "这是不能被截断的歌词内容".repeat(30)
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song("[00:01]$longCue", "lrc"),
+                    resourceIdentity = "long-complete-lyric-cue",
+                    positionSeconds = 1.5,
+                    durationSeconds = 120.0,
+                    seekEnabled = true,
+                    onSeek = {},
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val cueNode = composeRule.onNodeWithTag("lyrics-cue-active").fetchSemanticsNode()
+        val description = cueNode.config.getOrNull(SemanticsProperties.ContentDescription)
+            .orEmpty().joinToString(" ")
+        assertTrue("the full cue remains accessible while its second visual line scrolls", description.contains(longCue))
     }
 
     @Test

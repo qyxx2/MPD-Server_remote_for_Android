@@ -17,3 +17,10 @@ internal fun dialogSurfaceColor(): Color {
     }
     return lerp(surface, lavenderTarget, 0.18f)
 }
+
+
+/** Queue row actions use a subtle blend of the active theme accent and the base surface. */
+internal fun queueMenuAccentSurfaceColor(surface: Color, accent: Color): Color =
+    lerp(surface, accent, 0.22f)
+
+internal fun queueRowMenuSurfaceColor(): Color = Color(0xFFF0DECA)

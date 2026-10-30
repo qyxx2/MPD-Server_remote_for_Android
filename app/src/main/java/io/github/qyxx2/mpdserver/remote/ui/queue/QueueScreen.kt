@@ -124,6 +124,9 @@ internal fun QueueScreen(
     songCache: QueueSongCache? = null,
     snapshotProvider: () -> SnapshotStoreState = { runtime.snapshots.state.value },
     queueActionsFactory: (() -> QueueActions)? = null,
+    onDismissDragDelta: (Float) -> Unit = {},
+    onDismissGestureEnd: ((Float) -> Unit)? = null,
+    onDismissGestureCancel: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
@@ -587,6 +590,9 @@ internal fun QueueScreen(
             FullScreenExitGestureBand(
                 onExit = onExit,
                 modifier = Modifier.testTag("full-screen-exit-gesture-band"),
+                onDragDelta = onDismissDragDelta,
+                onGestureEnd = onDismissGestureEnd,
+                onGestureCancel = onDismissGestureCancel,
             ) {
                 Row(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),

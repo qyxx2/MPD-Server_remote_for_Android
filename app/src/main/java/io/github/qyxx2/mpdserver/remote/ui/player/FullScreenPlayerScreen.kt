@@ -248,7 +248,7 @@ fun FullScreenPlayerScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp),
+                        .padding(horizontal = if (showLyrics) 0.dp else 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (showLyrics) {

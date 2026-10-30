@@ -87,6 +87,16 @@ class QueueActionsUiTest {
         assertTrue("menu should be noticeably narrower than the available screen", panel.width < screenWidth * 0.80f)
         assertTrue("title should be centered in the menu", kotlin.math.abs(panel.center.x - title.center.x) < 2f)
         assertTrue("every option should be centered in the menu", optionCenters.all { kotlin.math.abs(panel.center.x - it) < 2f })
+        val density = composeRule.density.density
+        listOf("queue-menu-next", "queue-menu-add", "queue-menu-remove", "queue-menu-cancel").forEach { tag ->
+            val heightDp = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height / density
+            assertTrue("menu options should keep a comfortable but compact 48dp target", heightDp >= 48f)
+        }
+        val labelHeightDp = composeRule.onNodeWithTag(
+            "queue-menu-next-label",
+            useUnmergedTree = true,
+        ).fetchSemanticsNode().boundsInRoot.height / density
+        assertTrue("menu action text should fill more of the touch area", labelHeightDp >= 20f)
     }
 
     @Test

@@ -14,6 +14,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -132,6 +134,29 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
+    fun horizontalSwipesSwitchBetweenPlayerAndQueueRoutes() {
+        launchNavigation()
+        openPlayerAndWaitForArtwork()
+        composeRule.onNodeWithTag("full-screen-player-motion-layer").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("full-screen-player-motion-layer").performTouchInput {
+            swipeLeft()
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.QUEUE.route
+        }
+        composeRule.onNodeWithTag("queue-screen").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("full-screen-player-motion-layer").performTouchInput {
+            swipeRight()
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route
+        }
+        composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+    }
+
+    @Test
     fun downwardSwipeStartingOnArtworkDismissesPlayerToPreviousRoot() {
         launchNavigation()
         openPlayerAndWaitForArtwork()
@@ -193,6 +218,28 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
+    fun shortDownwardSwipeOnQueueTopBandReturnsWithoutLeavingQueue() {
+        launchNavigation()
+        openPlayerAndWaitForArtwork()
+        composeRule.onNodeWithTag("player-bottom-queue").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.QUEUE.route
+        }
+
+        val shortDistancePx = with(composeRule.density) { 48.dp.toPx() }
+        composeRule.onNodeWithTag("full-screen-exit-gesture-band").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + shortDistancePx), 160L)
+            up()
+        }
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)
+        val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("the shared dismissal motion must settle back to its origin", 0f, motionBounds.top, 1.5f)
+    }
+
+    @Test
     fun downwardSwipeFromQueueExitsToThePreviousRootInsteadOfStoppingOnPlayer() {
         launchNavigation()
         openPlayerAndWaitForArtwork()
@@ -200,7 +247,7 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.waitForIdle()
         assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)
 
-        val swipeDistancePx = with(composeRule.density) { 128.dp.toPx() }
+        val swipeDistancePx = with(composeRule.density) { 280.dp.toPx() }
         composeRule.onNodeWithTag("full-screen-exit-gesture-band").performTouchInput {
             down(center)
             moveTo(Offset(center.x, center.y + swipeDistancePx), 180L)

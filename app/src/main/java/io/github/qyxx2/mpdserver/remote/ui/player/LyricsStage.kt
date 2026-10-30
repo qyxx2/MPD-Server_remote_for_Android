@@ -167,7 +167,7 @@ fun LyricsStage(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 48.dp, end = 8.dp, bottom = 12.dp)
+                .padding(top = 48.dp, bottom = 12.dp)
                 .testTag("lyrics-content-column"),
         ) {
             StatusLine(

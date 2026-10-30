@@ -20,6 +20,9 @@ import androidx.compose.ui.unit.dp
 fun FullScreenExitGestureBand(
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
+    onDragDelta: (Float) -> Unit = {},
+    onGestureEnd: ((Float) -> Unit)? = null,
+    onGestureCancel: () -> Unit = {},
     content: @Composable BoxScope.() -> Unit = {},
 ) {
     val thresholdPx = with(LocalDensity.current) { 80.dp.toPx() }
@@ -40,10 +43,14 @@ fun FullScreenExitGestureBand(
                     onVerticalDrag = { change, dragAmount ->
                         horizontalDistance = change.position.x - startX
                         verticalDistance += dragAmount
+                        onDragDelta(dragAmount)
                         change.consume()
                     },
                     onDragEnd = {
-                        if (FullScreenExitGesturePolicy.shouldExit(
+                        val end = onGestureEnd
+                        if (end != null) {
+                            end(verticalDistance)
+                        } else if (FullScreenExitGesturePolicy.shouldExit(
                                 startedInTopBand = true,
                                 deltaX = horizontalDistance,
                                 deltaY = verticalDistance,
@@ -56,6 +63,7 @@ fun FullScreenExitGestureBand(
                     onDragCancel = {
                         horizontalDistance = 0f
                         verticalDistance = 0f
+                        onGestureCancel()
                     },
                 )
             }

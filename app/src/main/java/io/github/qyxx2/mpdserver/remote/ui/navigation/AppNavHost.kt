@@ -1,6 +1,7 @@
 package io.github.qyxx2.mpdserver.remote.ui.navigation
 
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -8,7 +9,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +37,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -82,11 +87,13 @@ import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** The app-scoped runtime is supplied by MainActivity; this shell observes it read-only. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppNavHost(
     runtime: AppRuntime,
@@ -158,6 +165,7 @@ fun AppNavHost(
         initialValue = StatusRingPreferences.DEFAULT,
     )
     val navigationScope = rememberCoroutineScope()
+    val fullScreenPagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     // App-scoped for the lifetime of this navigation shell: preload once when the canonical
     // current-song identity becomes confirmed, independently of whether Player is open.
     val artworkCache = remember(navigationScope) { PlayerArtworkMemoryCache(navigationScope) }
@@ -215,6 +223,7 @@ fun AppNavHost(
     var playerDragOffsetPx by remember { mutableFloatStateOf(0f) }
     var playerLayerHeightPx by remember { mutableFloatStateOf(1f) }
     var enterPlayerFromMini by remember { mutableStateOf(false) }
+    var isExitingFullScreen by remember { mutableStateOf(false) }
     val dismissDistancePx = with(LocalDensity.current) { 120.dp.toPx() }
     val collapsedMiniHeightPx = with(LocalDensity.current) { 63.dp.toPx() }
 
@@ -365,8 +374,15 @@ fun AppNavHost(
     }
 
     fun exitFullScreenToRoot() {
-        if (!navController.popBackStack(rootBeforeFullScreen, inclusive = false)) {
-            navController.popBackStack()
+        if (isExitingFullScreen) return
+        isExitingFullScreen = true
+        navigationScope.launch {
+            // Page 0 is the stable Player base when the whole fullscreen surface leaves.
+            fullScreenPagerState.scrollToPage(0)
+            if (!navController.popBackStack(rootBeforeFullScreen, inclusive = false)) {
+                navController.popBackStack()
+            }
+            isExitingFullScreen = false
         }
     }
 
@@ -397,8 +413,49 @@ fun AppNavHost(
         }
     }
 
+    BackHandler(enabled = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
+        currentRoute == AppDestination.QUEUE.route
+    ) {
+        if (currentRoute == AppDestination.QUEUE.route) {
+            navigationScope.launch { fullScreenPagerState.animateScrollToPage(0) }
+        } else {
+            exitFullScreenToRoot()
+        }
+    }
+
+    // Keep Navigation's back stack aligned with the pager's settled page. During a drag the
+    // pager alone owns presentation; route changes occur only after the finger-following settle.
+    LaunchedEffect(currentRoute, fullScreenPagerState) {
+        when (currentRoute) {
+            AppDestination.FULL_SCREEN_PLAYER.route -> {
+                if (fullScreenPagerState.currentPage != 0) fullScreenPagerState.scrollToPage(0)
+            }
+            AppDestination.QUEUE.route -> {
+                if (fullScreenPagerState.currentPage != 1) fullScreenPagerState.scrollToPage(1)
+            }
+        }
+    }
+    LaunchedEffect(fullScreenPagerState) {
+        snapshotFlow { fullScreenPagerState.settledPage }
+            .distinctUntilChanged()
+            .collect { page ->
+                if (isExitingFullScreen) return@collect
+                when {
+                    page == 1 && navController.currentDestination?.route ==
+                        AppDestination.FULL_SCREEN_PLAYER.route -> {
+                        navController.navigate(AppDestination.QUEUE.route) { launchSingleTop = true }
+                    }
+                    page == 0 && navController.currentDestination?.route == AppDestination.QUEUE.route -> {
+                        navController.popBackStack(AppDestination.FULL_SCREEN_PLAYER.route, inclusive = false)
+                    }
+                }
+            }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route) {
+        if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
+            currentRoute == AppDestination.QUEUE.route
+        ) {
             val backdropBlurDp = FullScreenPlayerDismissPolicy.backdropBlurDp(
                 entryProgress = playerEntryProgress,
                 offsetPx = playerDragOffsetPx,
@@ -406,8 +463,8 @@ fun AppNavHost(
                 maximumBlurDp = 18f,
             )
 
-            // Keep the previous root aligned to its real safe content bounds. Its background
-            // remains visible behind transparent status/navigation bars as the player moves away.
+            // The root backdrop remains aligned to the actual safe-content bounds, while its
+            // fullscreen layer keeps the physical window geometry and the existing blur handoff.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -424,8 +481,6 @@ fun AppNavHost(
                     blurRadiusDp = backdropBlurDp,
                     modifier = Modifier.fillMaxSize(),
                 )
-                // Shield only app content. Do not place a pointer interceptor in the actual
-                // status-bar/cutout band, so Android's system gestures remain available.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -438,76 +493,125 @@ fun AppNavHost(
                 )
             }
 
-            // This layer starts at the physical window top and includes both system-bar areas.
-            // Consequently its background and rounded top corners follow the finger in one piece.
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onSizeChanged { size ->
-                        playerLayerHeightPx = size.height.toFloat().coerceAtLeast(1f)
-                    }
-                    .graphicsLayer {
-                        val entry = playerEntryProgress.coerceIn(0f, 1f)
-                        val radius = FullScreenPlayerDismissPolicy.topCornerRadiusDp(
-                            entryProgress = entry,
-                            offsetPx = playerDragOffsetPx,
-                            screenHeightPx = size.height,
-                        )
-                        translationY = playerDragOffsetPx
-                        scaleY = FullScreenPlayerDismissPolicy.entryVerticalScale(
-                            entryProgress = entry,
-                            collapsedHeightPx = collapsedMiniHeightPx,
-                            screenHeightPx = size.height,
-                        )
-                        scaleX = FullScreenPlayerDismissPolicy.entryHorizontalScale(entry)
-                        transformOrigin = TransformOrigin(0.5f, 0.87f)
-                        shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
-                        clip = entry < 1f || playerDragOffsetPx > 0f
-                    }
-                    .testTag("full-screen-player-motion-layer"),
+                modifier = Modifier.fillMaxSize().testTag("full-screen-motion-container"),
             ) {
-                AppNavigationGraph(
-                    navController = navController,
-                    runtime = runtime,
-                    snapshotState = snapshotState,
-                    playerPresentation = playerPresentation,
-                    playerMediaPresentation = mediaProjection.mediaPresentation,
-                    playerMediaHandoffActive = mediaProjection.isHandoff,
-                    playerMediaPositionSeconds = mediaProjection.positionSeconds,
-                    playerActions = playerActions,
-                    playerArtworkCacheKey = artworkCacheKey,
-                    playerArtworkCache = artworkCache,
-                    queueSongCache = queueSongCache,
-                    uiPreferences = uiPreferences,
-                    preferenceWriteScope = preferenceWriteScope,
-                    windowGeometry = windowGeometry,
-                    applyServerOrigin = applyServerOrigin,
-                    onPlayerEntityNavigationRequest = onPlayerEntityNavigationRequest,
-                    onArtistClick = ::requestArtistNavigation,
-                    onExitFullScreen = ::exitFullScreenToRoot,
-                    onOpenFullScreenPlayer = ::openFullScreenPlayer,
-                    onPlayerDismissDragDelta = { delta ->
-                        playerDragOffsetPx =
-                            (playerDragOffsetPx + delta).coerceIn(0f, playerLayerHeightPx)
-                    },
-                    onPlayerDismissGestureEnd = ::finishPlayerDismissGesture,
-                    onPlayerDismissGestureCancel = ::animatePlayerDragBack,
-                    playerContentPadding = safeContentPadding,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { size ->
+                            playerLayerHeightPx = size.height.toFloat().coerceAtLeast(1f)
+                        }
+                        .graphicsLayer {
+                            val entry = playerEntryProgress.coerceIn(0f, 1f)
+                            val radius = FullScreenPlayerDismissPolicy.topCornerRadiusDp(
+                                entryProgress = entry,
+                                offsetPx = playerDragOffsetPx,
+                                screenHeightPx = size.height,
+                            )
+                            translationY = playerDragOffsetPx
+                            scaleY = FullScreenPlayerDismissPolicy.entryVerticalScale(
+                                entryProgress = entry,
+                                collapsedHeightPx = collapsedMiniHeightPx,
+                                screenHeightPx = size.height,
+                            )
+                            scaleX = FullScreenPlayerDismissPolicy.entryHorizontalScale(entry)
+                            transformOrigin = TransformOrigin(0.5f, 0.87f)
+                            shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
+                            clip = entry < 1f || playerDragOffsetPx > 0f
+                        }
+                        .testTag("full-screen-player-motion-layer"),
+                ) {
+                    HorizontalPager(
+                        state = fullScreenPagerState,
+                        modifier = Modifier.fillMaxSize().testTag("full-screen-player-queue-pager"),
+                    ) { page ->
+                        if (page == 0) {
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color.Transparent,
+                            ) {
+                                FullScreenPlayerScreen(
+                                    runtime = runtime,
+                                    presentation = playerPresentation,
+                                    mediaPresentation = mediaProjection.mediaPresentation,
+                                    mediaHandoffActive = mediaProjection.isHandoff,
+                                    mediaHandoffPositionSeconds = mediaProjection.positionSeconds,
+                                    actions = playerActions,
+                                    artworkCacheKey = artworkCacheKey,
+                                    artworkCache = artworkCache,
+                                    onExit = ::exitFullScreenToRoot,
+                                    onOpenQueue = {
+                                        navigationScope.launch { fullScreenPagerState.animateScrollToPage(1) }
+                                    },
+                                    onOpenPlayer = {
+                                        navigationScope.launch { fullScreenPagerState.animateScrollToPage(0) }
+                                    },
+                                    onArtistClick = ::requestArtistNavigation,
+                                    onEntityNavigationRequest = onPlayerEntityNavigationRequest,
+                                    onDismissDragDelta = { delta ->
+                                        playerDragOffsetPx =
+                                            (playerDragOffsetPx + delta).coerceIn(0f, playerLayerHeightPx)
+                                    },
+                                    onDismissGestureEnd = ::finishPlayerDismissGesture,
+                                    onDismissGestureCancel = ::animatePlayerDragBack,
+                                    contentPadding = safeContentPadding,
+                                )
+                            }
+                        } else {
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color.Transparent,
+                            ) {
+                                QueueScreen(
+                                    runtime = runtime,
+                                    snapshotState = snapshotState,
+                                    presentation = playerPresentation,
+                                    onExit = ::exitFullScreenToRoot,
+                                    onOpenPlayer = {
+                                        navigationScope.launch { fullScreenPagerState.animateScrollToPage(0) }
+                                    },
+                                    artworkPresentation = mediaProjection.mediaPresentation,
+                                    artworkCacheKey = artworkCacheKey,
+                                    artworkCache = artworkCache,
+                                    songCache = queueSongCache,
+                                    contentPadding = safeContentPadding,
+                                    onDismissDragDelta = { delta ->
+                                        playerDragOffsetPx =
+                                            (playerDragOffsetPx + delta).coerceIn(0f, playerLayerHeightPx)
+                                    },
+                                    onDismissGestureEnd = ::finishPlayerDismissGesture,
+                                    onDismissGestureCancel = ::animatePlayerDragBack,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         } else {
-            // Queue paints its backdrop edge-to-edge and applies safe Insets only to foreground content.
-            // Root destinations remain fully within the safe content window.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(
-                        if (currentRoute == AppDestination.QUEUE.route) Modifier
-                        else Modifier.padding(safeContentPadding),
-                    ),
+                    .padding(safeContentPadding),
             ) {
-                if (currentRoute == AppDestination.QUEUE.route) {
+                AppShell(
+                    title = title,
+                    onStatusClick = { showActivityStatus = true },
+                    miniPlayer = {
+                        if (currentRoute != AppDestination.SETTINGS.route) {
+                            MiniPlayer(
+                                presentation = miniPlayerPresentation,
+                                onOpen = ::openFullScreenPlayer,
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        RootNavigationBar(
+                            currentRoute = currentRoute,
+                            navController = navController,
+                        )
+                    },
+                ) {
                     AppNavigationGraph(
                         navController = navController,
                         runtime = runtime,
@@ -519,7 +623,7 @@ fun AppNavHost(
                         playerActions = playerActions,
                         playerArtworkCacheKey = artworkCacheKey,
                         playerArtworkCache = artworkCache,
-                    queueSongCache = queueSongCache,
+                        queueSongCache = queueSongCache,
                         uiPreferences = uiPreferences,
                         preferenceWriteScope = preferenceWriteScope,
                         windowGeometry = windowGeometry,
@@ -528,55 +632,11 @@ fun AppNavHost(
                         onArtistClick = ::requestArtistNavigation,
                         onExitFullScreen = ::exitFullScreenToRoot,
                         onOpenFullScreenPlayer = ::openFullScreenPlayer,
-                        queueContentPadding = safeContentPadding,
                         modifier = Modifier.fillMaxSize(),
                     )
-                } else {
-                    AppShell(
-                        title = title,
-                        onStatusClick = { showActivityStatus = true },
-                        miniPlayer = {
-                            if (currentRoute != AppDestination.SETTINGS.route) {
-                                MiniPlayer(
-                                    presentation = miniPlayerPresentation,
-                                    onOpen = ::openFullScreenPlayer,
-                                )
-                            }
-                        },
-                        bottomBar = {
-                            RootNavigationBar(
-                                currentRoute = currentRoute,
-                                navController = navController,
-                            )
-                        },
-                    ) {
-                        AppNavigationGraph(
-                            navController = navController,
-                            runtime = runtime,
-                            snapshotState = snapshotState,
-                            playerPresentation = playerPresentation,
-                            playerMediaPresentation = mediaProjection.mediaPresentation,
-                            playerMediaHandoffActive = mediaProjection.isHandoff,
-                            playerMediaPositionSeconds = mediaProjection.positionSeconds,
-                            playerActions = playerActions,
-                            playerArtworkCacheKey = artworkCacheKey,
-                            playerArtworkCache = artworkCache,
-                    queueSongCache = queueSongCache,
-                            uiPreferences = uiPreferences,
-                            preferenceWriteScope = preferenceWriteScope,
-                            windowGeometry = windowGeometry,
-                            applyServerOrigin = applyServerOrigin,
-                            onPlayerEntityNavigationRequest = onPlayerEntityNavigationRequest,
-                            onArtistClick = ::requestArtistNavigation,
-                            onExitFullScreen = ::exitFullScreenToRoot,
-                            onOpenFullScreenPlayer = ::openFullScreenPlayer,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
                 }
             }
         }
-
         if (ringVisibility.visible) {
             GlobalStatusRingOverlay(
                 presentation = statusPresentation,
