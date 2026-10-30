@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.navigation
 import android.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -22,6 +23,17 @@ import kotlin.math.abs
 class MainActivityEdgeToEdgeUiTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    private fun openPlayerAndAwaitExpansion() {
+        composeRule.onNodeWithTag("mini-player-body").performClick()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            val bounds = composeRule.onAllNodesWithTag("full-screen-player-motion-layer")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                .firstOrNull()?.boundsInRoot
+            bounds != null && abs(bounds.top) <= 1.5f
+        }
+        composeRule.waitForIdle()
+    }
 
     @Test
     fun transparentSystemBarsAndSafeContentInsetsAreAppliedByTheRealActivity() {
@@ -57,8 +69,7 @@ class MainActivityEdgeToEdgeUiTest {
 
     @Test
     fun fullScreenPlayerMotionCanvasExtendsBehindSystemBarsWhileGestureBandStaysSafe() {
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndAwaitExpansion()
 
         val activity = composeRule.activity
         val rootInsets = requireNotNull(ViewCompat.getRootWindowInsets(activity.window.decorView))
@@ -117,8 +128,7 @@ class MainActivityEdgeToEdgeUiTest {
 
     @Test
     fun queueBackdropExtendsBehindSystemBarsWhileToolbarStaysInSafeContent() {
-        composeRule.onNodeWithTag("mini-player-body").performClick()
-        composeRule.waitForIdle()
+        openPlayerAndAwaitExpansion()
         composeRule.onNodeWithTag("player-bottom-queue").performClick()
         composeRule.waitForIdle()
 

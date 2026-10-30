@@ -51,3 +51,4 @@
 - [qyxx2/MPD-Server](https://github.com/qyxx2/MPD-Server)
 - [main commit 2ad8445](https://github.com/qyxx2/MPD-Server/commit/2ad84454ceb70817bd996c92b590cfa2d9e9b128)
 - 核对范围：server/app/api 路由与 schemas、server/app/main.py 的幂等/错误入口，以及 Web services、stores、runtime、播放器/队列/布局组件和现行领域/UI 规格。
+- [Mini-player pull-up transition implementation plan](plans/2026-10-30-mini-player-pull-up-transition.md) and [design](specs/2026-10-30-mini-player-pull-up-transition-design.md): Task 4 mini-player entry uses a 50%-of-window pull-up commit threshold; navigation slides down without fading. Verification evidence is recorded with the implementation plan.

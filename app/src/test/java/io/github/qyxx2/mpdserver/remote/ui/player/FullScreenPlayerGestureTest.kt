@@ -7,6 +7,20 @@ import org.junit.Test
 
 class FullScreenPlayerGestureTest {
     @Test
+    fun miniPlayerExpansionUsesMeasuredAnchorAndHalfWindowCommitThreshold() {
+        assertEquals(0.25f, MiniPlayerExpansionPolicy.revealProgress(100f, 400f), 0.001f)
+        assertEquals(1f, MiniPlayerExpansionPolicy.revealProgress(500f, 400f), 0.001f)
+        assertEquals(0f, MiniPlayerExpansionPolicy.revealProgress(100f, 0f), 0.001f)
+        assertEquals(500f, MiniPlayerExpansionPolicy.thresholdPx(1000f), 0.001f)
+        assertEquals(250f, MiniPlayerExpansionPolicy.thresholdPx(500f), 0.001f)
+        assertTrue(MiniPlayerExpansionPolicy.thresholdPx(0f).isInfinite())
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(499f, 1000f))
+        assertTrue(MiniPlayerExpansionPolicy.shouldExpand(500f, 1000f))
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(Float.NaN, 1000f))
+        assertFalse(MiniPlayerExpansionPolicy.shouldExpand(500f, 0f))
+    }
+
+    @Test
     fun playerDismissProgressDrivesBackdropBlurAndTopCornerRadius() {
         assertEquals(0f, FullScreenPlayerDismissPolicy.dragProgress(0f, 1000f), 0.001f)
         assertEquals(0.5f, FullScreenPlayerDismissPolicy.dragProgress(500f, 1000f), 0.001f)

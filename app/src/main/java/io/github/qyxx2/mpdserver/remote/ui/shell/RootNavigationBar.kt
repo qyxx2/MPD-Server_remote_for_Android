@@ -15,6 +15,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,11 +29,19 @@ fun RootNavigationBar(
     currentRoute: String?,
     navController: NavHostController,
     modifier: Modifier = Modifier,
+    interactionEnabled: Boolean = true,
+    onBoundsChanged: (topPx: Float, heightPx: Float) -> Unit = { _, _ -> },
 ) {
     NavigationBar(
         modifier = modifier
             .fillMaxWidth()
             .height(64.dp)
+            .onGloballyPositioned { coordinates ->
+                onBoundsChanged(
+                    coordinates.positionInRoot().y,
+                    coordinates.size.height.toFloat(),
+                )
+            }
             .testTag("root-navigation-bar"),
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
@@ -40,6 +50,7 @@ fun RootNavigationBar(
             NavigationBarItem(
                 modifier = Modifier.testTag("root-nav-${destination.route}"),
                 selected = selected,
+                enabled = interactionEnabled,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.primary,
                     selectedTextColor = MaterialTheme.colorScheme.primary,

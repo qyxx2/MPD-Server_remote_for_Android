@@ -59,8 +59,12 @@ class FullScreenPlayerNavigationUiTest {
                 .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
             val outputNode = composeRule.onAllNodesWithTag("player-bottom-output")
                 .fetchSemanticsNodes(atLeastOneRootRequired = false).firstOrNull()
+            val motionNode = composeRule.onAllNodesWithTag("full-screen-player-motion-layer")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).firstOrNull()
             navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
-                playerVisible && outputNode != null && outputNode.boundsInRoot.height >= minimumTouchPx
+                playerVisible &&
+                outputNode != null && outputNode.boundsInRoot.height >= minimumTouchPx &&
+                motionNode != null && kotlin.math.abs(motionNode.boundsInRoot.top) <= 1.5f
         }
         composeRule.waitForIdle()
     }
@@ -237,6 +241,76 @@ class FullScreenPlayerNavigationUiTest {
         val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
             .fetchSemanticsNode().boundsInRoot
         assertEquals("the shared dismissal motion must settle back to its origin", 0f, motionBounds.top, 1.5f)
+    }
+
+    @Test
+    fun miniPlayerPullUpTracksFingerAndReturnsWhenReleasedBeforeThreshold() {
+        launchNavigation()
+        val miniBounds = composeRule.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
+        val navBefore = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
+        val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
+        val dragDistancePx = windowHeightPx * 0.30f
+
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 180L)
+        }
+        composeRule.waitForIdle()
+
+        assertEquals("pre-threshold drag keeps the root route mounted", AppDestination.HOME.route, navController.currentDestination?.route)
+        val preview = composeRule.onAllNodesWithTag("mini-player-expansion-preview")
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+        assertTrue("a full-player surface must be pulled out while the finger is held", preview.isNotEmpty())
+        val playerBounds = composeRule.onNodeWithTag("mini-player-expansion-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "the Player top edge must follow the mini-player upward instead of scaling open: $miniBounds -> $playerBounds",
+            playerBounds.top < miniBounds.top - dragDistancePx * 0.65f,
+        )
+        val navDuringDrag = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "the bottom navigation must move down as the Player is pulled out: $navBefore -> $navDuringDrag",
+            navDuringDrag.top > navBefore.top,
+        )
+
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.HOME.route &&
+                composeRule.onAllNodesWithTag("mini-player-expansion-preview")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isEmpty()
+        }
+        val navAfter = composeRule.onNodeWithTag("root-navigation-bar").fetchSemanticsNode().boundsInRoot
+        assertEquals("early release restores navigation to its original position", navBefore.top, navAfter.top, 2f)
+        composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
+    }
+
+    @Test
+    fun miniPlayerPullUpCrossingThresholdContinuesIntoFullScreenPlayer() {
+        launchNavigation()
+        val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
+        val thresholdPx = windowHeightPx * 0.50f
+        val dragDistancePx = thresholdPx + with(composeRule.density) { 24.dp.toPx() }
+
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 220L)
+            up()
+        }
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            val playerVisible = composeRule.onAllNodesWithTag("full-screen-player-root")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+            val motionBounds = composeRule.onAllNodesWithTag("full-screen-player-motion-layer")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).firstOrNull()?.boundsInRoot
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                playerVisible && motionBounds != null && kotlin.math.abs(motionBounds.top) <= 1.5f
+        }
+        composeRule.waitForIdle()
+
+        val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("threshold handoff finishes at the real window top without a scale-open phase", 0f, motionBounds.top, 2f)
+        composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
     }
 
     @Test

@@ -18,7 +18,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
@@ -26,7 +25,10 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -62,6 +65,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerDismissPolicy
+import io.github.qyxx2.mpdserver.remote.ui.player.MiniPlayerExpansionPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentationHandoff
@@ -222,10 +226,14 @@ fun AppNavHost(
     var playerEntryProgress by remember { mutableFloatStateOf(1f) }
     var playerDragOffsetPx by remember { mutableFloatStateOf(0f) }
     var playerLayerHeightPx by remember { mutableFloatStateOf(1f) }
+    var appWindowHeightPx by remember { mutableFloatStateOf(1f) }
+    var miniPlayerTopPx by remember { mutableFloatStateOf(0f) }
+    var rootNavigationBarHeightPx by remember { mutableFloatStateOf(0f) }
+    var isMiniPlayerExpansionPreview by remember { mutableStateOf(false) }
     var enterPlayerFromMini by remember { mutableStateOf(false) }
     var isExitingFullScreen by remember { mutableStateOf(false) }
     val dismissDistancePx = with(LocalDensity.current) { 120.dp.toPx() }
-    val collapsedMiniHeightPx = with(LocalDensity.current) { 63.dp.toPx() }
+    val fallbackNavigationHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
     suspend fun awaitCurrentArtworkWarmup() {
         // Ordinarily the shell has already warmed the art. If the user opens immediately after
@@ -258,13 +266,13 @@ fun AppNavHost(
 
     LaunchedEffect(currentRoute) {
         if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route && enterPlayerFromMini) {
-            playerEntryProgress = 0f
+            val startingProgress = playerEntryProgress.coerceIn(0f, 1f)
             awaitCurrentArtworkWarmup()
             if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route || !enterPlayerFromMini) {
                 return@LaunchedEffect
             }
             animate(
-                initialValue = 0f,
+                initialValue = startingProgress,
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
             ) { value, _ -> playerEntryProgress = value }
@@ -304,6 +312,7 @@ fun AppNavHost(
         ?.label
         ?: AppDestination.HOME.label
     val safeInsets = windowGeometry.safeInsets
+    val entryProgress = playerEntryProgress.coerceIn(0f, 1f)
     val safeContentPadding = with(LocalDensity.current) {
         PaddingValues(
             start = safeInsets.left.coerceAtLeast(0).toDp(),
@@ -312,19 +321,86 @@ fun AppNavHost(
             bottom = safeInsets.bottom.coerceAtLeast(0).toDp(),
         )
     }
+    val playerEntryContentPadding = with(LocalDensity.current) {
+        PaddingValues(
+            start = safeInsets.left.coerceAtLeast(0).toDp(),
+            top = (safeInsets.top.coerceAtLeast(0) * entryProgress).toDp(),
+            end = safeInsets.right.coerceAtLeast(0).toDp(),
+            bottom = safeInsets.bottom.coerceAtLeast(0).toDp(),
+        )
+    }
 
+    fun navigateToExpandedPlayer() {
+        isMiniPlayerExpansionPreview = false
+        enterPlayerFromMini = true
+        navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
+            launchSingleTop = true
+        }
+    }
 
-    fun openFullScreenPlayer() {
-        if (navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route) return
-        if (AppDestination.rootDestinations.any { it.route == currentRoute }) {
-            rootBeforeFullScreen = currentRoute!!
+    fun updateMiniPlayerExpansion(distancePx: Float) {
+        if (!distancePx.isFinite()) return
+        val activeRoute = navController.currentDestination?.route ?: currentRoute
+        if (!isMiniPlayerExpansionPreview) {
+            if (distancePx <= 0f || !AppDestination.rootDestinations.any { it.route == activeRoute }) return
+            rootBeforeFullScreen = activeRoute!!
             playerDragOffsetPx = 0f
             playerEntryProgress = 0f
+            isMiniPlayerExpansionPreview = true
+        }
+
+        playerEntryProgress = MiniPlayerExpansionPolicy.revealProgress(
+            upwardDistancePx = distancePx,
+            miniPlayerTopPx = miniPlayerTopPx,
+        )
+        if (MiniPlayerExpansionPolicy.shouldExpand(
+                upwardDistancePx = distancePx,
+                windowHeightPx = appWindowHeightPx,
+            )
+        ) {
+            navigateToExpandedPlayer()
+        }
+    }
+
+    fun finishMiniPlayerExpansionGesture(distancePx: Float) {
+        if (!isMiniPlayerExpansionPreview) return
+        val expand = MiniPlayerExpansionPolicy.shouldExpand(
+            upwardDistancePx = distancePx,
+            windowHeightPx = appWindowHeightPx,
+        )
+        if (expand) {
+            navigateToExpandedPlayer()
+            return
+        }
+        navigationScope.launch {
+            animate(
+                initialValue = playerEntryProgress,
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+            ) { value, _ -> playerEntryProgress = value }
+            playerEntryProgress = 1f
+            isMiniPlayerExpansionPreview = false
+        }
+    }
+
+    fun cancelMiniPlayerExpansionGesture() {
+        finishMiniPlayerExpansionGesture(distancePx = 0f)
+    }
+
+    fun openFullScreenPlayer() {
+        val activeRoute = navController.currentDestination?.route ?: currentRoute
+        if (activeRoute == AppDestination.FULL_SCREEN_PLAYER.route) return
+        if (AppDestination.rootDestinations.any { it.route == activeRoute }) {
+            rootBeforeFullScreen = activeRoute!!
+            playerDragOffsetPx = 0f
+            playerEntryProgress = 0f
+            isMiniPlayerExpansionPreview = false
             enterPlayerFromMini = true
         }
-        // Keep NavController navigation synchronous so Navigation owns the destination lifecycle.
-        // The lifecycle-bound route effect below holds the Player at mini-player size until both
-        // artwork bitmaps are ready, then starts the existing expansion animation.
+        // A tap uses the same measured pull-up geometry as a threshold-crossing drag.
         navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
             launchSingleTop = true
         }
@@ -452,7 +528,11 @@ fun AppNavHost(
             }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .onSizeChanged { size -> appWindowHeightPx = size.height.toFloat().coerceAtLeast(1f) },
+    ) {
         if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
             currentRoute == AppDestination.QUEUE.route
         ) {
@@ -479,6 +559,7 @@ fun AppNavHost(
                     windowGeometry = windowGeometry,
                     onApplyServerOrigin = applyServerOrigin,
                     blurRadiusDp = backdropBlurDp,
+                    hideNavigationBar = enterPlayerFromMini && entryProgress < 0.999f,
                     modifier = Modifier.fillMaxSize(),
                 )
                 Box(
@@ -509,14 +590,7 @@ fun AppNavHost(
                                 offsetPx = playerDragOffsetPx,
                                 screenHeightPx = size.height,
                             )
-                            translationY = playerDragOffsetPx
-                            scaleY = FullScreenPlayerDismissPolicy.entryVerticalScale(
-                                entryProgress = entry,
-                                collapsedHeightPx = collapsedMiniHeightPx,
-                                screenHeightPx = size.height,
-                            )
-                            scaleX = FullScreenPlayerDismissPolicy.entryHorizontalScale(entry)
-                            transformOrigin = TransformOrigin(0.5f, 0.87f)
+                            translationY = miniPlayerTopPx * (1f - entry) + playerDragOffsetPx
                             shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
                             clip = entry < 1f || playerDragOffsetPx > 0f
                         }
@@ -538,6 +612,7 @@ fun AppNavHost(
                                     mediaHandoffActive = mediaProjection.isHandoff,
                                     mediaHandoffPositionSeconds = mediaProjection.positionSeconds,
                                     clockUpdatesEnabled = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route,
+                                    entryProgress = entryProgress,
                                     actions = playerActions,
                                     artworkCacheKey = artworkCacheKey,
                                     artworkCache = artworkCache,
@@ -556,7 +631,7 @@ fun AppNavHost(
                                     },
                                     onDismissGestureEnd = ::finishPlayerDismissGesture,
                                     onDismissGestureCancel = ::animatePlayerDragBack,
-                                    contentPadding = safeContentPadding,
+                                    contentPadding = playerEntryContentPadding,
                                 )
                             }
                         } else {
@@ -589,11 +664,24 @@ fun AppNavHost(
                     }
                 }
             }
+            if (enterPlayerFromMini && entryProgress < 0.999f) {
+                PullUpRootNavigationOverlay(
+                    currentRoute = rootBeforeFullScreen,
+                    navController = navController,
+                    revealProgress = entryProgress,
+                    navigationHeightPx = rootNavigationBarHeightPx.takeIf { it > 0f }
+                        ?: fallbackNavigationHeightPx,
+                    safeStartPx = safeInsets.left,
+                    safeEndPx = safeInsets.right,
+                    safeBottomPx = safeInsets.bottom,
+                )
+            }
         } else {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(safeContentPadding),
+                    .padding(safeContentPadding)
+                    .blur((if (isMiniPlayerExpansionPreview) 18f * entryProgress else 0f).dp),
             ) {
                 AppShell(
                     title = title,
@@ -603,14 +691,25 @@ fun AppNavHost(
                             MiniPlayer(
                                 presentation = miniPlayerPresentation,
                                 onOpen = ::openFullScreenPlayer,
+                                onBoundsChanged = { topPx, _ ->
+                                    if (!isMiniPlayerExpansionPreview) miniPlayerTopPx = topPx
+                                },
+                                onExpandDragDistanceChanged = ::updateMiniPlayerExpansion,
+                                onExpandDragEnd = ::finishMiniPlayerExpansionGesture,
+                                onExpandDragCancel = ::cancelMiniPlayerExpansionGesture,
                             )
                         }
                     },
                     bottomBar = {
-                        RootNavigationBar(
-                            currentRoute = currentRoute,
-                            navController = navController,
-                        )
+                        if (isMiniPlayerExpansionPreview) {
+                            Spacer(Modifier.fillMaxWidth().height(64.dp))
+                        } else {
+                            RootNavigationBar(
+                                currentRoute = currentRoute,
+                                navController = navController,
+                                onBoundsChanged = { _, heightPx -> rootNavigationBarHeightPx = heightPx },
+                            )
+                        }
                     },
                 ) {
                     AppNavigationGraph(
@@ -634,6 +733,63 @@ fun AppNavHost(
                         onExitFullScreen = ::exitFullScreenToRoot,
                         onOpenFullScreenPlayer = ::openFullScreenPlayer,
                         modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+            if (isMiniPlayerExpansionPreview) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("mini-player-expansion-preview"),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val progress = playerEntryProgress.coerceIn(0f, 1f)
+                                translationY = miniPlayerTopPx * (1f - progress)
+                                val radius = FullScreenPlayerDismissPolicy.topCornerRadiusDp(
+                                    entryProgress = progress,
+                                    offsetPx = 0f,
+                                    screenHeightPx = appWindowHeightPx,
+                                )
+                                shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
+                                clip = true
+                            }
+                            .testTag("mini-player-expansion-motion-layer"),
+                    ) {
+                        FullScreenPlayerScreen(
+                            runtime = runtime,
+                            presentation = playerPresentation,
+                            mediaPresentation = mediaProjection.mediaPresentation,
+                            mediaHandoffActive = mediaProjection.isHandoff,
+                            mediaHandoffPositionSeconds = mediaProjection.positionSeconds,
+                            clockUpdatesEnabled = false,
+                            entryProgress = entryProgress,
+                            refreshSnapshotOnMount = false,
+                            actions = null,
+                            artworkCacheKey = artworkCacheKey,
+                            artworkCache = artworkCache,
+                            onExit = {},
+                            onOpenQueue = {},
+                            onOpenPlayer = {},
+                            onArtistClick = {},
+                            onEntityNavigationRequest = {},
+                            onDismissDragDelta = {},
+                            onDismissGestureEnd = {},
+                            onDismissGestureCancel = {},
+                            contentPadding = playerEntryContentPadding,
+                        )
+                    }
+                    PullUpRootNavigationOverlay(
+                        currentRoute = rootBeforeFullScreen,
+                        navController = navController,
+                        revealProgress = entryProgress,
+                        navigationHeightPx = rootNavigationBarHeightPx.takeIf { it > 0f }
+                            ?: fallbackNavigationHeightPx,
+                        safeStartPx = safeInsets.left,
+                        safeEndPx = safeInsets.right,
+                        safeBottomPx = safeInsets.bottom,
                     )
                 }
             }
@@ -673,6 +829,7 @@ private fun RootBackdropShell(
     windowGeometry: StatusRingWindowGeometry,
     onApplyServerOrigin: suspend (ServerOrigin) -> Unit,
     blurRadiusDp: Float,
+    hideNavigationBar: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val rootTitle = AppDestination.rootDestinations.firstOrNull { it.route == rootRoute }?.label
@@ -686,30 +843,67 @@ private fun RootBackdropShell(
                 .clearAndSetSemantics { contentDescription = "全屏播放器背景" },
         ) {
             AppShell(
-            title = rootTitle,
-            onStatusClick = {},
-            miniPlayer = {
-                if (rootRoute != AppDestination.SETTINGS.route) {
-                    MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
+                title = rootTitle,
+                onStatusClick = {},
+                miniPlayer = {
+                    if (rootRoute != AppDestination.SETTINGS.route) {
+                        MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
+                    }
+                },
+                bottomBar = {
+                    if (hideNavigationBar) {
+                        Spacer(Modifier.fillMaxWidth().height(64.dp))
+                    } else {
+                        RootNavigationBar(currentRoute = rootRoute, navController = navController)
+                    }
+                },
+            ) {
+                when (rootRoute) {
+                    AppDestination.SEARCH.route -> SearchPlaceholderScreen()
+                    AppDestination.LIBRARY.route -> LibraryPlaceholderScreen()
+                    AppDestination.SETTINGS.route -> StatusRingSettingsScreen(
+                        preferencesRepository = uiPreferences,
+                        preferenceWriteScope = preferenceWriteScope,
+                        windowGeometry = windowGeometry,
+                        onApplyServerOrigin = onApplyServerOrigin,
+                    )
+                    else -> HomePlaceholderScreen()
                 }
-            },
-            bottomBar = {
-                RootNavigationBar(currentRoute = rootRoute, navController = navController)
-            },
-        ) {
-            when (rootRoute) {
-                AppDestination.SEARCH.route -> SearchPlaceholderScreen()
-                AppDestination.LIBRARY.route -> LibraryPlaceholderScreen()
-                AppDestination.SETTINGS.route -> StatusRingSettingsScreen(
-                    preferencesRepository = uiPreferences,
-                    preferenceWriteScope = preferenceWriteScope,
-                    windowGeometry = windowGeometry,
-                    onApplyServerOrigin = onApplyServerOrigin,
-                )
-                else -> HomePlaceholderScreen()
             }
         }
-        }
+    }
+}
+
+@Composable
+private fun PullUpRootNavigationOverlay(
+    currentRoute: String,
+    navController: NavHostController,
+    revealProgress: Float,
+    navigationHeightPx: Float,
+    safeStartPx: Int,
+    safeEndPx: Int,
+    safeBottomPx: Int,
+) {
+    val progress = revealProgress.coerceIn(0f, 1f)
+    val safePadding = with(LocalDensity.current) {
+        PaddingValues(
+            start = safeStartPx.coerceAtLeast(0).toDp(),
+            end = safeEndPx.coerceAtLeast(0).toDp(),
+            bottom = safeBottomPx.coerceAtLeast(0).toDp(),
+        )
+    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        RootNavigationBar(
+            currentRoute = currentRoute,
+            navController = navController,
+            interactionEnabled = false,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(safePadding)
+                .graphicsLayer {
+                    translationY = (navigationHeightPx + safeBottomPx).coerceAtLeast(0f) * progress
+                },
+        )
     }
 }
 

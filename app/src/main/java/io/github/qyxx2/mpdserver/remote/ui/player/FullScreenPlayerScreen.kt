@@ -73,6 +73,8 @@ fun FullScreenPlayerScreen(
     mediaHandoffActive: Boolean = false,
     mediaHandoffPositionSeconds: Double? = null,
     clockUpdatesEnabled: Boolean = true,
+    entryProgress: Float = 1f,
+    refreshSnapshotOnMount: Boolean = true,
     actions: PlayerActions? = null,
     onExit: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -130,9 +132,10 @@ fun FullScreenPlayerScreen(
         }
     }
     val clockObservation = clockFacts.playbackObservation
-    LaunchedEffect(runtime, snapshotState.controlsEligible, clockObservation?.actualState) {
-        // Match the Web session: establish a timing baseline on mount/writable recovery when
-        // playback is active. The shared coordinator coalesces this with any pending invalidation read.
+    LaunchedEffect(runtime, refreshSnapshotOnMount, snapshotState.controlsEligible, clockObservation?.actualState) {
+        // Match the Web session: establish a timing baseline on the real Player route when
+        // playback is active. A temporary pull-up preview must not trigger an additional read.
+        if (!refreshSnapshotOnMount) return@LaunchedEffect
         if (snapshotState.controlsEligible && clockObservation?.actualState == ActualPlaybackStateDto.playing) {
             try {
                 runtime.refreshSnapshot()
@@ -252,7 +255,7 @@ fun FullScreenPlayerScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp)
+                        .height(64.dp * entryProgress.coerceIn(0f, 1f))
                         .fullScreenPlayerDismissGesture(
                             dragDelta = currentOnDismissDragDelta,
                             gestureEnd = currentOnDismissGestureEnd,

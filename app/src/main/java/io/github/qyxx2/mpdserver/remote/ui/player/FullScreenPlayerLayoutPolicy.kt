@@ -28,6 +28,27 @@ internal object FullScreenExitGesturePolicy {
         deltaY > abs(deltaX)
 }
 
+/** Pull-up geometry for extracting the mini-player into the full-screen Player. */
+internal object MiniPlayerExpansionPolicy {
+    fun revealProgress(upwardDistancePx: Float, miniPlayerTopPx: Float): Float {
+        if (!upwardDistancePx.isFinite() || !miniPlayerTopPx.isFinite() || miniPlayerTopPx <= 0f) return 0f
+        return (upwardDistancePx / miniPlayerTopPx).coerceIn(0f, 1f)
+    }
+
+    fun thresholdPx(windowHeightPx: Float): Float {
+        val height = windowHeightPx.takeIf { it.isFinite() && it > 0f }
+            ?: return Float.POSITIVE_INFINITY
+        return height * 0.5f
+    }
+
+    fun shouldExpand(upwardDistancePx: Float, windowHeightPx: Float): Boolean {
+        return upwardDistancePx.isFinite() &&
+            windowHeightPx.isFinite() &&
+            windowHeightPx > 0f &&
+            upwardDistancePx >= thresholdPx(windowHeightPx)
+    }
+}
+
 /** Pure transform policy for the player-only interactive dismissal and mini-player expansion. */
 internal object FullScreenPlayerDismissPolicy {
     fun dragProgress(offsetPx: Float, screenHeightPx: Float): Float {
