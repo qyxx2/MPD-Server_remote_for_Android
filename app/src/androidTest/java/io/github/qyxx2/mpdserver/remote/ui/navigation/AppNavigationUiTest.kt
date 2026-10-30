@@ -97,6 +97,13 @@ class AppNavigationUiTest {
         }
     }
 
+    private fun assertMiniPlayerControlMatchesCanonicalState() {
+        val actions = io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions(runtime)
+        val enabled = actions.isEnabled(PlayerAction.PAUSE) || actions.isEnabled(PlayerAction.RESUME)
+        val control = composeRule.onNodeWithTag("mini-player-play-pause")
+        if (enabled) control.assertIsEnabled() else control.assertIsNotEnabled()
+    }
+
     private fun launchNavigation() {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         runBlocking { application.uiPreferences.resetStatusRingPreferences() }
@@ -195,7 +202,7 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
         composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
         composeRule.onNodeWithTag("mini-player-body").assertIsDisplayed()
-        composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled()
+        assertMiniPlayerControlMatchesCanonicalState()
 
         val contentBounds = composeRule.onNodeWithTag("root-content").fetchSemanticsNode().boundsInRoot
         val miniBounds = composeRule.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
@@ -234,7 +241,7 @@ class AppNavigationUiTest {
                     composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
                 )
                 composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
-                composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled()
+                assertMiniPlayerControlMatchesCanonicalState()
             }
             val navBounds = composeRule.onNodeWithTag("root-nav-${destination.route}").fetchSemanticsNode().boundsInRoot
             val minTarget = with(composeRule.density) { 48.dp.toPx() }
@@ -356,11 +363,19 @@ class AppNavigationUiTest {
     }
 
     @Test
-    fun miniPlayerActionIsDisabledWhileBodyOpensFullScreenPlayer() {
+    fun miniPlayerControlEligibilityFollowsTheCanonicalSnapshotAndBodyOpensFullScreenPlayer() {
         launchNavigation()
-        composeRule.onNodeWithTag("mini-player-play-pause").assertIsNotEnabled().performTouchInput { click() }
-        composeRule.waitForIdle()
-        assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+        val toggleEnabled = io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions(runtime).let { actions ->
+            actions.isEnabled(PlayerAction.PAUSE) || actions.isEnabled(PlayerAction.RESUME)
+        }
+        val toggle = composeRule.onNodeWithTag("mini-player-play-pause")
+        if (toggleEnabled) {
+            toggle.assertIsEnabled()
+        } else {
+            toggle.assertIsNotEnabled().performTouchInput { click() }
+            composeRule.waitForIdle()
+            assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+        }
 
         composeRule.onNodeWithTag("mini-player-body").performClick()
         composeRule.waitForIdle()

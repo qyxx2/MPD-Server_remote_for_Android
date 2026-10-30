@@ -70,6 +70,8 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentationHandoff
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerAction
+import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueScreen
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
@@ -140,8 +142,10 @@ fun AppNavHost(
         currentOrigin = currentServerOrigin,
         retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds,
     )
-    val miniPlayerPresentation = MiniPlayerPresentation.from(snapshotState)
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }
+    val miniPlayerPresentation = remember(snapshotState, playerPresentation) {
+        MiniPlayerPresentation.from(snapshotState, playerPresentation)
+    }
 
     // Mirror Web's bounded media handoff after an action: the last confirmed artwork/metadata may
     // bridge only the same-scope quiet-UNKNOWN window. Canonical playback facts and controls remain
@@ -217,6 +221,19 @@ fun AppNavHost(
         epoch = snapshotState.snapshot?.epoch.orEmpty(),
         libraryRevision = snapshotState.snapshot?.libraryRevision ?: 0L,
     )
+    val artworkCacheState by artworkCache.state.collectAsStateWithLifecycle()
+    val currentMiniPlayerArtworkKey = artworkCacheKey?.takeIf {
+        it.matches(mediaProjection.mediaPresentation)
+    }
+    val miniPlayerArtwork = (artworkCacheState as? PlayerArtworkCacheState.Ready)
+        ?.takeIf { ready -> currentMiniPlayerArtworkKey != null && ready.key == currentMiniPlayerArtworkKey }
+        ?.foreground
+    val miniPlayerToggleAction = when (miniPlayerPresentation.playbackStatus) {
+        ConfirmedPlaybackStatus.PLAYING -> PlayerAction.PAUSE
+        ConfirmedPlaybackStatus.PAUSED -> PlayerAction.RESUME
+        ConfirmedPlaybackStatus.UNKNOWN -> null
+    }
+    val miniPlayerControlEnabled = miniPlayerToggleAction?.let(playerActions::isEnabled) == true
     LaunchedEffect(runtime, artworkCacheKey) {
         if (artworkCacheKey == null) artworkCache.clear()
         else artworkCache.preload(runtime, artworkCacheKey)
@@ -720,6 +737,9 @@ fun AppNavHost(
                             MiniPlayer(
                                 presentation = miniPlayerPresentation,
                                 onOpen = ::openFullScreenPlayer,
+                                artwork = miniPlayerArtwork,
+                                playbackControlEnabled = miniPlayerControlEnabled,
+                                onTogglePlayback = { miniPlayerToggleAction?.let(playerActions::perform) },
                                 onBoundsChanged = { topPx, _ ->
                                     if (!isMiniPlayerExpansionPreview) miniPlayerTopPx = topPx
                                 },

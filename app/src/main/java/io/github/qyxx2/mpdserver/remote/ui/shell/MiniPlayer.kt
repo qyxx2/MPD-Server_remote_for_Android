@@ -1,5 +1,6 @@
 package io.github.qyxx2.mpdserver.remote.ui.shell
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,10 +23,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -35,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 
 /** Fixed-height mini-player. Taps open Player; upward drags pull the full Player surface out of this row. */
 @Composable
@@ -42,6 +47,9 @@ fun MiniPlayer(
     presentation: MiniPlayerPresentation,
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
+    artwork: ImageBitmap? = null,
+    playbackControlEnabled: Boolean = false,
+    onTogglePlayback: () -> Unit = {},
     onBoundsChanged: (topPx: Float, heightPx: Float) -> Unit = { _, _ -> },
     onExpandDragDistanceChanged: (distancePx: Float, upwardVelocityDpPerSecond: Float) -> Unit = { _, _ -> },
     onExpandDragEnd: (distancePx: Float, upwardVelocityDpPerSecond: Float) -> Unit = { _, _ -> },
@@ -52,6 +60,11 @@ fun MiniPlayer(
     val currentOnDragEnd = rememberUpdatedState(onExpandDragEnd)
     val density = LocalDensity.current.density
     val currentOnDragCancel = rememberUpdatedState(onExpandDragCancel)
+    val playbackControlLabel = when (presentation.playbackStatus) {
+        ConfirmedPlaybackStatus.PLAYING -> "暂停播放"
+        ConfirmedPlaybackStatus.PAUSED -> "继续播放"
+        ConfirmedPlaybackStatus.UNKNOWN -> "播放状态未确认"
+    }
 
     Column(
         modifier = modifier
@@ -149,7 +162,16 @@ fun MiniPlayer(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("♫", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 25.sp)
+                        if (presentation.hasTrack && artwork != null) {
+                            Image(
+                                bitmap = artwork,
+                                contentDescription = "当前曲目封面",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().testTag("mini-player-artwork-image"),
+                            )
+                        } else {
+                            Text("♫", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 25.sp)
+                        }
                     }
                 }
                 Spacer(Modifier.width(12.dp))
@@ -178,16 +200,17 @@ fun MiniPlayer(
                 Spacer(Modifier.width(8.dp))
             }
             IconButton(
-                onClick = {},
-                enabled = false,
+                onClick = onTogglePlayback,
+                enabled = playbackControlEnabled,
                 modifier = Modifier
                     .size(48.dp)
                     .testTag("mini-player-play-pause")
-                    .semantics { contentDescription = "播放/暂停（暂未接入）" },
+                    .semantics { contentDescription = playbackControlLabel },
             ) {
                 Text(
-                    text = if (presentation.isPlaying) "Ⅱ" else "▶",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = if (presentation.playbackStatus == ConfirmedPlaybackStatus.PLAYING) "Ⅱ" else "▶",
+                    color = if (playbackControlEnabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 21.sp,
                 )
             }
