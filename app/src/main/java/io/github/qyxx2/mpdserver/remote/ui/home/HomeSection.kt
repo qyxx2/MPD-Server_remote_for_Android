@@ -27,8 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.network.HttpResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailKey
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
@@ -65,9 +63,9 @@ internal fun HomeSection(
                 val card = cards.getOrNull(index) ?: return@forEach
                 val songId = card.artworkSongId?.takeIf(String::isNotBlank) ?: return@forEach
                 val artworkId = card.artwork?.artworkId?.takeIf(String::isNotBlank) ?: return@forEach
-                val key = QueueArtworkThumbnailKey(artworkIdentity, artworkId)
+                val key = HomeArtworkCacheKey(artworkIdentity, artworkId)
                 when (val response = runtime.reads.getArtwork(songId)) {
-                    is HttpResult.Body -> QueueArtworkThumbnailCache.preload(key, response.bytes)
+                    is HttpResult.Body -> HomeArtworkMemoryCache.preload(key, response.bytes)
                     else -> Unit
                 }
             }

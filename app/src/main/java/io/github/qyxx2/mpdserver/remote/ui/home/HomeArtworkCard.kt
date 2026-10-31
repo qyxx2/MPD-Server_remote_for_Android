@@ -16,7 +16,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -27,8 +26,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailKey
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 
 @Composable
@@ -42,13 +39,13 @@ internal fun HomeArtworkCardItem(
     val artworkId = card.artwork?.artworkId?.takeIf(String::isNotBlank)
     val artworkKey = remember(artworkIdentity, artworkId) {
         if (artworkIdentity != null && !artworkId.isNullOrBlank()) {
-            QueueArtworkThumbnailKey(artworkIdentity, artworkId)
+            HomeArtworkCacheKey(artworkIdentity, artworkId)
         } else null
     }
-    val thumbnailState = remember(artworkKey) {
-        artworkKey?.let(QueueArtworkThumbnailCache::stateFor)
+    val artworkState = remember(artworkKey) {
+        artworkKey?.let(HomeArtworkMemoryCache::stateFor)
     }
-    val bitmap = thumbnailState?.collectAsStateWithLifecycle()?.value
+    val bitmap = artworkState?.collectAsStateWithLifecycle()?.value
 
     val title = card.song?.album?.takeIf(String::isNotBlank)
         ?: card.song?.title?.takeIf(String::isNotBlank)

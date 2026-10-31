@@ -76,6 +76,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerAction
 import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeDataController
+import io.github.qyxx2.mpdserver.remote.ui.home.HomeArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeScreen
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollResetEffect
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeUiState
@@ -158,8 +159,10 @@ fun AppNavHost(
         )
     }
     SideEffect {
-        // Publish the cache scope synchronously before Home's visible-window prefetch effects run.
+        // Keep the two decoded presentation caches isolated: Queue uses tiny thumbnails, Home
+        // uses a separate high-resolution bitmap LRU. Both consume the same original byte cache.
         QueueArtworkThumbnailCache.updateIdentity(homeArtworkIdentity)
+        HomeArtworkMemoryCache.updateIdentity(homeArtworkIdentity)
     }
     val retryablePlayerIntentIds = playerActionState.activeIntentId
         ?.takeIf { playerActions.canRetryUnknown() }
