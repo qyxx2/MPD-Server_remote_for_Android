@@ -39,12 +39,15 @@
 - [Task 4 合同矩阵与分析](specs/2026-10-27-task-4-contract-matrix.md)：汇总 T4-01 至 T4-17 合同、各 Batch 自动化 evidence 与未覆盖验收。Batch 9 已完成整机 UI 回归和架构边界审计；整体退出门仍 BLOCKED，见 [最终验收报告](reports/2026-10-27-task-4-final-acceptance.md)。此前阶段报告按各自 Batch 链接保留。
 - [Task 4 全屏播放器与 Queue 视觉/交互设计规格](specs/2026-10-27-task-4-full-player-queue-visual-design.md)：记录用户确认的 B 大封面方向、干净顶部、歌词替换主内容区、无重框布局、下滑退出、Queue 历史同列表滚动及拖拽/菜单约束。
 - [Task 4 Implementation Plan](plans/2026-10-27-task-4-full-player-queue.md)：按合同矩阵拆分 B0–B9，明确文件/接口、测试先行、逐批验证、实现边界与退出门；各批次完成状态与验证证据以计划勾选项及独立报告为准。
+- [Task 5 主页、搜索与音乐库业务合同](specs/2026-10-31-task-5-home-library-search-contract.md)：冻结 Home 三分区数据来源/布局、History 与 Queue Played 区分、AutoPlay occurrence、Library Songs 优先、Search/Playlist/Favorites 行为，以及 AppRuntime 全局资源内存缓存。
+- [Task 5 合同矩阵与验收覆盖](specs/2026-10-31-task-5-contract-matrix.md)：T5-00 至 T5-37，包含 API/DTO、共享缓存失效依赖、跨页面请求复用、B0–B7 批次边界和自动/人工验收门。
+- [Task 5 Implementation Plan](plans/2026-10-31-task-5-implementation.md)：397 行分批执行计划，细化 B0–B7 的文件范围、跨批接口、测试先行步骤、缓存与资源身份边界、人工验收和独立提交门；当前仅完成计划，尚未开始页面实现。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
 - [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。
 - [Task 3 Batch 7 集成验证报告](reports/2026-10-26-task-3-batch7-verification.md)：记录 clean 构建、105 项单测、10 项真机 instrumentation、边界审查及尚未关闭的人工验收门。机器验证通过不代表 Task 3 整体退出门或 Task 2 真实联调门已通过。
 - [Task 3 状态环真实 MS 联调与真机复验报告](reports/2026-10-27-task-3-status-ring-live-ms-verification.md)：记录只读 HTTP/WS 联通、Android opt-in live smoke、状态环视觉 instrumentation、DisplayCutout 回退观察及修复的快照状态竞态；不包含任何真实服务写操作。
 - [初步实现路线图](plans/2026-10-23-android-client-roadmap.md)：早期阶段概览，仅作背景参考；若与主计划的 Task 顺序或退出门冲突，以主计划为准。
-- 每个 Task 开始时，另行细化该 Task 的权威合同、冻结边界、验收标准和 Batch 执行计划。Task 3 的根导航、AppBar、迷你播放器、音乐库列表与状态环精确参数由其视觉设计规格冻结；主页真实模块数据规则和后续业务页面细节仍在对应业务阶段冻结。
+- 每个 Task 开始时，另行细化该 Task 的权威合同、冻结边界、验收标准和 Batch 执行计划。Task 3 的根导航、AppBar、迷你播放器、音乐库列表与状态环精确参数由其视觉设计规格冻结；Task 5 已进一步冻结主页三模块数据规则、歌曲优先的音乐库顺序、搜索/歌单/收藏行为与全局资源缓存边界。
 
 ## 上游核对基线
 

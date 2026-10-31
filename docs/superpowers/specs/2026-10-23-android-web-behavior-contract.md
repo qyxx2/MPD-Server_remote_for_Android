@@ -61,6 +61,10 @@
 - 歌单、收藏成员、顺序、重复成员限制和系统歌单约束以 API 返回/错误为准。不要本地保存另一份可独立编辑的业务状态。
 - 搜索分类 groups 和歌曲 id 来自服务器；为了 UI 读取 song DTO 可以额外 GET，但本地拼出的结果不是新的曲库权威。
 - `Song` 中 lyrics/format/source/status、artwork 和 availability 都是服务端事实。MISSING、UNREADABLE、无封面、无歌词、歌词读取失败不能混成一种状态。
+- 永久播放历史使用 `GET /api/history`，Queue 的 Played 区使用 `GET /api/history/played`；两个资源不能互相替代。Home 最近播放展示以持久 History 为准，并保留服务端顺序。
+- 最近更新使用 Web 已有的 `sort_by=modified_at&sort_order=desc`；不能将 `last_scanned_at` 当成文件修改时间。
+- AutoPlay 候选来自 canonical snapshot 的 `queue.items` 中 `source=AUTOPLAY` 的 future occurrences，受 `playback.autoplay_enabled` 约束；Android 不单独生成推荐项。对指定候选执行播放时使用 `queue_item_id`，不能用 song_id 代替 occurrence identity。
+- AppRuntime 可以共享/缓存 GET 资源以减少重复读取，但缓存不是业务状态源；失效按 origin/generation/epoch/revision/fingerprint，stale 内容只能只读展示，mutation 必须通过统一协调器与服务端 readback。
 
 ## 8. 歌词与展示时钟
 

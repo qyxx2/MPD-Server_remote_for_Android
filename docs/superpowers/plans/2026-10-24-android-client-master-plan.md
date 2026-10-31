@@ -156,19 +156,33 @@
 
 ### Task 5：主页、搜索、音乐库、歌单与收藏
 
-- [ ] 完成本 Task 合同、验证与退出门，并记录验证证据。
+- [ ] Task 5 合同、合同矩阵和 B0–B7 实施计划已建立；实现/机器验证/人工验收与退出门尚未完成。
 
-**目标：** 完成发现与曲库浏览能力，严格使用现有服务端资源/API。
+**详细合同：** [Task 5 主页、搜索与音乐库业务合同](../specs/2026-10-31-task-5-home-library-search-contract.md)；[Task 5 合同矩阵与验收覆盖](../specs/2026-10-31-task-5-contract-matrix.md)；[Task 5 Implementation Plan](2026-10-31-task-5-implementation.md)。
 
-**合同矩阵起点：** 产品规格 §§7.1–7.3、§13；后端 API 合同 §4–5；Web 行为合同 §7；架构合同 §5。
+**目标：** 完成发现与曲库浏览能力，严格使用现有服务端资源/API；使用一个 AppRuntime 级、仅进程内的共享资源缓存减少重复 GET。
 
-**主要交付：** 主页可由服务端事实支撑的模块、搜索输入和分类结果、歌曲/专辑/艺术家/风格/年代/标签浏览、歌单和收藏管理，以及已有 API 支持的歌曲/集合操作。
+**合同矩阵起点：** 产品规格 §§7.1–7.3、§13；后端 API 合同 §§3–5；Web 行为合同 §7；客户端边界与架构合同 §§2–6；Task 3 视觉规格 §§7–9；Task 5 专用合同与矩阵。
 
-**机器验证：** 覆盖正常/空/错误/stale 状态、搜索分类结果与详情映射、资源变化后刷新、歌单和收藏写入后重新读取、不可用歌曲与缺失元数据；验证不产生本地业务副本。
+**冻结的主页数据合同：**
+1. 最近更新：GET /api/library/songs?sort_by=modified_at&sort_order=desc，按服务端排序结果聚合 album_id，专辑按最新修改曲目顺序显示。
+2. 播放历史：GET /api/history（持久 History），按服务端 started_at DESC/history_id DESC 顺序；不得使用 /api/history/played（Queue Played）。
+3. 猜你喜欢：从 canonical FullStateSnapshot 的 queue.items 读取 position>0、source=AUTOPLAY 的 future occurrence，受 playback.autoplay_enabled 约束；不使用客户端随机算法或重复 GET Queue。
+4. 三个分区按“最近更新、播放历史、猜你喜欢”纵向铺满可用正文，分区内独立横向滚动；离开 HOME route 后滚动位置全部复位。
 
-**人工验证：** 用实际曲库检查搜索、分类、歌曲详情、收藏、歌单操作和返回导航；确认“最近添加/最近播放”等内容来源准确，“猜你喜欢”没有服务端能力时不得显示伪造推荐结果。
+**冻结的 Library 合同：** 保留 Task 3 八类分类及其余相对顺序，只将歌曲置于第一项：歌曲、播放列表、艺人、专辑、流派/风格、年代、标签、收藏。歌曲 title/modified_at 与 asc/desc 排序完全使用服务器参数。
 
-**阻塞/退出门：** Task 2 API/DTO 语义稳定；各主页模块的数据来源有明确证据；任何需要新增后端业务/API 的要求必须另行分析和批准。
+**主要交付：** Home 三个真实数据分区；全局资源缓存；Search 输入/分类结果；Library/分类详情/Song actions；Playlist 与 Favorites 浏览/修改；已有 API 支持的集合 Play All/Shuffle。
+
+**共享资源缓存边界：** AppRuntime 唯一 owner，cache key 为 method/path/query，身份绑定 origin、connection generation、epoch 与资源 revision/fingerprint；Library 依赖 library revision，Playlist/Favorites 依赖 library+playlist revisions，History 使用 history fingerprint 和 60 秒 max TTL，Queue/Playback 直接来自 SnapshotStore。并发 GET single-flight；请求并发初值 3；metadata LRU/总权重受限；artwork 单图 8MiB、总计 24MiB。只保存在进程内，不使用 Room/SQLite/磁盘；stale 只读，写操作仍由 MutationCoordinator 与服务端 readback 确认。
+
+**机器验证：** 覆盖 Home 数据投影与顺序、History/Played 区分、AutoPlay occurrence identity、空/错误/stale、DTO 严格解析、cache single-flight/identity/revision invalidation/LRU、search stale-response、playlist/favorites mutation/readback、不可用歌曲和缺失元数据；验证跨页面重复读取被共享缓存合并且无本地业务副本。
+
+**人工验证：** 使用真实曲库检查三条主页横向 rail、封面映射、无上下空白、离开主页复位；验证歌曲排第一、排序、Search 分类跳转、Playlist/Favorites 操作、返回导航及断线/恢复显示。
+
+**Batch 顺序：** B0 Typed DTO/API 与 Playback wire 对齐 → B1 AppRuntime ResourceMemoryCache 和 Queue/Player 缓存迁移 → B2 Home 数据投影 → B3 Home Compose 三条横向 rail → B4 Library/Search 只读页面 → B5 单曲/集合/主页操作 → B6 Playlist/Favorites 管理 → B7 跨页面缓存性能、Task 4 regression 与真机验收。每批测试先行、独立验证和本地提交后才进入下一批。
+
+**阻塞/退出门：** Task 2 API/DTO/MutationCoordinator 保持稳定；三个 Home 数据来源与 cache 失效条件均有服务端证据；所有写操作复用统一 coordinator；不得新增未批准的后端 endpoint/数据库/本地业务规则；Task 4 Player/Queue 回归不得退化。B7 全部机器及人工验收通过前不勾选 Task 5 完成。
 
 ### Task 6：设置页与服务端系统配置
 

@@ -130,11 +130,20 @@ CollectionRequest 字段为 `source_type`、`source_id?`、`query?`、`song_ids`
 | PUT / DELETE | `/api/favorites/{song_id}` | 收藏/取消收藏；DELETE 为 204 |
 | GET | `/api/history`、`/api/history/played` | 永久历史与 Queue 使用的 Played 数据 |
 
+**History 与 Played 的区分：**
+- `GET /api/history` 返回持久 `HistoryListResponse {items, count}`；每项包含 `history_id?`、`song_id`、`started_at`、`ended_at?`、`reason?`、`session_id?`。当前服务端 repository 按 `started_at DESC, history_id DESC` 排序；客户端保留服务端顺序。
+- `GET /api/history/played` 返回 `QueueListResponse {items, count}`，来源为 Queue 中 `position < 0` 的 Played occurrence；它不是持久 History。
+- `/api/state.history.active_event` 表示当前活动 History event，不等于已持久化记录；除非事件已进入 `/api/history`，不得当作持久历史展示。
+
+**最近修改排序：** `GET /api/library/songs?sort_by=modified_at&sort_order=desc` 使用服务端 Song 文件修改时间（wire 字段 `file_mtime_ns`）排序。已知修改时间按降序排列，缺少修改时间的条目由服务端置后；客户端不得以 `last_scanned_at` 或本地排序替代。
+
+**AutoPlay 候选：** 不存在单独的推荐 API。当前完整 `/api/state.queue.items` 已包含服务端 Queue occurrence 的 `position`、`source`（`MANUAL|AUTOPLAY`）、`queue_item_id`、`song_id`；是否启用 AutoPlay 由 `/api/state.playback.autoplay_enabled` 表达。客户端展示/操作必须来自这份 canonical snapshot，不能自行生成候选。
+
 ## 5. DTO 与兼容规则
 
 - `SongResponse` 的 `song_id` 可空。主要内容包括标题、file_uri、艺人/专辑/年份/类型标签、duration、歌词及格式/来源/状态、codec/bit-depth/sample-rate/channel-count、文件元数据、`availability_status` (`AVAILABLE|MISSING|UNREADABLE`) 和封面描述。
 - `QueueItemResponse` 包含 `queue_item_id`、`song_id`、`position`、`source` (`MANUAL|AUTOPLAY`) 与 `playback_context_id?`。`queue_item_id` 表示某一次 occurrence；重复歌曲必须能分别操作。
-- `PlaybackStateResponse` 包含 `song_id?`、`state` (`PLAYING|PAUSED|STOPPED`)、context、position、autoplay_enabled、updated_at。
+- `PlaybackStateResponse` 包含 `song_id?`、`state` (`PLAYING|PAUSED|STOPPED`)、`playback_context_id?`、`position_seconds?`、`autoplay_enabled`、`updated_at`。Android 的 snapshot 与 GET playback DTO 必须按这些 snake_case wire 字段严格解析；不能使用旧的 `context` / `position` 字段别名。
 - `PlaylistResponse` 包含 `playlist_id`、name、created/updated 时间、`is_system`、`song_ids`。
 - DTO 需要严格验证必需字段和 enum，区分 null 与缺省，不把 unknown 字段无条件忽略后当作权威成功。
 - 系统输出状态、播放 observation、源文件编码/采样率与实际输出事实相互独立；输出 ACTIVE 不证明实体 DAC 发声或 bit-perfect。

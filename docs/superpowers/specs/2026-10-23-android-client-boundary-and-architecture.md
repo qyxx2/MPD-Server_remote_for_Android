@@ -77,6 +77,16 @@ MPD-Server（唯一业务状态来源）
 - 连接失效或 observation stale/unknown 时可以保留 last-known 展示，但必须显式区分过期事实与当前事实，并禁用依赖 fresh target 的 controls。
 - 共享操作协调器保留 key/payload/状态/恢复动作，统一展示 unknown 与 read-failure；UI 的成功动画不能越过服务端确认。
 
+### 6.1 AppRuntime 级资源内存缓存
+
+- 多页面 GET 资源由单一 AppRuntime 级 ResourceMemoryCache 复用，覆盖 Library/Song/Search/Playlist/Favorites/History 与封面资源；Queue/Playback 权威状态仍只来自 SnapshotStore，不在资源 cache 中复制。
+- cache 仅存进程内 DTO/只读资源，不写入 DataStore、Room、SQLite 或文件；不得成为离线业务数据库。
+- 缓存键包含 method/path/query，资源身份绑定 server origin、connection generation、epoch 和对应 resource revision/fingerprint。origin/generation/epoch 改变时取消旧请求、清空旧身份并拒绝迟到响应。
+- Library/Song/Search/Artwork 依赖 library revision；Playlist/Favorites 依赖 library + playlist revisions；History 无独立 revision 时使用 history snapshot fingerprint 与有界 TTL；Queue/AutoPlay 直接投影 canonical snapshot。
+- 同 key 同身份的并发 GET 必须 single-flight；缓存有 LRU、请求并发和图像字节预算。失败不缓存为成功，资源 response 不匹配请求身份不得入缓存。
+- snapshot stale/断线时可保留 last-known 只读展示，但标记 stale 并禁用写操作；mutation receipt 不得乐观填充 cache，必须等待共享协调器完成权威同步/readback 后再刷新资源。
+- 页面生命周期不能创建/清空全局 cache；页面只订阅资源状态。页面切换不应为同一资源重新发起 GET。
+
 ## 7. 应用内全局状态环
 
 - Android 窗口采用 edge-to-edge：应用内容绘制到透明状态栏背景下，不额外为整条状态栏预留顶部布局空间；必须通过 WindowInsets 正确处理系统栏和显示挖孔。
