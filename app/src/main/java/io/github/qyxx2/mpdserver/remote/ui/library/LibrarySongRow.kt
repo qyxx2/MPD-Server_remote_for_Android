@@ -32,6 +32,36 @@ fun LibrarySongRow(
     songActions: SongActions? = null,
     resourceFresh: Boolean = true,
 ) {
+    val rowContent: @Composable () -> Unit = {
+        LibrarySongRowContent(
+            item = item,
+            showArtwork = showArtwork,
+            runtime = runtime,
+            artworkIdentity = artworkIdentity,
+            modifier = if (songActions == null) modifier else Modifier,
+        )
+    }
+    if (songActions != null) {
+        SongActionMenu(
+            item = item,
+            actions = songActions,
+            resourceFresh = resourceFresh,
+            modifier = modifier.fillMaxWidth(),
+            content = rowContent,
+        )
+    } else {
+        rowContent()
+    }
+}
+
+@Composable
+private fun LibrarySongRowContent(
+    item: LibrarySongRowModel,
+    showArtwork: Boolean,
+    runtime: AppRuntime?,
+    artworkIdentity: QueueResourceIdentity?,
+    modifier: Modifier,
+) {
     val song = item.song
     val title = song?.title?.takeIf { it.isNotBlank() }
         ?: if (item.songId == null) "未索引的音乐文件" else "歌曲已不在音乐库"
@@ -99,14 +129,6 @@ fun LibrarySongRow(
                 text = it,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.error,
-            )
-        }
-        if (songActions != null) {
-            SongActionMenu(
-                item = item,
-                actions = songActions,
-                resourceFresh = resourceFresh,
-                modifier = Modifier.testTag("library-row-song-actions-${item.key.hashCode()}"),
             )
         }
     }

@@ -27,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.network.HttpResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
-import io.github.qyxx2.mpdserver.remote.ui.library.CollectionPlaybackControls
 import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -53,8 +52,6 @@ internal fun HomeSection(
     val cards = state.cardsForSection()
     val isStale = state is HomeSectionState.Stale<*>
     val isReady = state is HomeSectionState.Ready<*>
-    val recentData = state.valueForSection() as? HomeRecentUpdates
-    val historyData = state.valueForSection() as? HomePlaybackHistory
     val autoplayData = state.valueForSection() as? HomeAutoplay
 
     // Keep all currently visible Home bitmaps pinned across all three rails. Prefetch remains a
@@ -138,25 +135,6 @@ internal fun HomeSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         maxLines = 1,
-                    )
-                }
-                if (interactionEnabled && homeCollectionActions != null && recentData?.cards?.isNotEmpty() == true &&
-                    title == "最近更新"
-                ) {
-                    CollectionPlaybackControls(
-                        enabled = isReady && homeCollectionActions.canPlay(),
-                        onPlayAll = { homeCollectionActions.playRecentUpdates(randomize = false, resourceFresh = isReady) },
-                        onShuffle = { homeCollectionActions.playRecentUpdates(randomize = true, resourceFresh = isReady) },
-                        tag = "home-recent-collection-controls",
-                    )
-                } else if (interactionEnabled && homeCollectionActions != null &&
-                    historyData?.songIds?.isNotEmpty() == true && title == "播放历史"
-                ) {
-                    CollectionPlaybackControls(
-                        enabled = isReady && homeCollectionActions.canPlay(),
-                        onPlayAll = { homeCollectionActions.playHistory(historyData, randomize = false, resourceFresh = isReady) },
-                        onShuffle = { homeCollectionActions.playHistory(historyData, randomize = true, resourceFresh = isReady) },
-                        tag = "home-history-collection-controls",
                     )
                 }
             }

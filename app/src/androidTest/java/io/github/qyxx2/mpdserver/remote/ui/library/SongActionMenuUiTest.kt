@@ -21,7 +21,10 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.fillMaxWidth
 import android.os.SystemClock
 import android.view.MotionEvent
 import androidx.test.platform.app.InstrumentationRegistry
@@ -53,10 +56,10 @@ class SongActionMenuUiTest {
             }
         }
 
-        val anchorNode = composeRule.onNodeWithTag("song-actions-song-a").fetchSemanticsNode()
+        val anchorNode = composeRule.onNodeWithTag("song-action-area-song-a").fetchSemanticsNode()
         val anchorOrigin = anchorNode.layoutInfo.coordinates.localToScreen(Offset.Zero)
         val anchorCenterX = anchorOrigin.x + anchorNode.size.width / 2f
-        composeRule.onNodeWithTag("song-actions-song-a").performClick()
+        composeRule.onNodeWithTag("song-action-area-song-a").performClick()
         composeRule.onNodeWithTag("song-action-menu-song-a").assertIsDisplayed()
 
         val menuNode = composeRule.onNodeWithTag("song-action-menu-song-a").fetchSemanticsNode()
@@ -80,6 +83,52 @@ class SongActionMenuUiTest {
     }
 
     @Test
+    fun tappingSongTitleAreaOpensItsMenuWithoutAThreeDotButton() {
+        val item = LibrarySongRowModel(
+            key = "song:song-a",
+            songId = "song-a",
+            song = playableSong(),
+        )
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LibrarySongRow(item = item, songActions = playbackActions())
+            }
+        }
+
+        val actionAreaTag = "song-action-area-${item.key.hashCode()}"
+        composeRule.onNodeWithTag(actionAreaTag).performTouchInput {
+            click(Offset(260f, 35f))
+        }
+        composeRule.onNodeWithTag("song-action-menu-${item.key.hashCode()}").assertIsDisplayed()
+        composeRule.onAllNodesWithText("⋮").assertCountEquals(0)
+    }
+
+    @Test
+    fun collectionPlaybackControlsCenterThePairAndShowSimpleActionIcons() {
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                    CollectionPlaybackControls(
+                        enabled = true,
+                        onPlayAll = {},
+                        onShuffle = {},
+                        modifier = Modifier.fillMaxWidth(),
+                        tag = "centered-collection-controls",
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("centered-collection-controls-play-icon", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("centered-collection-controls-shuffle-icon", useUnmergedTree = true).assertIsDisplayed()
+        val container = composeRule.onNodeWithTag("centered-collection-controls").fetchSemanticsNode().boundsInRoot
+        val play = composeRule.onNodeWithTag("centered-collection-controls-play-all").fetchSemanticsNode().boundsInRoot
+        val shuffle = composeRule.onNodeWithTag("centered-collection-controls-shuffle").fetchSemanticsNode().boundsInRoot
+        val pairCenter = (play.left + shuffle.right) / 2f
+        assertTrue("Play All and Shuffle must be centered as one group", kotlin.math.abs(pairCenter - container.center.x) < 2f)
+    }
+
+    @Test
     fun outsideTapDismissesSongMenuAndChosenActionAlsoDismissesIt() {
         var selected: SongPlaybackAction? = null
         composeRule.setContent {
@@ -88,7 +137,7 @@ class SongActionMenuUiTest {
             }
         }
 
-        composeRule.onNodeWithTag("song-actions-song-a").performClick()
+        composeRule.onNodeWithTag("song-action-area-song-a").performClick()
         composeRule.onNodeWithTag("song-action-menu-song-a").assertIsDisplayed()
         // Compose semantics clicks bypass a focusable Popup window. Inject a real screen touch
         // so Android routes it to the Popup outside-dismiss handler.
@@ -111,7 +160,7 @@ class SongActionMenuUiTest {
         composeRule.waitForIdle()
         composeRule.onAllNodesWithTag("song-action-menu-song-a").assertCountEquals(0)
 
-        composeRule.onNodeWithTag("song-actions-song-a").performClick()
+        composeRule.onNodeWithTag("song-action-area-song-a").performClick()
         composeRule.onNodeWithText("下一首播放").performClick()
         composeRule.runOnIdle { assertEquals(SongPlaybackAction.PLAY_NEXT, selected) }
         composeRule.onAllNodesWithTag("song-action-menu-song-a").assertCountEquals(0)
@@ -131,11 +180,12 @@ class SongActionMenuUiTest {
                             song = playableSong(),
                         ),
                         actions = playbackActions(),
+                        content = { Text("Song A") },
                     )
                 }
             }
         }
-        composeRule.onNodeWithTag("song-actions-374050734").assertIsNotEnabled()
+        composeRule.onNodeWithTag("song-action-area-374050734").assertIsNotEnabled()
     }
 
     @Test
@@ -213,6 +263,7 @@ class SongActionMenuUiTest {
                     menuKey = "song-a",
                     enabled = true,
                     onAction = onAction,
+                    content = { Text("Song A") },
                 )
             }
         }

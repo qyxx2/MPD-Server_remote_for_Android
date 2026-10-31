@@ -4,9 +4,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,11 +28,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import io.github.qyxx2.mpdserver.remote.ui.library.LibrarySongRowModel
-import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
-import io.github.qyxx2.mpdserver.remote.ui.library.SongActionMenu
 import io.github.qyxx2.mpdserver.remote.ui.library.LocalPlaybackActionsEnabled
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActionMenu
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 
 @Composable
 internal fun HomeArtworkCardItem(
@@ -66,48 +66,42 @@ internal fun HomeArtworkCardItem(
     val subtitle = artists.joinToString("、").ifBlank { "未知艺人" }
     val identityText = card.queueItemId?.let { "，队列项 $it" }.orEmpty()
     val accessibilityLabel = "$sectionTitle，$title，$subtitle$identityText"
+    val canPlayOccurrence = resourceFresh && card.isPlayable && autoplayIdentity != null &&
+        homeCollectionActions != null && playbackActionsEnabled
     val tileModifier = Modifier
         .width(coverSize)
         .semantics { contentDescription = accessibilityLabel }
         .testTag("home-card-${sectionTitle.hashCode()}-${card.key.hashCode()}")
-    val interactiveModifier = if (onClick != null) {
-        tileModifier.clickable(onClick = onClick)
-    } else tileModifier
 
-    Column(
-        modifier = interactiveModifier,
-        horizontalAlignment = Alignment.Start,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(coverSize)
-                .clip(RoundedCornerShape(9.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Text(
-                    text = "♫",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.headlineMedium,
-                )
-            }
-            when (card.kind) {
-                HomeCardKind.AUTOPLAY_OCCURRENCE -> {
-                    val enabled = resourceFresh && card.isPlayable && autoplayIdentity != null &&
-                        homeCollectionActions != null && playbackActionsEnabled
+    val cardContent: @Composable () -> Unit = {
+        Column(horizontalAlignment = Alignment.Start) {
+            Box(
+                modifier = Modifier
+                    .size(coverSize)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        text = "♫",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                }
+                if (card.kind == HomeCardKind.AUTOPLAY_OCCURRENCE) {
                     IconButton(
                         onClick = {
                             homeCollectionActions?.playAutoplay(card, autoplayIdentity, resourceFresh)
                         },
-                        enabled = enabled,
+                        enabled = canPlayOccurrence,
                         modifier = Modifier.align(Alignment.TopEnd)
                             .padding(2.dp)
                             .testTag("home-autoplay-play-${card.queueItemId.orEmpty().hashCode()}"),
@@ -115,40 +109,57 @@ internal fun HomeArtworkCardItem(
                         Text("▶", color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                HomeCardKind.SINGLE_SONG, HomeCardKind.HISTORY_ORPHAN -> {
-                    val songId = card.songId
-                    if (songActions != null && songId != null) {
-                        SongActionMenu(
-                            item = LibrarySongRowModel(
-                                key = "home:${card.key}",
-                                songId = songId,
-                                song = card.song,
-                            ),
-                            actions = songActions,
-                            resourceFresh = resourceFresh,
-                            modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
-                        )
-                    }
+            }
+            Text(
+                text = title,
+                modifier = Modifier.width(coverSize),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                modifier = Modifier.width(coverSize),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+
+    when (card.kind) {
+        HomeCardKind.SINGLE_SONG, HomeCardKind.HISTORY_ORPHAN -> {
+            val songId = card.songId
+            val menuItem = songId?.let {
+                LibrarySongRowModel(key = "home:${card.key}", songId = it, song = card.song)
+            }
+            if (songActions != null && menuItem != null) {
+                SongActionMenu(
+                    item = menuItem,
+                    actions = songActions,
+                    resourceFresh = resourceFresh,
+                    modifier = tileModifier,
+                    content = cardContent,
+                )
+            } else {
+                Column(modifier = tileModifier, horizontalAlignment = Alignment.Start) {
+                    cardContent()
                 }
-                HomeCardKind.ALBUM -> Unit
             }
         }
-        Text(
-            text = title,
-            modifier = Modifier.width(coverSize),
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = subtitle,
-            modifier = Modifier.width(coverSize),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        HomeCardKind.AUTOPLAY_OCCURRENCE -> {
+            Column(modifier = tileModifier, horizontalAlignment = Alignment.Start) {
+                cardContent()
+            }
+        }
+        HomeCardKind.ALBUM -> {
+            val interactiveModifier = if (onClick != null) tileModifier.clickable(onClick = onClick) else tileModifier
+            Column(modifier = interactiveModifier, horizontalAlignment = Alignment.Start) {
+                cardContent()
+            }
+        }
     }
 }

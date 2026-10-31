@@ -2,15 +2,29 @@ package io.github.qyxx2.mpdserver.remote.ui.home
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.AvailabilityStatus
+import io.github.qyxx2.mpdserver.remote.runtime.MutationIntent
+import io.github.qyxx2.mpdserver.remote.runtime.MutationOutcome
+import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
+import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.ui.library.PlaybackMutationGateway
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -94,6 +108,54 @@ class HomeScreenUiTest {
     }
 
     @Test
+    fun tappingAnywhereOnAHomeSingleSongCardOpensTheSongActionMenu() {
+        val song = song(1).copy(availabilityStatus = AvailabilityStatus.AVAILABLE)
+        val card = HomeArtworkCard(
+            key = "song:${song.songId}",
+            kind = HomeCardKind.SINGLE_SONG,
+            song = song,
+            songId = song.songId,
+            albumId = song.albumId,
+            artworkSongId = song.songId,
+            artwork = null,
+            isPlayable = true,
+        )
+        val state = HomeUiState(
+            recentlyUpdated = HomeSectionState.Ready(HomeRecentUpdates(listOf(card))),
+            playbackHistory = HomeSectionState.Empty,
+            autoplay = HomeSectionState.Empty,
+        )
+        composeRule.setContent {
+            HomeScreen(
+                state = state,
+                scrollStateHolder = rememberHomeScrollStateHolder(),
+                songActions = songActions(),
+            )
+        }
+
+        val cardTag = "home-card-${"最近更新".hashCode()}-${card.key.hashCode()}"
+        composeRule.onNodeWithTag(cardTag).performTouchInput {
+            click(Offset(80f, 35f))
+        }
+        composeRule.onNodeWithTag("song-action-menu-${"home:${card.key}".hashCode()}").assertIsDisplayed()
+        composeRule.onAllNodesWithText("⋮").assertCountEquals(0)
+    }
+
+    @Test
+    fun homeHidesCollectionPlayAllAndShuffleControls() {
+        composeRule.setContent {
+            HomeScreen(
+                state = readyState(),
+                scrollStateHolder = rememberHomeScrollStateHolder(),
+                homeCollectionActions = homeCollectionActions(),
+            )
+        }
+
+        composeRule.onAllNodesWithTag("home-recent-collection-controls").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("home-history-collection-controls").assertCountEquals(0)
+    }
+
+    @Test
     fun loadingEmptyAndFailureStatesKeepAllThreeRailsMounted() {
         composeRule.setContent {
             HomeScreen(
@@ -118,6 +180,30 @@ class HomeScreenUiTest {
                 composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height > 48f,
             )
         }
+    }
+
+    private fun songActions(): SongActions {
+        val activities = MutableStateFlow<List<OperationActivity>>(emptyList())
+        val gateway = PlaybackMutationGateway(
+            stateProvider = { SnapshotStoreState() },
+            activities = activities,
+            submitter = { _: MutationIntent -> MutationOutcome.Submitted },
+            retryUnknown = { _: String -> MutationOutcome.NotRetryable },
+            canRetryUnknown = { _: String -> false },
+        )
+        return SongActions(gateway)
+    }
+
+    private fun homeCollectionActions(): HomeCollectionActions {
+        val activities = MutableStateFlow<List<OperationActivity>>(emptyList())
+        val gateway = PlaybackMutationGateway(
+            stateProvider = { SnapshotStoreState() },
+            activities = activities,
+            submitter = { _: MutationIntent -> MutationOutcome.Submitted },
+            retryUnknown = { _: String -> MutationOutcome.NotRetryable },
+            canRetryUnknown = { _: String -> false },
+        )
+        return HomeCollectionActions(gateway)
     }
 
     private fun readyState(): HomeUiState {
