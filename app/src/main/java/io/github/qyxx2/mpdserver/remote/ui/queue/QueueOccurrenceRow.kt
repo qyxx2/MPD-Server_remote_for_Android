@@ -67,6 +67,7 @@ internal fun QueueOccurrenceRow(
     isCurrent: Boolean,
     currentLabel: String,
     cacheEntry: QueueSongCacheEntry?,
+    onArtworkMissing: () -> Unit = {},
     menuEnabled: Boolean,
     menuTitle: String,
     menuExpanded: Boolean,
@@ -86,7 +87,7 @@ internal fun QueueOccurrenceRow(
     onReorderEnd: () -> Unit = {},
     onReorderCancel: () -> Unit = {},
 ) {
-    val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
+    val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }
     val background = queueOccurrenceBackgroundColor(
         isCurrent = isCurrent,
         primary = MaterialTheme.colorScheme.primary,
@@ -147,6 +148,7 @@ internal fun QueueOccurrenceRow(
         Spacer(Modifier.width(8.dp))
         QueueRowArtwork(
             entry = cacheEntry,
+            onArtworkMissing = onArtworkMissing,
             modifier = Modifier.size(54.dp).testTag("queue-row-artwork-${occurrence.queueItemId}"),
         )
         Spacer(Modifier.width(12.dp))
@@ -197,7 +199,7 @@ internal fun QueueOccurrenceRow(
             ).joinToString(" · ")
             // Keep the format line allocated even while metadata is loading or unavailable;
             // replacing a placeholder with codec details must never change the measured row height.
-            val availability = song?.availabilityStatus?.name?.takeIf { it in setOf("MISSING", "UNREADABLE") }
+            val availability = song?.availabilityStatus?.takeIf { it in setOf("MISSING", "UNREADABLE") }
             Text(
                 text = format.ifBlank { availability ?: " " },
                 style = MaterialTheme.typography.labelSmall,
@@ -238,7 +240,7 @@ internal fun QueueOccurrenceDragGhost(
     rowHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }?.song
+    val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }
     val title = song?.title?.takeIf { it.isNotBlank() }
         ?: if (cacheEntry?.status == QueueSongLoadStatus.FAILED) "曲目信息不可用" else "正在读取曲目信息…"
     val artists = song?.artists.orEmpty().filter(String::isNotBlank).joinToString(" / ")
@@ -250,7 +252,7 @@ internal fun QueueOccurrenceDragGhost(
         song?.bitDepth?.takeIf { it > 0 }?.let { "$it bit" },
         song?.sampleRateHz?.takeIf { it > 0 }?.let { formatSampleRate(it) },
     ).joinToString(" · ").ifBlank {
-        song?.availabilityStatus?.name?.takeIf { it in setOf("MISSING", "UNREADABLE") } ?: " "
+        song?.availabilityStatus?.takeIf { it in setOf("MISSING", "UNREADABLE") } ?: " "
     }
     val shape = RoundedCornerShape(10.dp)
     Box(
@@ -278,6 +280,7 @@ internal fun QueueOccurrenceDragGhost(
             Spacer(Modifier.width(8.dp))
             QueueRowArtwork(
                 entry = cacheEntry,
+                onArtworkMissing = {},
                 modifier = Modifier.size(54.dp),
             )
             Spacer(Modifier.width(12.dp))
@@ -390,17 +393,16 @@ private fun QueueMoreGlyph() {
 @Composable
 private fun QueueRowArtwork(
     entry: QueueSongCacheEntry?,
+    onArtworkMissing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val readyEntry = entry?.takeIf { it.status == QueueSongLoadStatus.READY && it.song?.artwork != null }
+    val readyEntry = entry?.takeIf {
+        it.status == QueueSongLoadStatus.READY &&
+            it.artworkStatus == QueueArtworkStatus.AVAILABLE &&
+            !it.artworkId.isNullOrBlank()
+    }
     val thumbnailKey = readyEntry?.let {
-        QueueArtworkThumbnailKey(it.identity, it.song!!.songId.orEmpty())
-    }?.takeIf { it.songId.isNotBlank() }
-    val bytes = readyEntry?.takeIf { it.artworkStatus == QueueArtworkStatus.AVAILABLE }?.artworkBytes
-    LaunchedEffect(thumbnailKey, bytes) {
-        if (thumbnailKey != null && bytes != null) {
-            QueueArtworkThumbnailCache.preload(thumbnailKey, bytes)
-        }
+        QueueArtworkThumbnailKey(it.identity, it.artworkId!!)
     }
     val thumbnailState = remember(thumbnailKey) {
         thumbnailKey?.let(QueueArtworkThumbnailCache::stateFor)
@@ -408,6 +410,11 @@ private fun QueueRowArtwork(
     // The decoded image is a shared LRU value. Recycling a row or reopening Queue reuses it
     // instead of decoding the same compressed artwork on every composition.
     val bitmap = thumbnailState?.collectAsStateWithLifecycle()?.value
+    LaunchedEffect(thumbnailKey, bitmap) {
+        if (thumbnailKey != null && bitmap == null) {
+            onArtworkMissing()
+        }
+    }
 
     Box(
         modifier = modifier.clip(RoundedCornerShape(7.dp)).background(MaterialTheme.colorScheme.surfaceVariant),

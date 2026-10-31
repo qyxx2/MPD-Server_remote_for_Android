@@ -9,7 +9,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import okhttp3.OkHttpClient
 import java.io.Closeable
 import java.util.concurrent.TimeUnit
@@ -30,10 +33,55 @@ class AppRuntime private constructor(
         readState = stateReader,
         scope = scope,
     )
+    /** The one process-memory owner shared by every screen and existing artwork adapter. */
+    val resources = ResourceMemoryCache(scope)
+    private val resourceIdentityJob = scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+        var lastHistory: JsonElement? = null
+        var hasHistory = false
+        var historyFingerprint = historyResourceFingerprint(null)
+        var lastSession: ResourceSessionIdentity? = null
+        var lastWatermarks: ResourceWatermarks? = null
+        var lastFreshness: Boolean? = null
+
+        snapshots.state.collect { state ->
+            val snapshot = state.snapshot
+            val history = snapshot?.wire?.history
+            // recordReadTiming and connection-state-only emissions retain the same snapshot/history
+            // objects. Avoid re-hashing a potentially large History tree for those high-frequency updates.
+            if (!hasHistory || history !== lastHistory) {
+                if (!hasHistory || history != lastHistory) {
+                    historyFingerprint = historyResourceFingerprint(history)
+                }
+                lastHistory = history
+                hasHistory = true
+            }
+
+            val nextSession = ResourceSessionIdentity(
+                originAddress = realtimeController.currentOrigin().address,
+                connectionGeneration = state.connectionGeneration,
+                epoch = snapshot?.epoch.orEmpty(),
+            )
+            val nextWatermarks = ResourceWatermarks(
+                libraryRevision = snapshot?.libraryRevision ?: 0L,
+                playlistRevision = snapshot?.playlistRevision ?: 0L,
+                historyFingerprint = historyFingerprint,
+            )
+            val nextFreshness = state.controlsEligible
+            if (nextSession != lastSession || nextWatermarks != lastWatermarks ||
+                nextFreshness != lastFreshness
+            ) {
+                resources.updateIdentity(nextSession, nextWatermarks, nextFreshness)
+                lastSession = nextSession
+                lastWatermarks = nextWatermarks
+                lastFreshness = nextFreshness
+            }
+        }
+    }
     /** Shared read-only resource access; origin is resolved from the live runtime for every request. */
     val reads: RuntimeReadApi by lazy { RuntimeReadApi(
         originProvider = { realtimeController.currentOrigin() },
         client = httpClient,
+        resources = resources,
     ) }
     val mutations: MutationCoordinator by lazy { MutationCoordinator(
         origin = initialOrigin,
@@ -86,6 +134,8 @@ class AppRuntime private constructor(
     override fun close() {
         // Stop owners before cancelling their shared scope so socket and collector cleanup can finish.
         CoroutineScope(Dispatchers.IO).launch {
+            resourceIdentityJob.cancelAndJoin()
+            resources.close()
             mutations.close()
             realtimeController.stop()
             scope.cancel()

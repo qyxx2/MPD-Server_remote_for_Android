@@ -73,36 +73,33 @@ import kotlin.math.roundToInt
 
 private enum class PlayedReadStatus { WAITING, LOADING, CANONICAL, FALLBACK, FAILED }
 
-/** Creates only a bounded presentation cache around the existing app-scoped RuntimeReadApi. */
+/** Queue-local adapter; all actual Song/artwork resource reads are served by AppRuntime.resources. */
 internal fun createQueueSongCache(
     runtime: AppRuntime,
     scope: CoroutineScope,
-    maxConcurrentRequests: Int = 5,
     maxEntries: Int = 512,
-    maxArtworkBytesTotal: Long = 24L * 1024 * 1024,
     loaderOverride: (suspend (QueueResourceIdentity, String) -> QueueSongResource)? = null,
 ): QueueSongCache = QueueSongCache(
     scope = scope,
-    maxConcurrentRequests = maxConcurrentRequests,
     maxEntries = maxEntries,
-    maxArtworkBytesTotal = maxArtworkBytesTotal,
-    artworkPrefetcher = { identity, songId, bytes ->
-        QueueArtworkThumbnailCache.preloadPrefetchOnce(
-            QueueArtworkThumbnailKey(identity, songId),
+    artworkPrefetcher = { identity, artworkId, bytes ->
+        QueueArtworkThumbnailCache.preload(
+            QueueArtworkThumbnailKey(identity, artworkId),
             bytes,
         )
     },
+    artworkRehydrator = { _, songId, _ -> runtime.reads.getArtwork(songId) },
 ) { identity, songId ->
     if (loaderOverride != null) {
         loaderOverride(identity, songId)
     } else {
-        val response = runtime.reads.getSong(songId)
-        val song = (response as? ApiResult.Success)?.value
+        // RuntimeReadApi already routes Song GETs through AppRuntime.resources.readSong.
+        // Do not wrap it in a second readSong call: that would await the same single-flight Deferred
+        // from inside its own loader.
+        val metadata = runtime.reads.getSong(songId)
+        val song = (metadata as? ApiResult.Success)?.value
             ?: throw IllegalStateException("Song metadata could not be read")
-        if (song.songId != songId) {
-            throw IllegalStateException("Song metadata identity did not match the requested song")
-        }
-        val artwork = if (song.artwork != null) runtime.reads.getArtwork(songId) else null
+        val artwork = song.artwork?.let { runtime.reads.getArtwork(songId) }
         QueueSongResource(song, artwork)
     }
 }
@@ -322,7 +319,7 @@ internal fun QueueScreen(
         if (commit != null) {
             val source = latestRows.firstOrNull { it.queueItemId == commit.queueItemId }
                 ?: latestProjection.pending.firstOrNull { it.queueItemId == commit.queueItemId }
-            val title = cache.state.value[source?.songId]?.song?.title?.takeIf(String::isNotBlank)
+            val title = cache.state.value[source?.songId]?.title?.takeIf(String::isNotBlank)
                 ?: source?.songId
                 ?: commit.queueItemId
             actions.reorder(commit.queueItemId, commit.beforeQueueItemId, title)
@@ -374,27 +371,11 @@ internal fun QueueScreen(
         }.distinctUntilChanged().collect { songIds ->
             cache.updateScope(resourceIdentity, songIds)
             songIds.forEach(cache::load)
-        }
-    }
-
-    // Decode queue thumbnails once in the background. The shared LRU keeps visible/recent images
-    // ready as LazyColumn recycles rows and retains them when the Queue destination is reopened.
-    LaunchedEffect(cache, resourceIdentity) {
-        QueueArtworkThumbnailCache.updateIdentity(resourceIdentity)
-        val warmedSongIds = mutableSetOf<String>()
-        cache.state.collect { entries ->
-            entries.forEach { (songId, entry) ->
-                val bytes = entry.artworkBytes
-                if (entry.identity == resourceIdentity &&
-                    entry.status == QueueSongLoadStatus.READY &&
-                    entry.artworkStatus == QueueArtworkStatus.AVAILABLE &&
-                    bytes != null &&
-                    warmedSongIds.add(songId)
+            songIds.forEach { songId ->
+                if (cache.currentEntry(songId, resourceIdentity)?.artworkStatus ==
+                    QueueArtworkStatus.RETRYABLE_FAILURE
                 ) {
-                    QueueArtworkThumbnailCache.preloadPrefetchOnce(
-                        QueueArtworkThumbnailKey(resourceIdentity, songId),
-                        bytes,
-                    )
+                    cache.preloadArtwork(songId)
                 }
             }
         }
@@ -722,7 +703,7 @@ internal fun QueueScreen(
                                 val entry by entryFlow.collectAsStateWithLifecycle(
                                     initialValue = cache.currentEntry(occurrence.songId, resourceIdentity),
                                 )
-                                val menuTitle = entry?.song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
+                                val menuTitle = entry?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
                                 Column(
                                     modifier = Modifier.fillMaxWidth()
                                         .testTag("queue-history-row-${occurrence.queueItemId}"),
@@ -732,6 +713,7 @@ internal fun QueueScreen(
                                         isCurrent = false,
                                         currentLabel = "",
                                         cacheEntry = entry,
+                                        onArtworkMissing = { cache.preloadArtwork(occurrence.songId) },
                                         menuEnabled = actions.canShowMenu(occurrence.queueItemId),
                                         menuTitle = menuTitle,
                                         menuExpanded = selectedMenuItem?.queueItemId == occurrence.queueItemId,
@@ -774,7 +756,7 @@ internal fun QueueScreen(
                                 val entry by entryFlow.collectAsStateWithLifecycle(
                                     initialValue = cache.currentEntry(occurrence.songId, resourceIdentity),
                                 )
-                                val song = entry?.song
+                                val song = entry
                                 val menuTitle = song?.title?.takeIf(String::isNotBlank) ?: occurrence.songId
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     QueueOccurrenceRow(
@@ -782,6 +764,7 @@ internal fun QueueScreen(
                                         isCurrent = occurrence.position == 0,
                                         currentLabel = queueProjection.currentLabel,
                                         cacheEntry = entry,
+                                        onArtworkMissing = { cache.preloadArtwork(occurrence.songId) },
                                         menuEnabled = actions.canShowMenu(occurrence.queueItemId),
                                         menuTitle = menuTitle,
                                         menuExpanded = selectedMenuItem?.queueItemId == occurrence.queueItemId,

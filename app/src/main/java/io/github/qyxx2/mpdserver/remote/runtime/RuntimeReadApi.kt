@@ -27,17 +27,29 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+private const val MAX_ARTWORK_RESPONSE_BYTES = 8 * 1024 * 1024
+
 /** Runtime-owned, read-only access to typed Library, History, Search, Playlist, Favorites and artwork resources. */
 class RuntimeReadApi(
     private val originProvider: () -> ServerOrigin,
     private val client: OkHttpClient,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val execute: (HttpTransport, Request) -> HttpResult = { transport, request -> transport.execute(request) },
+    private val resources: ResourceMemoryCache? = null,
+    private val execute: (HttpTransport, Request) -> HttpResult = { transport, request ->
+        if (request.url.encodedPath.endsWith("/artwork")) {
+            transport.executeBounded(request, MAX_ARTWORK_RESPONSE_BYTES)
+        } else {
+            transport.execute(request)
+        }
+    },
 ) {
     suspend fun getSongs(sortBy: String = "title", sortOrder: String = "asc"): ApiResult<SongListDto> =
-        jsonGet(LibraryApiPaths.songs(sortBy, sortOrder))
+        jsonGet(LibraryApiPaths.songs(sortBy, sortOrder), ResourceDependency.LIBRARY)
 
-    suspend fun getSong(songId: String): ApiResult<SongDto> = jsonGet(LibraryApiPaths.song(songId))
+    suspend fun getSong(songId: String): ApiResult<SongDto> {
+        val cache = resources ?: return jsonGet(LibraryApiPaths.song(songId), ResourceDependency.LIBRARY)
+        return cache.readSong(songId) { rawJsonGet(LibraryApiPaths.song(songId)) }
+    }
 
     suspend fun getAlbums(): ApiResult<AlbumListDto> = jsonGet(LibraryApiPaths.albums())
     suspend fun getAlbumSongs(albumId: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.albumSongs(albumId))
@@ -56,25 +68,53 @@ class RuntimeReadApi(
     suspend fun getTagSongs(tagId: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.tagSongs(tagId))
 
     /** Persistent History. This is deliberately separate from Queue's /api/history/played projection. */
-    suspend fun getHistory(): ApiResult<HistoryListDto> = jsonGet(LibraryApiPaths.history())
+    suspend fun getHistory(): ApiResult<HistoryListDto> = jsonGet(LibraryApiPaths.history(), ResourceDependency.HISTORY)
 
     /** Queue Played projection retained for the existing Queue screen. */
-    suspend fun getPlayed(): ApiResult<QueueListDto> = jsonGet(LibraryApiPaths.played())
+    // This Task 4 Queue endpoint is not persistent Home history and has no history watermark.
+    // Leave it uncached, but still use AppRuntime's shared three-request resource GET limit.
+    suspend fun getPlayed(): ApiResult<QueueListDto> {
+        val loader: suspend () -> ApiResult<QueueListDto> = {
+            rawJsonGet(LibraryApiPaths.played())
+        }
+        return resources?.readUncached(loader) ?: loader()
+    }
 
     suspend fun getSearchResults(query: String): ApiResult<SearchResultsDto> =
-        jsonGet(LibraryApiPaths.searchResults(query))
+        jsonGet(LibraryApiPaths.searchResults(query), ResourceDependency.LIBRARY)
 
-    suspend fun getPlaylists(): ApiResult<PlaylistListDto> = jsonGet(LibraryApiPaths.playlists())
+    suspend fun getPlaylists(): ApiResult<PlaylistListDto> = jsonGet(LibraryApiPaths.playlists(), ResourceDependency.PLAYLIST)
     suspend fun getPlaylist(playlistId: String): ApiResult<PlaylistDto> =
-        jsonGet(LibraryApiPaths.playlist(playlistId))
+        jsonGet(LibraryApiPaths.playlist(playlistId), ResourceDependency.PLAYLIST)
     suspend fun getPlaylistSongs(playlistId: String): ApiResult<SongListDto> =
-        jsonGet(LibraryApiPaths.playlistSongs(playlistId))
+        jsonGet(LibraryApiPaths.playlistSongs(playlistId), ResourceDependency.PLAYLIST)
 
-    suspend fun getFavoriteMembers(): ApiResult<FavoriteMembersDto> = jsonGet(LibraryApiPaths.favoriteMembers())
-    suspend fun getFavorites(): ApiResult<CollectionDto> = jsonGet(LibraryApiPaths.favorites())
+    suspend fun getFavoriteMembers(): ApiResult<FavoriteMembersDto> = jsonGet(LibraryApiPaths.favoriteMembers(), ResourceDependency.PLAYLIST)
+    suspend fun getFavorites(): ApiResult<CollectionDto> = jsonGet(LibraryApiPaths.favorites(), ResourceDependency.PLAYLIST)
 
-    /** Returns original image bytes; HTTP 404 stays distinguishable from malformed/non-image content. */
-    suspend fun getArtwork(songId: String): HttpResult = withContext(dispatcher) {
+    /** Returns original image bytes. In the app runtime, one shared cache owns the raw response. */
+    suspend fun getArtwork(songId: String): HttpResult {
+        val cache = resources ?: return fetchArtwork(songId)
+        val capturedIdentity = cache.captureLibraryIdentity()
+            ?: return HttpResult.Failed(HttpFailure.Protocol("Resource Library identity is not established"))
+        val songResult = cache.readSong(songId) { rawJsonGet(LibraryApiPaths.song(songId)) }
+        val song = (songResult as? ApiResult.Success)?.value
+            ?: return HttpResult.Failed(
+                if (songResult is ApiResult.TransportError) songResult.failure
+                else HttpFailure.Protocol("Song metadata is unavailable for artwork"),
+            )
+        if (!cache.isCurrent(capturedIdentity)) {
+            return HttpResult.Failed(HttpFailure.Protocol("Artwork song metadata belongs to an obsolete Library identity"))
+        }
+        val artworkId = song.artwork?.artworkId?.takeIf(String::isNotBlank)
+            ?: return HttpResult.Failed(HttpFailure.Protocol("Song has no artwork reference"))
+        return cache.readArtwork(
+            ArtworkCacheKey(artworkId, songId),
+            expectedIdentity = capturedIdentity,
+        ) { fetchArtwork(songId) }
+    }
+
+    private suspend fun fetchArtwork(songId: String): HttpResult = withContext(dispatcher) {
         val transport = HttpTransport(originProvider(), client)
         val result = execute(transport, transport.buildRequest("GET", LibraryApiPaths.songArtwork(songId)))
         when (result) {
@@ -88,7 +128,27 @@ class RuntimeReadApi(
         }
     }
 
-    private suspend inline fun <reified T> jsonGet(path: String): ApiResult<T> = withContext(dispatcher) {
+    private suspend inline fun <reified T : Any> jsonGet(
+        path: String,
+        dependency: ResourceDependency = ResourceDependency.LIBRARY,
+    ): ApiResult<T> = withContext(dispatcher) {
+        val loader: suspend () -> ApiResult<T> = { rawJsonGet(path) }
+        val cache = resources
+        val capturedIdentity = cache?.captureLibraryIdentity()
+        val result = if (cache == null) loader() else {
+            cache.readResource(ResourceCacheKey.get<T>(path), dependency, loader)
+        }
+        if (cache != null && result is ApiResult.Success && result.value is SongListDto) {
+            val songList = result.value as SongListDto
+            @Suppress("UNCHECKED_CAST")
+            ApiResult.Success(
+                songList.copy(items = cache.internSongs(songList.items, capturedIdentity)) as T,
+                result.statusCode,
+            )
+        } else result
+    }
+
+    private suspend inline fun <reified T : Any> rawJsonGet(path: String): ApiResult<T> = withContext(dispatcher) {
         val transport = HttpTransport(originProvider(), client)
         execute(transport, transport.buildRequest("GET", path)).decodeJson<T>()
     }

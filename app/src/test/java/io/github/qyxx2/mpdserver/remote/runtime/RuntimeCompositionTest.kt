@@ -11,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -57,6 +58,53 @@ class RuntimeCompositionTest {
             assertEquals(1, sockets.urls.size)
             assertSame(store, runtime.snapshots)
             assertEquals(1L, runtime.realtimeController.generation.value)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test fun resourceCacheHasOneRuntimeOwnerAndTracksTheCanonicalServerSession() = runBlocking {
+        val sockets = RecordingSocketFactory()
+        val runtime = AppRuntime.createForTesting(
+            origin = ServerOrigin.parse("http://music.example:18000"),
+            socketFactory = sockets,
+        )
+        try {
+            val resourceOwner = runtime.resources
+            assertSame(resourceOwner, runtime.resources)
+            runtime.start()
+            val socket = sockets.awaitSocket(0)
+            socket.open()
+            socket.message(snapshot("e1", 1))
+            runtime.snapshots.state.first { it.snapshot?.epoch == "e1" }
+
+            withTimeout(2_000) {
+                while (resourceOwner.sessionForTest?.epoch != "e1") delay(5)
+            }
+            assertEquals(
+                ResourceSessionIdentity(
+                    "http://music.example:18000",
+                    runtime.realtimeController.generation.value,
+                    "e1",
+                ),
+                resourceOwner.sessionForTest,
+            )
+            assertEquals(0L, resourceOwner.watermarksForTest?.libraryRevision)
+
+            runtime.changeOrigin(ServerOrigin.parse("http://other.example:18001"))
+            val next = sockets.awaitSocket(1)
+            withTimeout(2_000) {
+                while (resourceOwner.sessionForTest?.originAddress != "http://other.example:18001") delay(5)
+            }
+            assertTrue(runtime.realtimeController.generation.value > 1L)
+            assertEquals(runtime.realtimeController.generation.value, resourceOwner.sessionForTest?.connectionGeneration)
+            next.open()
+            next.message(snapshot("e2", 1))
+            runtime.snapshots.state.first { it.snapshot?.epoch == "e2" }
+            withTimeout(2_000) {
+                while (resourceOwner.sessionForTest?.epoch != "e2") delay(5)
+            }
+            assertSame(resourceOwner, runtime.resources)
         } finally {
             runtime.close()
         }

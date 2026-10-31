@@ -8,6 +8,10 @@ import io.github.qyxx2.mpdserver.remote.protocol.dto.HistoryListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchResultsDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongListDto
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -230,6 +234,120 @@ class RuntimeReadApiTest {
             HttpResult.HttpError(404, "application/json", """{"message":"missing"}""".toByteArray())
         }
         assertTrue(malformed.getSong("missing") is ApiResult.DecodeError)
+    }
+
+    @Test fun queuePlayedReadBypassesPersistentHistoryTtlCache() = runBlocking {
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val resources = ResourceMemoryCache(owner)
+        resources.updateIdentity(
+            ResourceSessionIdentity("http://server.example", 1, "epoch-1"),
+            ResourceWatermarks(3, 5, "history-1"),
+            isFresh = true,
+        )
+        val paths = mutableListOf<String>()
+        val api = RuntimeReadApi(
+            originProvider = { ServerOrigin.parse("http://server.example") },
+            client = OkHttpClient(),
+            resources = resources,
+            execute = { _, request ->
+                paths += request.url.encodedPath
+                HttpResult.Body(200, "application/json", emptyListBody())
+            },
+        )
+        try {
+            repeat(2) {
+                assertTrue(api.getPlayed() is ApiResult.Success)
+            }
+            assertEquals(
+                listOf("/api/history/played", "/api/history/played"),
+                paths,
+            )
+        } finally {
+            resources.close()
+            owner.cancel()
+        }
+    }
+
+    @Test fun appRuntimeSongListReadsShareResourcesAndInternCanonicalSongs() = runBlocking {
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val resources = ResourceMemoryCache(owner)
+        resources.updateIdentity(
+            ResourceSessionIdentity("http://server.example", 1, "epoch-1"),
+            ResourceWatermarks(3, 5, "history-1"),
+            isFresh = true,
+        )
+        val fixtureSong = javaClass.classLoader!!
+            .getResource("fixtures/task4/song-response.json")!!.readText()
+        val listBody = """{"items":[$fixtureSong],"count":1}""".toByteArray()
+        var networkReads = 0
+        val seenQueries = mutableListOf<String?>()
+        val api = RuntimeReadApi(
+            originProvider = { ServerOrigin.parse("http://server.example") },
+            client = OkHttpClient(),
+            resources = resources,
+            execute = { _, request ->
+                networkReads += 1
+                seenQueries += request.url.queryParameter("sort_by")
+                assertEquals("/api/library/songs", request.url.encodedPath)
+                HttpResult.Body(200, "application/json", listBody)
+            },
+        )
+        try {
+            val first = api.getSongs() as ApiResult.Success
+            val second = api.getSongs() as ApiResult.Success
+            assertEquals(1, networkReads)
+            assertSame(first.value.items.single(), second.value.items.single())
+
+            val detail = api.getSong("song-1") as ApiResult.Success
+            assertSame(first.value.items.single(), detail.value)
+
+            api.getSongs(sortBy = "modified_at", sortOrder = "desc")
+            assertEquals(2, networkReads)
+            assertEquals(listOf("title", "modified_at"), seenQueries)
+        } finally {
+            resources.close()
+            owner.cancel()
+        }
+    }
+
+    @Test fun appRuntimeArtworkReadsShareTheSameRawArtworkEntry() = runBlocking {
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val resources = ResourceMemoryCache(owner)
+        resources.updateIdentity(
+            ResourceSessionIdentity("http://server.example", 1, "epoch-1"),
+            ResourceWatermarks(3, 5, "history-1"),
+            isFresh = true,
+        )
+        val songBody = javaClass.classLoader!!
+            .getResource("fixtures/task4/song-response.json")!!.readBytes()
+        val imageBytes = byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10, 1, 2, 3)
+        val paths = mutableListOf<String>()
+        val api = RuntimeReadApi(
+            originProvider = { ServerOrigin.parse("http://server.example") },
+            client = OkHttpClient(),
+            resources = resources,
+            execute = { _, request ->
+                paths += request.url.encodedPath
+                if (request.url.encodedPath.endsWith("/artwork")) {
+                    HttpResult.Body(200, "image/png", imageBytes)
+                } else {
+                    HttpResult.Body(200, "application/json", songBody)
+                }
+            },
+        )
+        try {
+            val first = api.getArtwork("song-1") as HttpResult.Body
+            val second = api.getArtwork("song-1") as HttpResult.Body
+            assertEquals(imageBytes.toList(), first.bytes.toList())
+            assertEquals(imageBytes.toList(), second.bytes.toList())
+            assertEquals(
+                listOf("/api/library/songs/song-1", "/api/library/songs/song-1/artwork"),
+                paths,
+            )
+        } finally {
+            resources.close()
+            owner.cancel()
+        }
     }
 
     @Test fun artworkNotFoundRemainsAnHttpError() = runBlocking {

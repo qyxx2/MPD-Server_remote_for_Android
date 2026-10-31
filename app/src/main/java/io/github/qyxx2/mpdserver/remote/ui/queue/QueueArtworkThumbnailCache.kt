@@ -20,7 +20,7 @@ import java.util.WeakHashMap
 
 internal data class QueueArtworkThumbnailKey(
     val identity: QueueResourceIdentity,
-    val songId: String,
+    val artworkId: String,
 )
 
 /**
@@ -39,8 +39,6 @@ internal object QueueArtworkThumbnailCache {
     private val bitmaps = LinkedHashMap<QueueArtworkThumbnailKey, ImageBitmap>(32, 0.75f, true)
     private val stateFlows = WeakHashMap<QueueArtworkThumbnailKey, WeakReference<MutableStateFlow<ImageBitmap?>>>()
     private val jobs = mutableMapOf<QueueArtworkThumbnailKey, Job>()
-    private val prefetchedKeys = mutableSetOf<QueueArtworkThumbnailKey>()
-    private val failedKeys = mutableSetOf<QueueArtworkThumbnailKey>()
     private var activeIdentity: QueueResourceIdentity? = null
     private var retainedBytes = 0L
 
@@ -48,8 +46,6 @@ internal object QueueArtworkThumbnailCache {
         if (activeIdentity == identity) return@synchronized
         jobs.values.forEach(Job::cancel)
         jobs.clear()
-        prefetchedKeys.clear()
-        failedKeys.clear()
         bitmaps.clear()
         retainedBytes = 0L
         stateFlows.values.forEach { it.get()?.value = null }
@@ -63,19 +59,11 @@ internal object QueueArtworkThumbnailCache {
         flow.asStateFlow()
     }
 
-    /** Warm each resource once per identity; route re-entry must not churn an already-warmed LRU. */
-    fun preloadPrefetchOnce(key: QueueArtworkThumbnailKey, bytes: ByteArray) {
-        synchronized(lock) {
-            if (activeIdentity != key.identity || !prefetchedKeys.add(key)) return
-        }
-        preload(key, bytes)
-    }
-
     /** On-demand decode for a visible row whose thumbnail was evicted from the bounded LRU. */
     fun preload(key: QueueArtworkThumbnailKey, bytes: ByteArray) {
         val job: Job
         synchronized(lock) {
-            if (activeIdentity != key.identity || bitmaps.containsKey(key) || jobs.containsKey(key) || key in failedKeys) return
+            if (activeIdentity != key.identity || bitmaps.containsKey(key) || jobs.containsKey(key)) return
             lateinit var created: Job
             created = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                 val bitmap = try {
@@ -92,8 +80,6 @@ internal object QueueArtworkThumbnailCache {
                     if (bitmap != null) {
                         bitmaps[key] = bitmap
                         retainedBytes += bitmap.width.toLong() * bitmap.height.toLong() * 4L
-                    } else {
-                        failedKeys.add(key)
                     }
                     stateFlows[key]?.get()?.value = bitmap
                     trimLocked()
