@@ -16,7 +16,7 @@ class PlayerPresentationHandoffTest {
     private fun handoff() = PlayerPresentationHandoff(nowMillis = { now })
 
     private fun quietUnknownState(
-        playback: String = """{"song_id":"song-1","state":"PLAYING","context":null,"position":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+        playback: String = """{"song_id":"song-1","state":"PLAYING","playback_context_id":null,"position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
     ) = PlayerTestFixtures.state(
         playback = playback,
         observation = PlayerTestFixtures.observationJson
@@ -230,7 +230,7 @@ class PlayerPresentationHandoffTest {
         }
 
         val changedPlayback = PlayerTestFixtures.state(
-            playback = """{"song_id":"song-2","state":"PLAYING","context":null,"position":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+            playback = """{"song_id":"song-2","state":"PLAYING","playback_context_id":null,"position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
         )
         val changed = armedTracker().project(
             changedPlayback,
@@ -240,7 +240,7 @@ class PlayerPresentationHandoffTest {
         assertFalse(changed.isHandoff)
 
         val changedScopeUnknown = quietUnknownState(
-            playback = """{"song_id":"song-2","state":"PLAYING","context":null,"position":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+            playback = """{"song_id":"song-2","state":"PLAYING","playback_context_id":null,"position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
         )
         val noCrossTrackHandoff = armedTracker().project(
             changedScopeUnknown,
@@ -250,6 +250,18 @@ class PlayerPresentationHandoffTest {
         )
         assertFalse(noCrossTrackHandoff.isHandoff)
         assertNull(noCrossTrackHandoff.mediaPresentation.song)
+
+        val changedContextUnknown = quietUnknownState(
+            playback = """{"song_id":"song-1","state":"PLAYING","playback_context_id":"context-rotated","position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+        )
+        val noCrossContextHandoff = armedTracker().project(
+            changedContextUnknown,
+            PlayerPresentation.from(changedContextUnknown),
+            confirmedAction(),
+            listOf(activity(MutationStatus.SUCCESS)),
+        )
+        assertFalse(noCrossContextHandoff.isHandoff)
+        assertNull(noCrossContextHandoff.mediaPresentation.song)
 
         val failed = armedTracker().project(
             unknown,

@@ -188,7 +188,7 @@ internal class PlayerPresentationHandoff(
             connectionGeneration = snapshot.connectionGeneration,
             libraryRevision = canonical.libraryRevision,
             playbackSongId = playback?.songId,
-            playbackContext = playback?.context?.toString(),
+            playbackContext = playback?.playbackContextId,
             currentSongId = song?.songId,
             currentSongFileUri = song?.fileUri,
             currentQueueItemId = facts.queue?.items?.firstOrNull { it.position == 0 }?.queueItemId,

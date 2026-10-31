@@ -128,7 +128,7 @@ Keep these stable or update the plan and contract matrix in the same Batch befor
 - Tests: app/src/test/java/io/github/qyxx2/mpdserver/remote/PlaybackDtoTest.kt
 - Tests: app/src/test/java/io/github/qyxx2/mpdserver/remote/runtime/RuntimeReadApiTest.kt
 
-- [ ] **Step 1 — Test first:** add failing DTO fixtures for SongList, Album/Artist/Genre/Year/Tag summaries, HistoryList/HistoryEvent, SearchResults/SearchGroup, FavoriteMembers and CollectionResponse.
+- [x] **Step 1 — Test first:** add failing DTO fixtures for SongList, Album/Artist/Genre/Year/Tag summaries, HistoryList/HistoryEvent, SearchResults/SearchGroup, FavoriteMembers and CollectionResponse.
   - SongList: items/count. Song retains nullable song_id, file_uri, album_id, availability and artwork.
   - Album: album_id/title/album_artists/year/date/song_count/artwork.
   - Artist/Genre/Tag: ID/name/song_count. Year: source_id/value/song_count with nullable value.
@@ -136,21 +136,21 @@ Keep these stable or update the plan and contract matrix in the same Batch befor
   - Search group kind is a strict enum of albums/artists/genres/years/tags; fields source_id/name/song_ids. Results contain groups and top-level song_ids.
   - Favorites members contains song_ids. Collection contains source_type/source_id/song_ids/unavailable_song_ids/random_seed.
   - Canonical PlaybackStateDto must use nullable song_id, state enum, nullable playback_context_id, nullable position_seconds, autoplay_enabled and updated_at. The old context/position shape must be rejected.
-- [ ] **Step 2 — Prove tests fail:** run:
+- [x] **Step 2 — Prove tests fail:** run:
   ~~~bash
   ./gradlew :app:testDebugUnitTest --tests "*LibraryResourceDtoTest" --tests "*PlaybackDtoTest" --tests "*HistoryDtoTest" --tests "*SearchDtoTest" --tests "*CollectionResourceDtoTest"
   ~~~
-- [ ] **Step 3 — Implement exact DTOs:** use existing JsonConfiguration and kotlinx.serialization; keep required fields required, nullable fields nullable, enums strict, unknown fields strict. Align PlaybackStateDto to actual playback_context_id / position_seconds wire names. Update PlayerActions and PlayerPresentationHandoff to use playbackContextId; this is required so Home can verify the current AutoPlay context.
-- [ ] **Step 4 — Add safe API paths:** build only current API routes. Reject blank/dot/dot-dot/slash path IDs before encoding; percent-encode UTF-8 path segments. Encode search q and sort parameters with a URL builder, never raw string interpolation.
-- [ ] **Step 5 — Extend one RuntimeReadApi:** add typed GET methods from the cross-Batch contract. getHistory() must call /api/history; preserve getPlayed() at /api/history/played. getSongs() always sends an explicit allowed sort_by and sort_order. Do not create another HttpTransport or OkHttpClient owner.
-- [ ] **Step 6 — Route tests:** verify all paths/methods, origin resolution on each call, Chinese and reserved search characters (space, &, #, +, /, ?), rejected path injection, and distinct History/Played routes.
-- [ ] **Step 7 — Player regression tests:** run:
+- [x] **Step 3 — Implement exact DTOs:** use existing JsonConfiguration and kotlinx.serialization; keep required fields required, nullable fields nullable, enums strict, unknown fields strict. Align PlaybackStateDto to actual playback_context_id / position_seconds wire names. Update PlayerActions and PlayerPresentationHandoff to use playbackContextId; this is required so Home can verify the current AutoPlay context.
+- [x] **Step 4 — Add safe API paths:** build only current API routes. Reject blank/dot/dot-dot/slash path IDs before encoding; percent-encode UTF-8 path segments. Encode search q and sort parameters with a URL builder, never raw string interpolation.
+- [x] **Step 5 — Extend one RuntimeReadApi:** add typed GET methods from the cross-Batch contract. getHistory() must call /api/history; preserve getPlayed() at /api/history/played. getSongs() always sends an explicit allowed sort_by and sort_order. Do not create another HttpTransport or OkHttpClient owner.
+- [x] **Step 6 — Route tests:** verify all paths/methods, origin resolution on each call, Chinese and reserved search characters (space, &, #, +, /, ?), rejected path injection, and distinct History/Played routes.
+- [x] **Step 7 — Player regression tests:** run:
   ~~~bash
   ./gradlew :app:testDebugUnitTest --tests "*PlaybackDtoTest" --tests "*PlayerActionsTest" --tests "*PlayerPresentationHandoffTest" --tests "*QueuePresentationTest"
   ~~~
   Canonical playback_context_id must reach scope/identity projections; Task 4 controls and status remain unchanged.
-- [ ] **Step 8 — Full unit suite:** ./gradlew :app:testDebugUnitTest.
-- [ ] **Step 9 — Local commit:** feat(api): add typed Task 5 resource reads. Commit only DTOs, path builder, RuntimeReadApi, regression fixes and tests.
+- [x] **Step 8 — Full unit suite:** ./gradlew :app:testDebugUnitTest.
+- [x] **Step 9 — Local commit:** feat(api): add typed Task 5 resource reads. Commit only DTOs, path builder, RuntimeReadApi, regression fixes and tests.
 
 **Exit gate:** all Task 5 GETs have typed DTOs and safe paths; History/Played are distinct; canonical playback context parses; existing Player/Queue tests pass.
 

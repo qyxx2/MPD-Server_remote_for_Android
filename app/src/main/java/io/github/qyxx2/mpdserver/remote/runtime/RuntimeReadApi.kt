@@ -1,44 +1,82 @@
 package io.github.qyxx2.mpdserver.remote.runtime
 
+import io.github.qyxx2.mpdserver.remote.data.LibraryApiPaths
 import io.github.qyxx2.mpdserver.remote.network.HttpFailure
 import io.github.qyxx2.mpdserver.remote.network.HttpResult
 import io.github.qyxx2.mpdserver.remote.network.HttpTransport
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.decodeJson
+import io.github.qyxx2.mpdserver.remote.protocol.dto.AlbumListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtistListDto
-import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.CollectionDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.FavoriteMembersDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.GenreListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.HistoryListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchResultsDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.SongListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.TagListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.YearListDto
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.URLEncoder
 
-/** Runtime-owned, read-only access to song metadata, Played and artwork resources. */
+/** Runtime-owned, read-only access to typed Library, History, Search, Playlist, Favorites and artwork resources. */
 class RuntimeReadApi(
     private val originProvider: () -> ServerOrigin,
     private val client: OkHttpClient,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val execute: (HttpTransport, Request) -> HttpResult = { transport, request -> transport.execute(request) },
 ) {
-    suspend fun getSong(songId: String): ApiResult<SongDto> = jsonGet("/api/library/songs/${pathSegment(songId)}")
+    suspend fun getSongs(sortBy: String = "title", sortOrder: String = "asc"): ApiResult<SongListDto> =
+        jsonGet(LibraryApiPaths.songs(sortBy, sortOrder))
+
+    suspend fun getSong(songId: String): ApiResult<SongDto> = jsonGet(LibraryApiPaths.song(songId))
+
+    suspend fun getAlbums(): ApiResult<AlbumListDto> = jsonGet(LibraryApiPaths.albums())
+    suspend fun getAlbumSongs(albumId: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.albumSongs(albumId))
 
     /** Existing Web navigation lookup: artist IDs are resolved by exact server-returned display name. */
-    suspend fun getArtists(): ApiResult<ArtistListDto> = jsonGet("/api/library/artists")
+    suspend fun getArtists(): ApiResult<ArtistListDto> = jsonGet(LibraryApiPaths.artists())
+    suspend fun getArtistSongs(artistId: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.artistSongs(artistId))
 
-    suspend fun getPlayed(): ApiResult<QueueListDto> = jsonGet("/api/history/played")
+    suspend fun getGenres(): ApiResult<GenreListDto> = jsonGet(LibraryApiPaths.genres())
+    suspend fun getGenreSongs(genreId: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.genreSongs(genreId))
 
-    /** Web-equivalent post-save readback; the server's playlist list remains authoritative. */
-    suspend fun getPlaylists(): ApiResult<PlaylistListDto> = jsonGet("/api/playlists")
+    suspend fun getYears(): ApiResult<YearListDto> = jsonGet(LibraryApiPaths.years())
+    suspend fun getYearSongs(year: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.yearSongs(year))
+
+    suspend fun getTags(): ApiResult<TagListDto> = jsonGet(LibraryApiPaths.tags())
+    suspend fun getTagSongs(tagId: String): ApiResult<SongListDto> = jsonGet(LibraryApiPaths.tagSongs(tagId))
+
+    /** Persistent History. This is deliberately separate from Queue's /api/history/played projection. */
+    suspend fun getHistory(): ApiResult<HistoryListDto> = jsonGet(LibraryApiPaths.history())
+
+    /** Queue Played projection retained for the existing Queue screen. */
+    suspend fun getPlayed(): ApiResult<QueueListDto> = jsonGet(LibraryApiPaths.played())
+
+    suspend fun getSearchResults(query: String): ApiResult<SearchResultsDto> =
+        jsonGet(LibraryApiPaths.searchResults(query))
+
+    suspend fun getPlaylists(): ApiResult<PlaylistListDto> = jsonGet(LibraryApiPaths.playlists())
+    suspend fun getPlaylist(playlistId: String): ApiResult<PlaylistDto> =
+        jsonGet(LibraryApiPaths.playlist(playlistId))
+    suspend fun getPlaylistSongs(playlistId: String): ApiResult<SongListDto> =
+        jsonGet(LibraryApiPaths.playlistSongs(playlistId))
+
+    suspend fun getFavoriteMembers(): ApiResult<FavoriteMembersDto> = jsonGet(LibraryApiPaths.favoriteMembers())
+    suspend fun getFavorites(): ApiResult<CollectionDto> = jsonGet(LibraryApiPaths.favorites())
 
     /** Returns original image bytes; HTTP 404 stays distinguishable from malformed/non-image content. */
     suspend fun getArtwork(songId: String): HttpResult = withContext(dispatcher) {
-        val path = "/api/library/songs/${pathSegment(songId)}/artwork"
         val transport = HttpTransport(originProvider(), client)
-        val result = execute(transport, transport.buildRequest("GET", path))
+        val result = execute(transport, transport.buildRequest("GET", LibraryApiPaths.songArtwork(songId)))
         when (result) {
             is HttpResult.Body -> {
                 if (!isSupportedImage(result.contentType, result.bytes)) {
@@ -53,13 +91,6 @@ class RuntimeReadApi(
     private suspend inline fun <reified T> jsonGet(path: String): ApiResult<T> = withContext(dispatcher) {
         val transport = HttpTransport(originProvider(), client)
         execute(transport, transport.buildRequest("GET", path)).decodeJson<T>()
-    }
-
-    private fun pathSegment(value: String): String {
-        require(value.isNotBlank() && '/' !in value && '\\' !in value && value != "." && value != "..") {
-            "Invalid path segment"
-        }
-        return URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
     }
 
     private fun isSupportedImage(contentType: String?, bytes: ByteArray): Boolean {

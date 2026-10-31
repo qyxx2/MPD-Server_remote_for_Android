@@ -18,9 +18,56 @@ data class ArtistSummaryDto(
 
 @Serializable
 data class ArtistListDto(
-    val items: List<ArtistSummaryDto> = emptyList(),
-    val count: Int = 0,
+    val items: List<ArtistSummaryDto>,
+    val count: Int,
 )
+
+@Serializable
+data class AlbumSummaryDto(
+    @SerialName("album_id") val albumId: String,
+    val title: String,
+    @SerialName("album_artists") val albumArtists: List<String>,
+    val year: Int?,
+    val date: String?,
+    @SerialName("song_count") val songCount: Int,
+    val artwork: ArtworkDto?,
+)
+
+@Serializable
+data class AlbumListDto(val items: List<AlbumSummaryDto>, val count: Int)
+
+@Serializable
+data class GenreSummaryDto(
+    @SerialName("genre_id") val genreId: String,
+    val name: String,
+    @SerialName("song_count") val songCount: Int,
+)
+
+@Serializable
+data class GenreListDto(val items: List<GenreSummaryDto>, val count: Int)
+
+@Serializable
+data class YearSummaryDto(
+    @SerialName("source_id") val sourceId: String,
+    val value: Int?,
+    @SerialName("song_count") val songCount: Int,
+)
+
+@Serializable
+data class YearListDto(val items: List<YearSummaryDto>, val count: Int)
+
+@Serializable
+data class TagSummaryDto(
+    @SerialName("tag_id") val tagId: String,
+    val name: String,
+    @SerialName("song_count") val songCount: Int,
+)
+
+@Serializable
+data class TagListDto(val items: List<TagSummaryDto>, val count: Int)
+
+@Serializable
+data class SongListDto(val items: List<SongDto>, val count: Int)
 
 @Serializable
 data class ArtworkDto(

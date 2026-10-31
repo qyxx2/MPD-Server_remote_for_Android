@@ -355,7 +355,7 @@ class PlayerActions internal constructor(
             targetToken = observation?.controlTarget?.token,
             actualEntryId = observation?.actualCurrent?.entryId,
             businessSongId = wirePlayback?.songId,
-            businessContextId = wirePlayback?.context?.toString(),
+            businessContextId = wirePlayback?.playbackContextId,
             queueCurrentItemId = facts.queue?.items?.firstOrNull { it.position == 0 }?.queueItemId,
         )
     }

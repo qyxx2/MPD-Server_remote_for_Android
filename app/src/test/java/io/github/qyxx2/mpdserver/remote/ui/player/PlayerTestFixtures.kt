@@ -75,7 +75,7 @@ internal object PlayerTestFixtures {
         song: String? = songJson,
         queue: String = queueJson,
         observation: String = observationJson,
-        playback: String = """{"song_id":"song-1","state":"PLAYING","context":null,"position":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+        playback: String = """{"song_id":"song-1","state":"PLAYING","playback_context_id":null,"position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
         output: String = outputJson,
         outputObservation: String = outputObservationJson,
         freshness: SnapshotFreshness = SnapshotFreshness.FRESH,

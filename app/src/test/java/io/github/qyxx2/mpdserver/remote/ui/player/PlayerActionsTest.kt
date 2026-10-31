@@ -210,6 +210,27 @@ class PlayerActionsTest {
     }
 
     @Test
+    fun unknownIntentCannotBeRetriedAfterCanonicalPlaybackContextChanges() {
+        var current = PlayerTestFixtures.state()
+        val harness = Harness(stateProvider = { current }, initialSubmitStatus = MutationStatus.UNKNOWN)
+        val actions = harness.actions()
+        actions.perform(PlayerAction.PAUSE)
+        val originalId = harness.submitted.single().id
+        assertTrue(actions.canRetryUnknown())
+
+        current = PlayerTestFixtures.state(
+            playback = """{"song_id":"song-1","state":"PLAYING","playback_context_id":"context-rotated","position_seconds":12.5,"autoplay_enabled":false,"updated_at":"2026-10-27T10:00:00Z"}""",
+        )
+        actions.reconcile()
+
+        assertFalse(actions.canRetryUnknown())
+        assertNull(actions.retryUnknown())
+        assertTrue(actions.isEnabled(PlayerAction.PAUSE))
+        assertEquals(listOf(originalId), harness.submitted.map { it.id })
+        assertTrue(harness.retriedIds.isEmpty())
+    }
+
+    @Test
     fun writeControlsAreRecheckedAgainstCurrentFreshSnapshotAtDispatch() {
         var current = PlayerTestFixtures.state()
         val harness = Harness(stateProvider = { current })
