@@ -32,15 +32,16 @@ internal data class HomeArtworkCacheKey(
  */
 internal object HomeArtworkMemoryCache {
     private const val MIN_DECODE_LONG_EDGE = 768
-    private const val MAX_RETAINED_BYTES = 64L * 1024L * 1024L
+    internal const val MAX_RETAINED_BYTES = 128L * 1024L * 1024L
 
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val decoderSlots = Semaphore(2)
-    private val bitmaps = LinkedHashMap<HomeArtworkCacheKey, ImageBitmap>(24, 0.75f, true)
+    private val bitmaps = LinkedHashMap<HomeArtworkCacheKey, ImageBitmap>(32, 0.75f, true)
     private val stateFlows =
         WeakHashMap<HomeArtworkCacheKey, WeakReference<MutableStateFlow<ImageBitmap?>>>()
     private val jobs = mutableMapOf<HomeArtworkCacheKey, Job>()
+    private val visibleKeysByOwner = mutableMapOf<Any, Set<HomeArtworkCacheKey>>()
     private var activeIdentity: QueueResourceIdentity? = null
     private var retainedBytes = 0L
 
@@ -50,6 +51,7 @@ internal object HomeArtworkMemoryCache {
         jobs.clear()
         bitmaps.clear()
         retainedBytes = 0L
+        visibleKeysByOwner.clear()
         stateFlows.values.forEach { it.get()?.value = null }
         activeIdentity = identity
     }
@@ -59,6 +61,21 @@ internal object HomeArtworkMemoryCache {
             stateFlows[key] = WeakReference(created)
         }
         flow.asStateFlow()
+    }
+
+    /**
+     * Pins the visible artwork of one Home rail. All three rail owners contribute to one union,
+     * so scrolling one rail cannot evict an image that remains visible in another rail.
+     */
+    fun updateVisibleKeys(owner: Any, keys: Set<HomeArtworkCacheKey>) = synchronized(lock) {
+        val currentIdentity = activeIdentity
+        val currentKeys = keys.filterTo(LinkedHashSet()) { it.identity == currentIdentity }
+        if (currentKeys.isEmpty()) visibleKeysByOwner.remove(owner)
+        else visibleKeysByOwner[owner] = currentKeys
+
+        // A visible bitmap is also promoted to the newest side of the access-ordered LRU.
+        currentKeys.forEach { bitmaps[it] }
+        trimLocked()
     }
 
     /** Decodes a shared original-byte response only once for the active Home resource identity. */
@@ -95,12 +112,16 @@ internal object HomeArtworkMemoryCache {
     }
 
     private fun trimLocked() {
-        val iterator = bitmaps.entries.iterator()
-        while (retainedBytes > MAX_RETAINED_BYTES && iterator.hasNext()) {
-            val eldest = iterator.next()
-            retainedBytes -= eldest.value.width.toLong() * eldest.value.height.toLong() * 4L
-            stateFlows[eldest.key]?.get()?.value = null
-            iterator.remove()
+        val visibleKeys = HomeArtworkCacheRetentionPolicy.visibleKeyUnion(visibleKeysByOwner.values)
+        val evictionCandidates = HomeArtworkCacheRetentionPolicy.evictionCandidates(
+            lruOrder = bitmaps.keys.toList(),
+            visibleKeys = visibleKeys,
+        )
+        for (victim in evictionCandidates) {
+            if (retainedBytes <= MAX_RETAINED_BYTES) break
+            val bitmap = bitmaps.remove(victim) ?: continue
+            retainedBytes -= bitmap.width.toLong() * bitmap.height.toLong() * 4L
+            stateFlows[victim]?.get()?.value = null
         }
     }
 
@@ -119,6 +140,18 @@ internal object HomeArtworkMemoryCache {
             }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
         }
+}
+
+/** LRU eviction candidates retain their old-to-new order but never include visible Home cards. */
+internal object HomeArtworkCacheRetentionPolicy {
+    fun visibleKeyUnion(
+        visibleKeysByOwner: Collection<Set<HomeArtworkCacheKey>>,
+    ): Set<HomeArtworkCacheKey> = visibleKeysByOwner.asSequence().flatten().toSet()
+
+    fun evictionCandidates(
+        lruOrder: List<HomeArtworkCacheKey>,
+        visibleKeys: Set<HomeArtworkCacheKey>,
+    ): List<HomeArtworkCacheKey> = lruOrder.filterNot(visibleKeys::contains)
 }
 
 /** Chooses a power-of-two sample while retaining at least the requested long edge where possible. */

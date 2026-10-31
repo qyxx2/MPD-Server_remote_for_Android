@@ -36,6 +36,7 @@ internal fun HomeSection(
     title: String,
     sectionTag: String,
     railTag: String,
+    artworkVisibilityOwner: Any,
     state: HomeSectionState<*>,
     scrollState: LazyListState,
     runtime: AppRuntime?,
@@ -47,28 +48,55 @@ internal fun HomeSection(
     val cards = state.cardsForSection()
     val isStale = state is HomeSectionState.Stale<*>
 
-    // Load the visible window plus at most two look-ahead cards. AppRuntime owns the single-flight
-    // raw-byte cache; this screen only warms the shared bounded thumbnail adapter.
-    LaunchedEffect(runtime, artworkIdentity, scrollState, cards, enableArtworkPrefetch) {
-        if (runtime == null || artworkIdentity == null || !enableArtworkPrefetch ||
-            state !is HomeSectionState.Ready<*>
-        ) return@LaunchedEffect
-        snapshotFlow {
-            HomeArtworkPrefetchPolicy.indices(
-                visibleItemIndexes = scrollState.layoutInfo.visibleItemsInfo.map { it.index },
-                itemCount = cards.size,
-            )
-        }.distinctUntilChanged().collect { indexes ->
-            indexes.forEach { index ->
-                val card = cards.getOrNull(index) ?: return@forEach
-                val songId = card.artworkSongId?.takeIf(String::isNotBlank) ?: return@forEach
-                val artworkId = card.artwork?.artworkId?.takeIf(String::isNotBlank) ?: return@forEach
-                val key = HomeArtworkCacheKey(artworkIdentity, artworkId)
-                when (val response = runtime.reads.getArtwork(songId)) {
-                    is HttpResult.Body -> HomeArtworkMemoryCache.preload(key, response.bytes)
-                    else -> Unit
+    // Keep all currently visible Home bitmaps pinned across all three rails. Prefetch remains a
+    // separate small look-ahead window, so scrolling does not evict covers in the other sections.
+    LaunchedEffect(
+        runtime,
+        artworkIdentity,
+        scrollState,
+        cards,
+        enableArtworkPrefetch,
+        state is HomeSectionState.Ready<*>,
+        artworkVisibilityOwner,
+        railTag,
+    ) {
+        val visibilityOwner = HomeArtworkRailVisibilityOwner(artworkVisibilityOwner, railTag)
+        if (runtime == null || artworkIdentity == null) {
+            HomeArtworkMemoryCache.updateVisibleKeys(visibilityOwner, emptySet())
+            return@LaunchedEffect
+        }
+        val shouldPrefetchArtwork = enableArtworkPrefetch && state is HomeSectionState.Ready<*>
+        try {
+            snapshotFlow {
+                val visibleIndexes = scrollState.layoutInfo.visibleItemsInfo
+                    .map { it.index }
+                    .filter { it in cards.indices }
+                visibleIndexes to HomeArtworkPrefetchPolicy.indices(
+                    visibleItemIndexes = visibleIndexes,
+                    itemCount = cards.size,
+                )
+            }.distinctUntilChanged().collect { (visibleIndexes, prefetchIndexes) ->
+                val visibleKeys = visibleIndexes.mapNotNull { index ->
+                    val card = cards[index]
+                    val artworkId = card.artwork?.artworkId?.takeIf(String::isNotBlank)
+                    artworkId?.let { HomeArtworkCacheKey(artworkIdentity, it) }
+                }.toSet()
+                HomeArtworkMemoryCache.updateVisibleKeys(visibilityOwner, visibleKeys)
+                if (!shouldPrefetchArtwork) return@collect
+
+                prefetchIndexes.forEach { index ->
+                    val card = cards.getOrNull(index) ?: return@forEach
+                    val songId = card.artworkSongId?.takeIf(String::isNotBlank) ?: return@forEach
+                    val artworkId = card.artwork?.artworkId?.takeIf(String::isNotBlank) ?: return@forEach
+                    val key = HomeArtworkCacheKey(artworkIdentity, artworkId)
+                    when (val response = runtime.reads.getArtwork(songId)) {
+                        is HttpResult.Body -> HomeArtworkMemoryCache.preload(key, response.bytes)
+                        else -> Unit
+                    }
                 }
             }
+        } finally {
+            HomeArtworkMemoryCache.updateVisibleKeys(visibilityOwner, emptySet())
         }
     }
 
@@ -138,6 +166,11 @@ internal fun HomeSection(
     }
 }
 
+private data class HomeArtworkRailVisibilityOwner(
+    val screenOwner: Any,
+    val railTag: String,
+)
+
 private fun HomeSectionState<*>.cardsForSection(): List<HomeArtworkCard> = when (this) {
     is HomeSectionState.Ready<*> -> when (val value = value) {
         is HomeRecentUpdates -> value.cards
@@ -195,8 +228,7 @@ private fun HomeSectionPlaceholder(
     }
 }
 
-
-/** The viewport window plus at most two look-ahead cards; empty/out-of-range indices are ignored. */
+/** The visible window plus a small two-card look-ahead, clamped to the available rail items. */
 internal object HomeArtworkPrefetchPolicy {
     fun indices(
         visibleItemIndexes: List<Int>,

@@ -63,6 +63,9 @@ internal fun HomeScreen(
     onRefreshHistory: () -> Unit = {},
     onRefreshAutoplay: () -> Unit = {},
 ) {
+    // Each Home instance owns its visible-key registration. Multiple shell/NavHost instances can
+    // coexist during transitions without replacing each other's visible artwork protection.
+    val artworkVisibilityOwner = remember { Any() }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -73,6 +76,7 @@ internal fun HomeScreen(
             title = "最近更新",
             sectionTag = "home-section-recently-updated",
             railTag = "home-rail-recently-updated",
+            artworkVisibilityOwner = artworkVisibilityOwner,
             state = state.recentlyUpdated,
             scrollState = scrollStateHolder.recent,
             runtime = runtime,
@@ -85,6 +89,7 @@ internal fun HomeScreen(
             title = "播放历史",
             sectionTag = "home-section-playback-history",
             railTag = "home-rail-playback-history",
+            artworkVisibilityOwner = artworkVisibilityOwner,
             state = state.playbackHistory,
             scrollState = scrollStateHolder.history,
             runtime = runtime,
@@ -97,6 +102,7 @@ internal fun HomeScreen(
             title = "猜你喜欢",
             sectionTag = "home-section-autoplay",
             railTag = "home-rail-autoplay",
+            artworkVisibilityOwner = artworkVisibilityOwner,
             state = state.autoplay,
             scrollState = scrollStateHolder.autoplay,
             runtime = runtime,
