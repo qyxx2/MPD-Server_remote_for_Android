@@ -18,12 +18,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.protocol.dto.AvailabilityStatus
+import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 
 /** Read-only row used by Songs, category members, playlists, favorites and Search. */
 @Composable
 fun LibrarySongRow(
     item: LibrarySongRowModel,
     modifier: Modifier = Modifier,
+    showArtwork: Boolean = false,
+    runtime: AppRuntime? = null,
+    artworkIdentity: QueueResourceIdentity? = null,
 ) {
     val song = item.song
     val title = song?.title?.takeIf { it.isNotBlank() }
@@ -53,12 +58,23 @@ fun LibrarySongRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            text = "♫",
-            modifier = Modifier.size(28.dp),
-            color = MaterialTheme.colorScheme.primary,
-            fontSize = 22.sp,
-        )
+        if (showArtwork) {
+            LibrarySongArtwork(
+                song = song,
+                runtime = runtime,
+                artworkIdentity = artworkIdentity,
+                size = 48.dp,
+                modifier = Modifier.testTag("library-row-artwork-${item.key.hashCode()}"),
+                testTag = "library-row-artwork-${item.key.hashCode()}",
+            )
+        } else {
+            Text(
+                text = "♫",
+                modifier = Modifier.size(28.dp),
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 22.sp,
+            )
+        }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
                 text = title,

@@ -53,8 +53,8 @@ fun PlaylistScreen(
         ) {
             runtime.reads.getPlaylists()
         }
-        LibraryPage(modifier, "library-playlists-screen") {
-            LibraryPageHeader("播放列表", onBack)
+        LibraryPage(modifier, "library-playlists-screen", onBack) {
+            LibraryPageHeader("播放列表")
             LibraryResourceContent(
                 state = state,
                 emptyText = "暂无播放列表",
@@ -104,8 +104,8 @@ fun PlaylistScreen(
         ) {
             readPlaylistDetail(runtime, playlistId)
         }
-        LibraryPage(modifier, "library-playlist-detail-screen") {
-            LibraryPageHeader("播放列表", onBack)
+        LibraryPage(modifier, "library-playlist-detail-screen", onBack) {
+            LibraryPageHeader("播放列表")
             LibraryResourceContent(
                 state = state,
                 emptyText = "此歌单暂无歌曲",

@@ -136,7 +136,9 @@ fun AppNavHost(
     val homeController = remember(runtime) { HomeDataController(runtime) }
     val homeState by homeController.state.collectAsStateWithLifecycle()
     val homeScrollStateHolder = rememberHomeScrollStateHolder()
-    val searchController = remember(runtime) { SearchController(runtime) }
+    val searchController = remember(runtime, uiPreferences) {
+        SearchController(runtime) { query -> uiPreferences.recordSearchQuery(query) }
+    }
     DisposableEffect(homeController, searchController) {
         onDispose {
             homeController.close()
@@ -591,6 +593,10 @@ fun AppNavHost(
         }
     }
 
+    BackHandler(enabled = currentRoute?.startsWith("${AppDestination.LIBRARY.route}/") == true) {
+        navController.popBackStack()
+    }
+
     BackHandler(enabled = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
         currentRoute == AppDestination.QUEUE.route
     ) {
@@ -1016,6 +1022,10 @@ private fun RootBackdropShell(
                         controller = searchController,
                         onOpenCategory = { _, _, _ -> },
                         interactionEnabled = false,
+                        runtime = runtime,
+                        artworkIdentity = homeArtworkIdentity,
+                        searchHistory = uiPreferences.searchHistory,
+                        showArtwork = false,
                     )
                     AppDestination.LIBRARY.route -> LibraryScreen(
                         onOpenCategory = {},
@@ -1133,6 +1143,10 @@ private fun AppNavigationGraph(
                         launchSingleTop = true
                     }
                 },
+                runtime = runtime,
+                artworkIdentity = homeArtworkIdentity,
+                searchHistory = uiPreferences.searchHistory,
+                onClearSearchHistory = uiPreferences::clearSearchHistory,
             )
         }
         composable(AppDestination.LIBRARY.route) {
@@ -1175,6 +1189,7 @@ private fun AppNavigationGraph(
                     category = category,
                     sourceId = sourceId,
                     onBack = { navController.popBackStack() },
+                    artworkIdentity = homeArtworkIdentity,
                 )
             }
         }

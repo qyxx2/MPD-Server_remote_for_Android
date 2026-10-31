@@ -62,6 +62,7 @@ class SearchController internal constructor(
     private val parentScope: CoroutineScope,
     private val debounceMillis: Long = 250L,
     private val ownsParentScope: Boolean = false,
+    private val onQuerySubmitted: suspend (String) -> Unit = {},
 ) : Closeable {
     private val controllerJob = SupervisorJob(parentScope.coroutineContext[Job])
     private val scope = CoroutineScope(parentScope.coroutineContext + controllerJob)
@@ -80,13 +81,17 @@ class SearchController internal constructor(
         require(debounceMillis >= 0L)
     }
 
-    constructor(runtime: AppRuntime) : this(
+    constructor(
+        runtime: AppRuntime,
+        onQuerySubmitted: suspend (String) -> Unit = {},
+    ) : this(
         readSearchResults = { query -> runtime.reads.getSearchResults(query) },
         readSong = { songId -> runtime.reads.getSong(songId) },
         identityFlow = runtime.resources.identityState.map(ResourceCacheIdentityState::toSearchIdentity),
         parentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         debounceMillis = 250L,
         ownsParentScope = true,
+        onQuerySubmitted = onQuerySubmitted,
     )
 
     fun activate() {
@@ -193,6 +198,15 @@ class SearchController internal constructor(
     ) {
         val normalizedQuery = requestedQuery.trim()
         if (normalizedQuery.isEmpty() || !isCurrent(requestedGeneration, requestedQuery, requestedIdentity)) return
+
+        try {
+            onQuerySubmitted(normalizedQuery)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Persisting local history must never block an otherwise valid server search.
+        }
+        if (!isCurrent(requestedGeneration, requestedQuery, requestedIdentity)) return
 
         val result = try {
             readSearchResults(normalizedQuery)

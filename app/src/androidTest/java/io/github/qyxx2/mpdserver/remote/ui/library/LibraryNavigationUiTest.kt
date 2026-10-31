@@ -9,6 +9,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -99,11 +101,38 @@ class LibraryNavigationUiTest {
         composeRule.onNodeWithTag("root-nav-${AppDestination.LIBRARY.route}").assertIsDisplayed()
         composeRule.onNodeWithTag("root-nav-${AppDestination.LIBRARY.route}").assertIsSelected()
 
-        composeRule.onNodeWithTag("library-page-back").performClick()
+        composeRule.onAllNodesWithTag("library-page-back").assertCountEquals(0)
+        composeRule.onNodeWithTag("library-summary-screen-artists").performTouchInput {
+            val start = center
+            down(start)
+            moveTo(Offset(start.x + 52.dp.toPx(), start.y + 26.dp.toPx()), 90L)
+            moveTo(Offset(start.x + 118.dp.toPx(), start.y - 10.dp.toPx()), 170L)
+            moveTo(Offset(start.x + 190.dp.toPx(), start.y + 34.dp.toPx()), 260L)
+            up()
+        }
         composeRule.waitUntil(timeoutMillis = 5_000) {
             navController.currentDestination?.route == AppDestination.LIBRARY.route
         }
         assertEquals(originBefore, runBlocking { application.uiPreferences.serverOrigin.first() })
+    }
+
+    @Test
+    fun androidSystemBackReturnsFromAnyLibraryChildWithoutVisibleBackText() {
+        launchAppNavigation()
+        composeRule.onNodeWithTag("root-nav-${AppDestination.LIBRARY.route}").performClick()
+        composeRule.onNodeWithTag("library-category-favorites").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == LibraryRoutes.CATEGORY_PATTERN &&
+                navController.currentBackStackEntry?.arguments?.getString(LibraryRoutes.KIND_ARGUMENT) == "favorites"
+        }
+        composeRule.onAllNodesWithText("返回").assertCountEquals(0)
+
+        composeRule.runOnUiThread {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.LIBRARY.route
+        }
     }
 
     @Test

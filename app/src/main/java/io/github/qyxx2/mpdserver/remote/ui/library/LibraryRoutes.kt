@@ -18,7 +18,7 @@ enum class LibraryCategory(
     GENRES("genres", "流派/风格", "♬", true),
     YEARS("years", "年代", "◷", true),
     TAGS("tags", "标签", "#", true),
-    FAVORITES("favorites", "收藏", "♥", false);
+    FAVORITES("favorites", "收藏", "☆", false);
 
     companion object {
         fun fromPathSegment(value: String?): LibraryCategory? =

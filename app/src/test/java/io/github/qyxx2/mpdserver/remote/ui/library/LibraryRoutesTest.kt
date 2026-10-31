@@ -26,6 +26,11 @@ class LibraryRoutesTest {
     }
 
     @Test
+    fun favoritesUsesTheSameSimpleGlyphTreatmentAsOtherLibraryRows() {
+        assertEquals("☆", LibraryCategory.FAVORITES.glyph)
+    }
+
+    @Test
     fun detailRouteEncodesAndDecodesOpaqueServerIdsAsOnePathSegment() {
         val sourceId = "周杰伦 & #1 + 50%?曲目"
         val route = LibraryRoutes.detail(LibraryCategory.ALBUMS, sourceId)

@@ -31,8 +31,8 @@ fun FavoritesScreen(
     ) {
         readFavoriteSongs(runtime)
     }
-    LibraryPage(modifier, "library-favorites-screen") {
-        LibraryPageHeader("收藏", onBack)
+    LibraryPage(modifier, "library-favorites-screen", onBack) {
+        LibraryPageHeader("收藏")
         LibraryResourceContent(
             state = state,
             emptyText = "暂无收藏歌曲",

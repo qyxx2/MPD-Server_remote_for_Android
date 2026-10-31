@@ -22,6 +22,7 @@ fun LibraryCollectionScreen(
     sourceId: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    artworkIdentity: io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity? = null,
 ) {
     if (category == LibraryCategory.PLAYLISTS) {
         PlaylistScreen(runtime, onOpenDetail = {}, onBack = onBack, playlistId = sourceId, modifier = modifier)
@@ -44,8 +45,8 @@ fun LibraryCollectionScreen(
         }
     }
 
-    LibraryPage(modifier = modifier, tag = "library-collection-screen") {
-        LibraryPageHeader(category.label, onBack)
+    LibraryPage(modifier = modifier, tag = "library-collection-screen", onBack = onBack) {
+        LibraryPageHeader(category.label)
         LibraryResourceContent(
             state = state,
             emptyText = "此集合暂无歌曲",
@@ -54,7 +55,9 @@ fun LibraryCollectionScreen(
         ) { list: SongListDto ->
             val rows = remember(list) { LibraryProjection.songRows(list.items) }
             LazyColumn(modifier = Modifier.fillMaxSize().testTag("library-collection-songs")) {
-                items(rows, key = { it.key }) { LibrarySongRow(it) }
+                items(rows, key = { it.key }) {
+                    LibrarySongRow(it, showArtwork = true, runtime = runtime, artworkIdentity = artworkIdentity)
+                }
             }
         }
     }

@@ -6,6 +6,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
@@ -28,6 +31,24 @@ class UiPreferencesRepository(
     /** Local configured origin only; this is not evidence that the server is reachable. */
     val serverOrigin: Flow<String> = dataStore.data.map { preferences ->
         preferences[SERVER_ORIGIN_KEY] ?: ServerOrigin.DEFAULT_ADDRESS
+    }
+
+    /** Latest-first persisted search history, capped at ten distinct non-blank queries. */
+    val searchHistory: Flow<List<String>> = dataStore.data.map { preferences ->
+        decodeSearchHistory(preferences[SEARCH_HISTORY_KEY].orEmpty())
+    }
+
+    suspend fun recordSearchQuery(query: String) {
+        dataStore.edit { preferences ->
+            val current = decodeSearchHistory(preferences[SEARCH_HISTORY_KEY].orEmpty())
+            val updated = SearchHistoryPolicy.record(current, query)
+            if (updated.isEmpty()) preferences.remove(SEARCH_HISTORY_KEY)
+            else preferences[SEARCH_HISTORY_KEY] = encodeSearchHistory(updated)
+        }
+    }
+
+    suspend fun clearSearchHistory() {
+        dataStore.edit { preferences -> preferences.remove(SEARCH_HISTORY_KEY) }
     }
 
     suspend fun setServerOrigin(origin: ServerOrigin) {
@@ -66,7 +87,15 @@ class UiPreferencesRepository(
     /** Writes all four defaults explicitly so reset is a persisted preference update. */
     suspend fun resetStatusRingPreferences() = setStatusRingPreferences(StatusRingPreferences.DEFAULT)
 
+    private fun decodeSearchHistory(raw: String): List<String> = runCatching {
+        Json.decodeFromString(ListSerializer(String.serializer()), raw)
+    }.getOrDefault(emptyList()).let(SearchHistoryPolicy::normalize)
+
+    private fun encodeSearchHistory(history: List<String>): String =
+        Json.encodeToString(ListSerializer(String.serializer()), history)
+
     private companion object {
+        val SEARCH_HISTORY_KEY = stringPreferencesKey("search_history")
         val SERVER_ORIGIN_KEY = stringPreferencesKey("server_origin")
         val THEME_PREFERENCE_KEY = stringPreferencesKey("theme_preference")
         val STATUS_RING_SIZE_SCALE_KEY = floatPreferencesKey("status_ring_size_scale")

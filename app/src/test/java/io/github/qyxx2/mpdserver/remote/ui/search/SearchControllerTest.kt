@@ -49,12 +49,14 @@ class SearchControllerTest {
     @Test
     fun queryIsTrimmedOnlyForTheServerAndDebounced() = runBlocking {
         val requests = mutableListOf<String>()
+        val submitted = mutableListOf<String>()
         val fixture = controller(
             readSearch = { query ->
                 requests += query
                 ApiResult.Success(SearchResultsDto(emptyList(), emptyList()), 200)
             },
             debounceMillis = 40L,
+            onQuerySubmitted = { submitted += it },
         )
         try {
             fixture.controller.activate()
@@ -65,6 +67,7 @@ class SearchControllerTest {
                 fixture.controller.state.first { it.content is SearchContentState.Empty }
             }
             assertEquals(listOf("jazz piano"), requests)
+            assertEquals(listOf("jazz piano"), submitted)
             assertEquals("  jazz piano  ", fixture.controller.state.value.query)
         } finally {
             fixture.close()
@@ -247,9 +250,20 @@ class SearchControllerTest {
         },
         readSong: suspend (String) -> ApiResult<SongDto> = { ApiResult.Success(song(it), 200) },
         debounceMillis: Long = 10L,
+        onQuerySubmitted: suspend (String) -> Unit = {},
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        return Fixture(SearchController(readSearch, readSong, identity, scope, debounceMillis), scope)
+        return Fixture(
+            SearchController(
+                readSearchResults = readSearch,
+                readSong = readSong,
+                identityFlow = identity,
+                parentScope = scope,
+                debounceMillis = debounceMillis,
+                onQuerySubmitted = onQuerySubmitted,
+            ),
+            scope,
+        )
     }
 
     private fun song(id: String) = SongDto(

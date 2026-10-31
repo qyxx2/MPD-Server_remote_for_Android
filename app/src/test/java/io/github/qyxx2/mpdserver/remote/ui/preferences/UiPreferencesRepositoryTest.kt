@@ -153,6 +153,50 @@ class UiPreferencesRepositoryTest {
         }
     }
 
+    @Test
+    fun searchHistoryPersistsLatestFirstWithTenEntryLimitAndDeduplication() = runBlocking {
+        val file = newPreferencesFile()
+        val (initialStore, initialScope) = newStore(file)
+        try {
+            val repository = UiPreferencesRepository(initialStore)
+            (1..12).forEach { repository.recordSearchQuery("query-$it") }
+            repository.recordSearchQuery("query-8")
+            assertEquals(
+                listOf("query-8", "query-12", "query-11", "query-10", "query-9", "query-7", "query-6", "query-5", "query-4", "query-3"),
+                repository.searchHistory.first(),
+            )
+        } finally {
+            initialScope.cancel()
+        }
+
+        val (restoredStore, restoredScope) = newStore(file)
+        try {
+            assertEquals(
+                listOf("query-8", "query-12", "query-11", "query-10", "query-9", "query-7", "query-6", "query-5", "query-4", "query-3"),
+                UiPreferencesRepository(restoredStore).searchHistory.first(),
+            )
+        } finally {
+            restoredScope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun clearingSearchHistoryPersistsAnEmptyHistory() = runBlocking {
+        val file = newPreferencesFile()
+        val (store, scope) = newStore(file)
+        try {
+            val repository = UiPreferencesRepository(store)
+            repository.recordSearchQuery("jazz")
+            repository.recordSearchQuery("classical")
+            repository.clearSearchHistory()
+            assertEquals(emptyList<String>(), repository.searchHistory.first())
+        } finally {
+            scope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
     private fun newPreferencesFile(): File =
         Files.createTempDirectory("mpd-remote-ui-preferences").resolve("ui.preferences_pb").toFile()
 

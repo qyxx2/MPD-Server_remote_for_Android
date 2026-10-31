@@ -97,8 +97,12 @@ private fun SummaryLibraryCategoryScreen(
         }
     }
 
-    LibraryPage(modifier = modifier, tag = "library-summary-screen-${category.pathSegment}") {
-        LibraryPageHeader(category.label, onBack)
+    LibraryPage(
+        modifier = modifier,
+        tag = "library-summary-screen-${category.pathSegment}",
+        onBack = onBack,
+    ) {
+        LibraryPageHeader(category.label)
         LibraryResourceContent(
             state = state,
             emptyText = "暂无${category.label}内容",
@@ -161,21 +165,15 @@ private fun SongsLibraryScreen(
         runtime.reads.getSongs(sortBy = selectedSort.sortBy, sortOrder = selectedSort.sortOrder)
     }
 
-    LibraryPage(modifier = modifier, tag = "library-songs-screen") {
+    LibraryPage(modifier = modifier, tag = "library-songs-screen", onBack = onBack) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(
-                onClick = onBack,
-                modifier = Modifier.testTag("library-page-back"),
-            ) {
-                Text("返回")
-            }
             Text(
                 "歌曲",
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
-                fontSize = 22.sp,
+                modifier = Modifier.weight(1f),
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
             )
             TextButton(
@@ -217,24 +215,23 @@ private fun SongsLibraryScreen(
 internal fun LibraryPage(
     modifier: Modifier = Modifier,
     tag: String,
+    onBack: () -> Unit = {},
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().testTag(tag),
+        modifier = modifier.fillMaxSize().libraryBackGesture(onBack).testTag(tag),
         content = content,
     )
 }
 
 @Composable
-internal fun LibraryPageHeader(title: String, onBack: () -> Unit) {
+internal fun LibraryPageHeader(title: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.testTag("library-page-back")) { Text("返回") }
         Text(
             text = title,
-            modifier = Modifier.padding(start = 8.dp),
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
         )

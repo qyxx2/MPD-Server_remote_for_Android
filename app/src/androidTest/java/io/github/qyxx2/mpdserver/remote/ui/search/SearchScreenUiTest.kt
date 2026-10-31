@@ -8,7 +8,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.SideEffect
@@ -24,8 +26,13 @@ import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchGroupDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchGroupKindDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchResultsDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtworkDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtworkSourceDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
 import io.github.qyxx2.mpdserver.remote.runtime.ResourceSessionIdentity
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailKey
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import io.github.qyxx2.mpdserver.remote.ui.library.LibraryRoutes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +71,21 @@ class SearchScreenUiTest {
                 isFresh = true,
             ),
         )
+        val artworkIdentity = QueueResourceIdentity(
+            epoch = "epoch-test",
+            libraryRevision = 5L,
+            connectionGeneration = 1L,
+            originAddress = "http://test.example:18000",
+        )
+        QueueArtworkThumbnailCache.updateIdentity(artworkIdentity)
+        QueueArtworkThumbnailCache.preload(
+            QueueArtworkThumbnailKey(artworkIdentity, "shared-album-art"),
+            testPngBytes(),
+        )
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            QueueArtworkThumbnailCache.stateFor(QueueArtworkThumbnailKey(artworkIdentity, "shared-album-art")).value != null
+        }
+
         controller = SearchController(
             readSearchResults = { query ->
                 requestedQueries += query
@@ -101,6 +123,8 @@ class SearchScreenUiTest {
                 composable("search") {
                     SearchScreen(
                         controller = this@SearchScreenUiTest.controller,
+                        artworkIdentity = artworkIdentity,
+                        showArtwork = true,
                         onOpenCategory = { kind, sourceId, name ->
                             openedGroup = Triple(kind, sourceId, name)
                             controller.navigate(SearchProjection.categoryRoute(kind, sourceId))
@@ -132,6 +156,12 @@ class SearchScreenUiTest {
             composeRule.onAllNodesWithTag("search-results").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithTag("search-group-albums-album & #1").assertIsDisplayed()
+        composeRule.onNodeWithTag(
+            "search-album-artwork-album & #1",
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        composeRule.onAllNodesWithContentDescription("专辑封面", useUnmergedTree = true)
+            .assertCountEquals(4)
         composeRule.onNodeWithTag("search-group-albums-album & #1").performClick()
         composeRule.waitUntil(timeoutMillis = 5_000) {
             navController.currentDestination?.route == LibraryRoutes.DETAIL_PATTERN &&
@@ -182,6 +212,64 @@ class SearchScreenUiTest {
         fileMtimeNs = null,
         contentHash = null,
         lastSeenAt = null,
-        artwork = null,
+        artwork = ArtworkDto(
+            artworkId = "shared-album-art",
+            source = ArtworkSourceDto.EMBEDDED,
+            pictureIndex = 0,
+        ),
     )
+
+    private fun testPngBytes(): ByteArray {
+        val bitmap = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        return java.io.ByteArrayOutputStream().use { output ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output)
+            bitmap.recycle()
+            output.toByteArray()
+        }
+    }
+
+    @Test
+    fun searchHistoryShowsAtMostTenItemsAndCanBeClearedInOneTap() {
+        val identity = MutableStateFlow(
+            SearchResourceIdentity(
+                session = ResourceSessionIdentity("http://test.example:18000", 1L, "epoch-history"),
+                libraryRevision = 1L,
+                isFresh = true,
+            ),
+        )
+        val submitted = java.util.Collections.synchronizedList(mutableListOf<String>())
+        controller = SearchController(
+            readSearchResults = { query ->
+                ApiResult.Success(SearchResultsDto(emptyList(), emptyList()), 200)
+            },
+            readSong = { ApiResult.ProtocolError("no song metadata expected") },
+            identityFlow = identity,
+            parentScope = ownerScope,
+            debounceMillis = 0L,
+            onQuerySubmitted = { submitted += it },
+        )
+        controller.activate()
+        val history = MutableStateFlow((12 downTo 1).map { "query-$it" })
+        composeRule.setContent {
+            SearchScreen(
+                controller = controller,
+                onOpenCategory = { _, _, _ -> },
+                searchHistory = history,
+                onClearSearchHistory = { history.value = emptyList() },
+            )
+        }
+        composeRule.onNodeWithTag("search-history-section").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("search-history-item-0").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("search-history-item-10").assertCountEquals(0)
+        composeRule.onNodeWithTag("search-history-item-0").performClick()
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            controller.state.value.query == "query-12" && submitted.toList() == listOf("query-12")
+        }
+        composeRule.onNodeWithTag("search-clear-button").performClick()
+        composeRule.onNodeWithTag("search-history-clear").performClick()
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            history.value.isEmpty() &&
+                composeRule.onAllNodesWithTag("search-history-section").fetchSemanticsNodes().isEmpty()
+        }
+    }
 }
