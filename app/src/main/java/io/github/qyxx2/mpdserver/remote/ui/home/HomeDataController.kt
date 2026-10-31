@@ -14,6 +14,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.ResourceEntryState
 import io.github.qyxx2.mpdserver.remote.runtime.ResourceMemoryCache
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStore
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.runtime.QueueMutationScope
 import io.github.qyxx2.mpdserver.remote.runtime.historyResourceFingerprint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -378,11 +379,27 @@ class HomeDataController private constructor(
             } catch (error: Exception) {
                 return HomeSectionState.Failed(error.message ?: "Accepted playback snapshot could not be decoded")
             }
+            val identity = if (snapshotState.controlsEligible && !songIndexStale) {
+                val fingerprint = QueueMutationScope.fingerprint(snapshotState)
+                val contextId = runCatching {
+                    JsonConfiguration.json.decodeFromJsonElement<PlaybackStateDto>(accepted.wire.playback).playbackContextId
+                }.getOrNull()
+                if (fingerprint != null && !contextId.isNullOrBlank()) {
+                    HomeAutoplayIdentity(
+                        epoch = accepted.epoch,
+                        connectionGeneration = snapshotState.connectionGeneration,
+                        queueRevision = accepted.queueRevision,
+                        playbackContextId = contextId,
+                        queueFingerprint = fingerprint,
+                    )
+                } else null
+            } else null
+            val projected = content.copy(identity = identity)
             return when {
                 snapshotState.freshness != io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness.FRESH ||
-                    !snapshotState.controlsEligible || songIndexStale -> HomeSectionState.Stale(content)
+                    !snapshotState.controlsEligible || songIndexStale -> HomeSectionState.Stale(projected)
                 content.cards.isEmpty() -> HomeSectionState.Empty
-                else -> HomeSectionState.Ready(content)
+                else -> HomeSectionState.Ready(projected)
             }
         }
     }

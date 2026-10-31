@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +61,12 @@ import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
+import io.github.qyxx2.mpdserver.remote.ui.library.PlaybackMutationGateway
+import io.github.qyxx2.mpdserver.remote.ui.library.LocalPlaybackActionsEnabled
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCollectionActions
+import io.github.qyxx2.mpdserver.remote.ui.home.HomeCollectionActions
 import io.github.qyxx2.mpdserver.remote.ui.components.ActivityPresentation
 import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusSheet
 import io.github.qyxx2.mpdserver.remote.ui.components.GlobalStatusRingOverlay
@@ -152,6 +159,21 @@ fun AppNavHost(
     HomeScrollResetEffect(currentRoute, homeScrollStateHolder)
     // Observe the existing shared coordinator; this does not start networking or submit a mutation.
     val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
+    val playbackWritesLocked = remember(activities) { activities.any { activity ->
+        activity.status in setOf(
+            io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.PENDING,
+            io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.SYNCING,
+            io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.UNKNOWN,
+        ) || (
+            activity.status == io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.SUCCESS &&
+                activity.syncError != null
+            )
+    } }
+    // Every Home/Library/Search action and its retry UI share one gateway and one Home retry registry.
+    val playbackMutationGateway = remember(runtime) { PlaybackMutationGateway(runtime) }
+    val songActions = remember(playbackMutationGateway) { SongActions(playbackMutationGateway) }
+    val collectionActions = remember(playbackMutationGateway) { LibraryCollectionActions(playbackMutationGateway) }
+    val homeCollectionActions = remember(playbackMutationGateway) { HomeCollectionActions(playbackMutationGateway) }
     // This transient presentation adapter is shell-scoped; all requests/retries still belong to
     // the Application-owned MutationCoordinator and survive player route disposal.
     val playerActions = remember(runtime) { PlayerActions(runtime) }
@@ -188,11 +210,19 @@ fun AppNavHost(
         .map { it.intentId }
         .filter(runtime.mutations::canRetryUnknown)
         .toSet()
+    val retryableHomeAutoplayIntentIds = activities.asSequence()
+        .filter {
+            it.intentId.startsWith("home-autoplay:") &&
+                it.status == io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.UNKNOWN
+        }
+        .map { it.intentId }
+        .filter(homeCollectionActions::canRetryAutoplayUnknown)
+        .toSet()
     val statusPresentation = ActivityPresentation.from(
         snapshotState,
         activities,
         currentOrigin = currentServerOrigin,
-        retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds,
+        retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds + retryableHomeAutoplayIntentIds,
     )
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }
     val miniPlayerPresentation = remember(snapshotState, playerPresentation) {
@@ -841,6 +871,10 @@ fun AppNavHost(
                     AppNavigationGraph(
                         navController = navController,
                         runtime = runtime,
+                        playbackWritesLocked = playbackWritesLocked,
+                        songActions = songActions,
+                        collectionActions = collectionActions,
+                        homeCollectionActions = homeCollectionActions,
                         homeState = homeState,
                         homeScrollStateHolder = homeScrollStateHolder,
                         homeArtworkIdentity = homeArtworkIdentity,
@@ -943,10 +977,12 @@ fun AppNavHost(
                 presentation = statusPresentation,
                 onDismiss = { showActivityStatus = false },
                 onRetryUnknown = { intentId ->
-                    if (intentId.startsWith("player:")) {
-                        if (playerActions.state.value.activeIntentId == intentId) playerActions.retryUnknown()
-                    } else {
-                        runtime.mutations.retryUnknown(intentId)
+                    when {
+                        intentId.startsWith("player:") -> {
+                            if (playerActions.state.value.activeIntentId == intentId) playerActions.retryUnknown()
+                        }
+                        intentId.startsWith("home-autoplay:") -> homeCollectionActions.retryAutoplayUnknown(intentId)
+                        else -> runtime.mutations.retryUnknown(intentId)
                     }
                 },
             )
@@ -1087,6 +1123,10 @@ private fun PullUpRootNavigationOverlay(
 private fun AppNavigationGraph(
     navController: NavHostController,
     runtime: AppRuntime,
+    playbackWritesLocked: Boolean,
+    songActions: SongActions,
+    collectionActions: LibraryCollectionActions,
+    homeCollectionActions: HomeCollectionActions,
     homeState: HomeUiState,
     homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
     homeArtworkIdentity: QueueResourceIdentity,
@@ -1118,6 +1158,10 @@ private fun AppNavigationGraph(
     queueContentPadding: PaddingValues = PaddingValues(),
     modifier: Modifier = Modifier,
 ) {
+    // All playback-facing surfaces receive the same shell-owned adapters over one Runtime coordinator.
+    CompositionLocalProvider(
+        LocalPlaybackActionsEnabled provides (snapshotState.controlsEligible && !playbackWritesLocked),
+    ) {
     NavHost(
         navController = navController,
         startDestination = AppDestination.HOME.route,
@@ -1133,6 +1177,9 @@ private fun AppNavigationGraph(
                 onRefreshRecent = onRefreshRecent,
                 onRefreshHistory = onRefreshHistory,
                 onRefreshAutoplay = onRefreshAutoplay,
+                homeCollectionActions = homeCollectionActions,
+                songActions = songActions,
+                interactionEnabled = true,
             )
         }
         composable(AppDestination.SEARCH.route) {
@@ -1147,6 +1194,8 @@ private fun AppNavigationGraph(
                 artworkIdentity = homeArtworkIdentity,
                 searchHistory = uiPreferences.searchHistory,
                 onClearSearchHistory = uiPreferences::clearSearchHistory,
+                songActions = songActions,
+                collectionActions = collectionActions,
             )
         }
         composable(AppDestination.LIBRARY.route) {
@@ -1169,6 +1218,8 @@ private fun AppNavigationGraph(
                     category = category,
                     onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
                     onBack = { navController.popBackStack() },
+                    songActions = songActions,
+                    collectionActions = collectionActions,
                 )
             }
         }
@@ -1190,6 +1241,8 @@ private fun AppNavigationGraph(
                     sourceId = sourceId,
                     onBack = { navController.popBackStack() },
                     artworkIdentity = homeArtworkIdentity,
+                    songActions = songActions,
+                    collectionActions = collectionActions,
                 )
             }
         }
@@ -1262,5 +1315,6 @@ private fun AppNavigationGraph(
                 )
             }
         }
+    }
     }
 }

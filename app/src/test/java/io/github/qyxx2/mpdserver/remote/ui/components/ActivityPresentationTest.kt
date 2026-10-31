@@ -134,6 +134,22 @@ class ActivityPresentationTest {
         assertTrue(allowed.activities.single().canRetry)
     }
 
+    @Test fun homeAutoplayUnknownRetryRequiresExactOccurrencePermission() {
+        val state = PlayerTestFixtures.state()
+        val autoplayIntent = activity(MutationStatus.UNKNOWN).copy(intentId = "home-autoplay:intent-1")
+
+        val denied = ActivityPresentation.from(state, listOf(autoplayIntent), currentOrigin = origin)
+        assertFalse(denied.activities.single().canRetry)
+
+        val allowed = ActivityPresentation.from(
+            state,
+            listOf(autoplayIntent),
+            currentOrigin = origin,
+            retryableIntentIds = setOf("home-autoplay:intent-1"),
+        )
+        assertTrue(allowed.activities.single().canRetry)
+    }
+
     @Test fun activityRowsRetainExistingSharedOwnerDataAndReadableFallbacks() {
         val result = project(
             SnapshotStoreState(connectionStatus = RuntimeConnectionStatus.CONNECTED, freshness = SnapshotFreshness.FRESH, readError = "snapshot error"),

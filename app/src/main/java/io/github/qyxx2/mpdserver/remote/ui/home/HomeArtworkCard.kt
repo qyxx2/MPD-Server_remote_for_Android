@@ -4,11 +4,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
+import io.github.qyxx2.mpdserver.remote.ui.library.LibrarySongRowModel
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActionMenu
+import io.github.qyxx2.mpdserver.remote.ui.library.LocalPlaybackActionsEnabled
 
 @Composable
 internal fun HomeArtworkCardItem(
@@ -35,6 +41,10 @@ internal fun HomeArtworkCardItem(
     coverSize: Dp,
     artworkIdentity: QueueResourceIdentity?,
     onClick: (() -> Unit)? = null,
+    songActions: SongActions? = null,
+    homeCollectionActions: HomeCollectionActions? = null,
+    autoplayIdentity: HomeAutoplayIdentity? = null,
+    resourceFresh: Boolean = true,
 ) {
     val artworkId = card.artwork?.artworkId?.takeIf(String::isNotBlank)
     val artworkKey = remember(artworkIdentity, artworkId) {
@@ -46,6 +56,7 @@ internal fun HomeArtworkCardItem(
         artworkKey?.let(HomeArtworkMemoryCache::stateFor)
     }
     val bitmap = artworkState?.collectAsStateWithLifecycle()?.value
+    val playbackActionsEnabled = LocalPlaybackActionsEnabled.current
 
     val title = card.song?.album?.takeIf(String::isNotBlank)
         ?: card.song?.title?.takeIf(String::isNotBlank)
@@ -87,6 +98,39 @@ internal fun HomeArtworkCardItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.headlineMedium,
                 )
+            }
+            when (card.kind) {
+                HomeCardKind.AUTOPLAY_OCCURRENCE -> {
+                    val enabled = resourceFresh && card.isPlayable && autoplayIdentity != null &&
+                        homeCollectionActions != null && playbackActionsEnabled
+                    IconButton(
+                        onClick = {
+                            homeCollectionActions?.playAutoplay(card, autoplayIdentity, resourceFresh)
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                            .padding(2.dp)
+                            .testTag("home-autoplay-play-${card.queueItemId.orEmpty().hashCode()}"),
+                    ) {
+                        Text("▶", color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+                HomeCardKind.SINGLE_SONG, HomeCardKind.HISTORY_ORPHAN -> {
+                    val songId = card.songId
+                    if (songActions != null && songId != null) {
+                        SongActionMenu(
+                            item = LibrarySongRowModel(
+                                key = "home:${card.key}",
+                                songId = songId,
+                                song = card.song,
+                            ),
+                            actions = songActions,
+                            resourceFresh = resourceFresh,
+                            modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
+                        )
+                    }
+                }
+                HomeCardKind.ALBUM -> Unit
             }
         }
         Text(

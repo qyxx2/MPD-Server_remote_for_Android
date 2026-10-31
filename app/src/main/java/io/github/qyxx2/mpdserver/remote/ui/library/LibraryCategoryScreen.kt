@@ -37,11 +37,14 @@ fun LibraryCategoryScreen(
     onOpenDetail: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    songActions: SongActions? = null,
+    collectionActions: LibraryCollectionActions? = null,
 ) {
     when (category) {
-        LibraryCategory.SONGS -> SongsLibraryScreen(runtime, onBack, modifier)
-        LibraryCategory.PLAYLISTS -> PlaylistScreen(runtime, onOpenDetail, onBack, modifier = modifier)
-        LibraryCategory.FAVORITES -> FavoritesScreen(runtime, onBack, modifier)
+        LibraryCategory.SONGS -> SongsLibraryScreen(runtime, onBack, modifier, songActions, collectionActions)
+        LibraryCategory.PLAYLISTS -> PlaylistScreen(runtime, onOpenDetail, onBack, modifier = modifier,
+            songActions = songActions, collectionActions = collectionActions)
+        LibraryCategory.FAVORITES -> FavoritesScreen(runtime, onBack, modifier, songActions, collectionActions)
         else -> SummaryLibraryCategoryScreen(runtime, category, onOpenDetail, onBack, modifier)
     }
 }
@@ -153,6 +156,8 @@ private fun SongsLibraryScreen(
     runtime: AppRuntime,
     onBack: () -> Unit,
     modifier: Modifier,
+    songActions: SongActions?,
+    collectionActions: LibraryCollectionActions?,
 ) {
     var selectedSort by remember { mutableStateOf(SongSortOption.all.first()) }
     var menuExpanded by remember { mutableStateOf(false) }
@@ -195,6 +200,21 @@ private fun SongsLibraryScreen(
                 }
             }
         }
+        if (collectionActions != null) {
+            CollectionPlaybackControls(
+                enabled = state is LibraryLoadState.Ready && collectionActions.canPlay(),
+                onPlayAll = {
+                    CollectionPlaybackRequest.forSongs(selectedSort.sortBy, selectedSort.sortOrder)
+                        ?.let { collectionActions.play(it, resourceFresh = state is LibraryLoadState.Ready) }
+                },
+                onShuffle = {
+                    CollectionPlaybackRequest.forSongs(randomize = true)
+                        ?.let { collectionActions.play(it, resourceFresh = state is LibraryLoadState.Ready) }
+                },
+                modifier = Modifier.padding(horizontal = 12.dp),
+                tag = "library-songs-collection-controls",
+            )
+        }
         LibraryResourceContent(
             state = state,
             emptyText = "暂无歌曲",
@@ -205,7 +225,9 @@ private fun SongsLibraryScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize().testTag("library-song-list"),
             ) {
-                items(rows, key = { it.key }) { row -> LibrarySongRow(row) }
+                items(rows, key = { it.key }) {
+                    LibrarySongRow(it, songActions = songActions, resourceFresh = state is LibraryLoadState.Ready)
+                }
             }
         }
     }

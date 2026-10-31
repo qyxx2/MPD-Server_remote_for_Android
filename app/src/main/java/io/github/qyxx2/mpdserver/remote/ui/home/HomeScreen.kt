@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -62,6 +63,9 @@ internal fun HomeScreen(
     onRefreshRecent: () -> Unit = {},
     onRefreshHistory: () -> Unit = {},
     onRefreshAutoplay: () -> Unit = {},
+    homeCollectionActions: HomeCollectionActions? = null,
+    songActions: SongActions? = null,
+    interactionEnabled: Boolean = true,
 ) {
     // Each Home instance owns its visible-key registration. Multiple shell/NavHost instances can
     // coexist during transitions without replacing each other's visible artwork protection.
@@ -83,6 +87,9 @@ internal fun HomeScreen(
             artworkIdentity = artworkIdentity,
             enableArtworkPrefetch = enableArtworkPrefetch,
             onRefresh = onRefreshRecent,
+            homeCollectionActions = homeCollectionActions,
+            songActions = songActions,
+            interactionEnabled = interactionEnabled,
             modifier = Modifier.weight(1f),
         )
         HomeSection(
@@ -96,6 +103,9 @@ internal fun HomeScreen(
             artworkIdentity = artworkIdentity,
             enableArtworkPrefetch = enableArtworkPrefetch,
             onRefresh = onRefreshHistory,
+            homeCollectionActions = homeCollectionActions,
+            songActions = songActions,
+            interactionEnabled = interactionEnabled,
             modifier = Modifier.weight(1f),
         )
         HomeSection(
@@ -109,6 +119,9 @@ internal fun HomeScreen(
             artworkIdentity = artworkIdentity,
             enableArtworkPrefetch = enableArtworkPrefetch,
             onRefresh = onRefreshAutoplay,
+            homeCollectionActions = homeCollectionActions,
+            songActions = songActions,
+            interactionEnabled = interactionEnabled,
             modifier = Modifier.weight(1f),
         )
     }

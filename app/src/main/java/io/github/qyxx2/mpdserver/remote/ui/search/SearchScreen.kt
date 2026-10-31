@@ -29,6 +29,10 @@ import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchGroupKindDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.preferences.SearchHistoryPolicy
 import io.github.qyxx2.mpdserver.remote.ui.library.LibrarySongArtwork
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCollectionActions
+import io.github.qyxx2.mpdserver.remote.ui.library.CollectionPlaybackRequest
+import io.github.qyxx2.mpdserver.remote.ui.library.CollectionPlaybackControls
 import io.github.qyxx2.mpdserver.remote.ui.library.LibrarySongRow
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import kotlinx.coroutines.flow.Flow
@@ -46,6 +50,8 @@ fun SearchScreen(
     searchHistory: Flow<List<String>> = emptyFlow(),
     onClearSearchHistory: suspend () -> Unit = {},
     showArtwork: Boolean = true,
+    songActions: SongActions? = null,
+    collectionActions: LibraryCollectionActions? = null,
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
     val history by searchHistory.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -106,6 +112,9 @@ fun SearchScreen(
                     runtime = runtime,
                     artworkIdentity = artworkIdentity,
                     showArtwork = showArtwork,
+                    query = state.query,
+                    songActions = songActions,
+                    collectionActions = collectionActions,
                 )
                 is SearchContentState.Stale -> SearchResults(
                     projection = content.projection,
@@ -115,6 +124,9 @@ fun SearchScreen(
                     runtime = runtime,
                     artworkIdentity = artworkIdentity,
                     showArtwork = showArtwork,
+                    query = state.query,
+                    songActions = songActions,
+                    collectionActions = collectionActions,
                 )
             }
         }
@@ -185,6 +197,9 @@ private fun SearchResults(
     runtime: AppRuntime?,
     artworkIdentity: QueueResourceIdentity?,
     showArtwork: Boolean,
+    query: String,
+    songActions: SongActions?,
+    collectionActions: LibraryCollectionActions?,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("search-results"),
@@ -198,6 +213,27 @@ private fun SearchResults(
                     color = MaterialTheme.colorScheme.tertiary,
                     fontSize = 12.sp,
                 )
+            }
+        }
+        if (interactionEnabled && collectionActions != null &&
+            (projection.groups.isNotEmpty() || projection.songs.isNotEmpty())
+        ) {
+            item("search-collection-playback-controls") {
+                val request = CollectionPlaybackRequest.forSearch(query)
+                if (request != null) {
+                    CollectionPlaybackControls(
+                        enabled = !stale && collectionActions.canPlay(),
+                        onPlayAll = { collectionActions.play(request, resourceFresh = !stale) },
+                        onShuffle = {
+                            collectionActions.play(
+                                request.withRandomize(true),
+                                resourceFresh = !stale,
+                            )
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        tag = "search-collection-controls",
+                    )
+                }
             }
         }
         projection.groups.forEachIndexed { index, group ->
@@ -250,6 +286,8 @@ private fun SearchResults(
                     showArtwork = showArtwork,
                     runtime = runtime,
                     artworkIdentity = artworkIdentity,
+                    songActions = songActions,
+                    resourceFresh = !stale,
                 )
             }
         }
@@ -268,6 +306,8 @@ private fun SearchResults(
                     showArtwork = showArtwork,
                     runtime = runtime,
                     artworkIdentity = artworkIdentity,
+                    songActions = songActions,
+                    resourceFresh = !stale,
                 )
             }
         }

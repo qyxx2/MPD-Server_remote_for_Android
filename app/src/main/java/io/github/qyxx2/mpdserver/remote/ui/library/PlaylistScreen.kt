@@ -42,6 +42,8 @@ fun PlaylistScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     playlistId: String? = null,
+    songActions: SongActions? = null,
+    collectionActions: LibraryCollectionActions? = null,
 ) {
     if (playlistId == null) {
         var retryToken by remember { mutableIntStateOf(0) }
@@ -113,18 +115,43 @@ fun PlaylistScreen(
                 isEmpty = { it.songs.isEmpty() },
             ) { detail ->
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Text(
-                        text = buildString {
-                            append(detail.playlist.name)
-                            if (detail.playlist.isSystem) append(" · 系统歌单")
-                        },
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                            .testTag("library-playlist-name"),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = buildString {
+                                append(detail.playlist.name)
+                                if (detail.playlist.isSystem) append(" · 系统歌单")
+                            },
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                                .testTag("library-playlist-name"),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (collectionActions != null) {
+                            val request = CollectionPlaybackRequest.forPlaylist(detail.playlist.playlistId)
+                            if (request != null) {
+                                CollectionPlaybackControls(
+                                    enabled = state is LibraryLoadState.Ready && collectionActions.canPlay(),
+                                    onPlayAll = { collectionActions.play(request, resourceFresh = state is LibraryLoadState.Ready) },
+                                    onShuffle = {
+                                        collectionActions.play(
+                                            request.withRandomize(true),
+                                            resourceFresh = state is LibraryLoadState.Ready,
+                                        )
+                                    },
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                    tag = "playlist-collection-controls",
+                                )
+                            }
+                        }
+                    }
                     LazyColumn(modifier = Modifier.fillMaxSize().testTag("library-playlist-songs")) {
-                        items(detail.songs, key = { it.key }) { LibrarySongRow(it) }
+                        items(detail.songs, key = { it.key }) {
+                            LibrarySongRow(
+                                it,
+                                songActions = songActions,
+                                resourceFresh = state is LibraryLoadState.Ready,
+                            )
+                        }
                     }
                 }
             }

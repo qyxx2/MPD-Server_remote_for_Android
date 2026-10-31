@@ -29,6 +29,8 @@ fun LibrarySongRow(
     showArtwork: Boolean = false,
     runtime: AppRuntime? = null,
     artworkIdentity: QueueResourceIdentity? = null,
+    songActions: SongActions? = null,
+    resourceFresh: Boolean = true,
 ) {
     val song = item.song
     val title = song?.title?.takeIf { it.isNotBlank() }
@@ -97,6 +99,14 @@ fun LibrarySongRow(
                 text = it,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (songActions != null) {
+            SongActionMenu(
+                item = item,
+                actions = songActions,
+                resourceFresh = resourceFresh,
+                modifier = Modifier.testTag("library-row-song-actions-${item.key.hashCode()}"),
             )
         }
     }

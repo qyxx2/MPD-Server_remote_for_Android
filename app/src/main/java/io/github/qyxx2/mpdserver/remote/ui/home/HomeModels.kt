@@ -38,13 +38,21 @@ data class HomeArtworkCard(
 
 data class HomeRecentUpdates(val cards: List<HomeArtworkCard>)
 
+data class HomeAutoplayIdentity(
+    val epoch: String,
+    val connectionGeneration: Long,
+    val queueRevision: Long,
+    val playbackContextId: String,
+    val queueFingerprint: String,
+)
+
 data class HomePlaybackHistory(
     val cards: List<HomeArtworkCard>,
     /** All unique persistent History song IDs in original server event order. */
     val songIds: List<String>,
 )
 
-data class HomeAutoplay(val cards: List<HomeArtworkCard>)
+data class HomeAutoplay(val cards: List<HomeArtworkCard>, val identity: HomeAutoplayIdentity? = null)
 
 data class HomeUiState(
     val recentlyUpdated: HomeSectionState<HomeRecentUpdates> = HomeSectionState.Loading,

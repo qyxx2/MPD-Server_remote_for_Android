@@ -27,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.network.HttpResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.ui.library.CollectionPlaybackControls
+import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
@@ -43,10 +45,17 @@ internal fun HomeSection(
     artworkIdentity: QueueResourceIdentity?,
     enableArtworkPrefetch: Boolean,
     onRefresh: () -> Unit,
+    homeCollectionActions: HomeCollectionActions? = null,
+    songActions: SongActions? = null,
+    interactionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val cards = state.cardsForSection()
     val isStale = state is HomeSectionState.Stale<*>
+    val isReady = state is HomeSectionState.Ready<*>
+    val recentData = state.valueForSection() as? HomeRecentUpdates
+    val historyData = state.valueForSection() as? HomePlaybackHistory
+    val autoplayData = state.valueForSection() as? HomeAutoplay
 
     // Keep all currently visible Home bitmaps pinned across all three rails. Prefetch remains a
     // separate small look-ahead window, so scrolling does not evict covers in the other sections.
@@ -105,18 +114,19 @@ internal fun HomeSection(
             .fillMaxWidth()
             .testTag(sectionTag),
     ) {
-        val coverSize = (maxHeight - 80.dp).coerceAtLeast(48.dp).coerceAtMost(176.dp)
+        val coverSize = (maxHeight - 92.dp).coerceAtLeast(48.dp).coerceAtMost(176.dp)
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(36.dp)
+                    .height(48.dp)
                     .padding(horizontal = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = title,
+                    modifier = Modifier.weight(1f, fill = false),
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -128,6 +138,25 @@ internal fun HomeSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp,
                         maxLines = 1,
+                    )
+                }
+                if (interactionEnabled && homeCollectionActions != null && recentData?.cards?.isNotEmpty() == true &&
+                    title == "最近更新"
+                ) {
+                    CollectionPlaybackControls(
+                        enabled = isReady && homeCollectionActions.canPlay(),
+                        onPlayAll = { homeCollectionActions.playRecentUpdates(randomize = false, resourceFresh = isReady) },
+                        onShuffle = { homeCollectionActions.playRecentUpdates(randomize = true, resourceFresh = isReady) },
+                        tag = "home-recent-collection-controls",
+                    )
+                } else if (interactionEnabled && homeCollectionActions != null &&
+                    historyData?.songIds?.isNotEmpty() == true && title == "播放历史"
+                ) {
+                    CollectionPlaybackControls(
+                        enabled = isReady && homeCollectionActions.canPlay(),
+                        onPlayAll = { homeCollectionActions.playHistory(historyData, randomize = false, resourceFresh = isReady) },
+                        onShuffle = { homeCollectionActions.playHistory(historyData, randomize = true, resourceFresh = isReady) },
+                        tag = "home-history-collection-controls",
                     )
                 }
             }
@@ -151,6 +180,10 @@ internal fun HomeSection(
                             sectionTitle = title,
                             coverSize = coverSize,
                             artworkIdentity = artworkIdentity,
+                            songActions = songActions.takeIf { interactionEnabled },
+                            homeCollectionActions = homeCollectionActions.takeIf { interactionEnabled },
+                            autoplayIdentity = autoplayData?.identity,
+                            resourceFresh = isReady,
                         )
                     }
                 } else {
@@ -170,6 +203,12 @@ private data class HomeArtworkRailVisibilityOwner(
     val screenOwner: Any,
     val railTag: String,
 )
+
+private fun HomeSectionState<*>.valueForSection(): Any? = when (this) {
+    is HomeSectionState.Ready<*> -> value
+    is HomeSectionState.Stale<*> -> value
+    else -> null
+}
 
 private fun HomeSectionState<*>.cardsForSection(): List<HomeArtworkCard> = when (this) {
     is HomeSectionState.Ready<*> -> when (val value = value) {

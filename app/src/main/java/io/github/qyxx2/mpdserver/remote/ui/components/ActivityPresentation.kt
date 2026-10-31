@@ -81,6 +81,7 @@ data class ActivityPresentation(
                             when {
                                 activity.intentId.startsWith("player:") -> activity.intentId in retryableIntentIds
                                 activity.intentId.startsWith("queue:") -> activity.intentId in retryableIntentIds
+                                activity.intentId.startsWith("home-autoplay:") -> activity.intentId in retryableIntentIds
                                 else -> true
                             },
                     )
