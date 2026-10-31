@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -73,15 +75,19 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerAction
 import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
+import io.github.qyxx2.mpdserver.remote.ui.home.HomeDataController
+import io.github.qyxx2.mpdserver.remote.ui.home.HomeScreen
+import io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollResetEffect
+import io.github.qyxx2.mpdserver.remote.ui.home.HomeUiState
+import io.github.qyxx2.mpdserver.remote.ui.home.rememberHomeScrollStateHolder
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueScreen
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueArtworkThumbnailCache
+import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueueSongCache
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentation
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentationCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePrefetchWindow
-import io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity
 import io.github.qyxx2.mpdserver.remote.ui.queue.createQueueSongCache
-import io.github.qyxx2.mpdserver.remote.ui.screens.HomePlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.StatusRingSettingsScreen
@@ -117,6 +123,17 @@ fun AppNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
+    val homeController = remember(runtime) { HomeDataController(runtime) }
+    val homeState by homeController.state.collectAsStateWithLifecycle()
+    val homeScrollStateHolder = rememberHomeScrollStateHolder()
+    DisposableEffect(homeController) {
+        onDispose { homeController.close() }
+    }
+    LaunchedEffect(homeController, currentRoute) {
+        if (currentRoute == AppDestination.HOME.route) homeController.activate()
+        else homeController.deactivate()
+    }
+    HomeScrollResetEffect(currentRoute, homeScrollStateHolder)
     // Observe the existing shared coordinator; this does not start networking or submit a mutation.
     val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
     // This transient presentation adapter is shell-scoped; all requests/retries still belong to
@@ -127,6 +144,23 @@ fun AppNavHost(
         playerActions.update(snapshotState, activities)
     }
     val currentServerOrigin = runtime.realtimeController.currentOrigin()
+    val homeArtworkIdentity = remember(
+        currentServerOrigin.address,
+        snapshotState.connectionGeneration,
+        snapshotState.snapshot?.epoch,
+        snapshotState.snapshot?.libraryRevision,
+    ) {
+        QueueResourceIdentity(
+            epoch = snapshotState.snapshot?.epoch ?: "no-snapshot",
+            libraryRevision = snapshotState.snapshot?.libraryRevision ?: 0L,
+            connectionGeneration = snapshotState.connectionGeneration,
+            originAddress = currentServerOrigin.address,
+        )
+    }
+    SideEffect {
+        // Publish the cache scope synchronously before Home's visible-window prefetch effects run.
+        QueueArtworkThumbnailCache.updateIdentity(homeArtworkIdentity)
+    }
     val retryablePlayerIntentIds = playerActionState.activeIntentId
         ?.takeIf { playerActions.canRetryUnknown() }
         ?.let(::setOf)
@@ -588,6 +622,10 @@ fun AppNavHost(
             ) {
                 RootBackdropShell(
                     rootRoute = rootBeforeFullScreen,
+                    runtime = runtime,
+                    homeState = homeState,
+                    homeScrollStateHolder = homeScrollStateHolder,
+                    homeArtworkIdentity = homeArtworkIdentity,
                     miniPlayerPresentation = miniPlayerPresentation,
                     navController = navController,
                     uiPreferences = uiPreferences,
@@ -764,6 +802,14 @@ fun AppNavHost(
                     AppNavigationGraph(
                         navController = navController,
                         runtime = runtime,
+                        homeState = homeState,
+                        homeScrollStateHolder = homeScrollStateHolder,
+                        homeArtworkIdentity = homeArtworkIdentity,
+                        onRefreshRecent = homeController::refreshRecentUpdates,
+                        onRefreshHistory = homeController::refreshPlaybackHistory,
+                        onRefreshAutoplay = {
+                            navigationScope.launch { runtime.refreshSnapshot() }
+                        },
                         snapshotState = snapshotState,
                         playerPresentation = playerPresentation,
                         playerMediaPresentation = mediaProjection.mediaPresentation,
@@ -871,6 +917,10 @@ fun AppNavHost(
 @Composable
 private fun RootBackdropShell(
     rootRoute: String,
+    runtime: AppRuntime,
+    homeState: HomeUiState,
+    homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
+    homeArtworkIdentity: QueueResourceIdentity,
     miniPlayerPresentation: MiniPlayerPresentation,
     navController: NavHostController,
     uiPreferences: UiPreferencesRepository,
@@ -916,7 +966,13 @@ private fun RootBackdropShell(
                         windowGeometry = windowGeometry,
                         onApplyServerOrigin = onApplyServerOrigin,
                     )
-                    else -> HomePlaceholderScreen()
+                    else -> HomeScreen(
+                        state = homeState,
+                        scrollStateHolder = homeScrollStateHolder,
+                        runtime = runtime,
+                        artworkIdentity = homeArtworkIdentity,
+                        enableArtworkPrefetch = false,
+                    )
                 }
             }
         }
@@ -960,6 +1016,12 @@ private fun PullUpRootNavigationOverlay(
 private fun AppNavigationGraph(
     navController: NavHostController,
     runtime: AppRuntime,
+    homeState: HomeUiState,
+    homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
+    homeArtworkIdentity: QueueResourceIdentity,
+    onRefreshRecent: () -> Unit,
+    onRefreshHistory: () -> Unit,
+    onRefreshAutoplay: () -> Unit,
     snapshotState: SnapshotStoreState,
     playerPresentation: PlayerPresentation,
     playerMediaPresentation: PlayerPresentation,
@@ -989,7 +1051,18 @@ private fun AppNavigationGraph(
         startDestination = AppDestination.HOME.route,
         modifier = modifier,
     ) {
-        composable(AppDestination.HOME.route) { HomePlaceholderScreen() }
+        composable(AppDestination.HOME.route) {
+            HomeScreen(
+                state = homeState,
+                scrollStateHolder = homeScrollStateHolder,
+                runtime = runtime,
+                artworkIdentity = homeArtworkIdentity,
+                enableArtworkPrefetch = snapshotState.controlsEligible,
+                onRefreshRecent = onRefreshRecent,
+                onRefreshHistory = onRefreshHistory,
+                onRefreshAutoplay = onRefreshAutoplay,
+            )
+        }
         composable(AppDestination.SEARCH.route) { SearchPlaceholderScreen() }
         composable(AppDestination.LIBRARY.route) { LibraryPlaceholderScreen() }
         composable(AppDestination.SETTINGS.route) {

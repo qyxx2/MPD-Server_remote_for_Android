@@ -20,11 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun HomePlaceholderScreen() = RootPlaceholderScreen(
-    description = "主页内容将在后续任务接入。",
-)
-
-@Composable
 fun SearchPlaceholderScreen() = RootPlaceholderScreen(
     description = "搜索功能将在后续任务接入。",
 )

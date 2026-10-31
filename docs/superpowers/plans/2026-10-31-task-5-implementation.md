@@ -243,19 +243,19 @@ Keep these stable or update the plan and contract matrix in the same Batch befor
 - Modify: ui/navigation/AppNavHost.kt and Home usage in ui/screens/NavigationPlaceholderScreens.kt
 - Tests: app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/home/HomeScreenUiTest.kt, HomeScrollResetUiTest.kt
 
-- [ ] **Step 1 — UI tests first:** assert order/labels, three independent horizontal LazyRows, all three rails visible, no verticalScroll parent, equal section weights within tolerance, and loading/empty/error states do not collapse their section.
-- [ ] **Step 2 — Scroll reset tests:** scroll all three independently; navigate Home → Search → Home, Home → Library detail → Home, Home → full-screen Player/Queue → Home; every rail returns to index 0, with no cross-rail state leakage.
-- [ ] **Step 3 — Layout:** full-size Column, three weight(1f) section containers. Compact header, artwork-dominant LazyRow. No vertical scrolling parent, arbitrary top/bottom spacer, or oversized section gap. All sections share root content area between AppBar and mini-player/navigation.
-- [ ] **Step 4 — Adaptive covers:** calculate square artwork side from each section’s available height after header/metadata. On short displays reduce cover/spacing before hiding/cropping the third section. Text is compact and truncated.
-- [ ] **Step 5 — Card identity/artwork:** Recent Updates/History group uses defined album cover source; AutoPlay creates one card per queue_item_id and uses that occurrence’s Song artwork. Never cross-fallback between unrelated tracks/albums.
-- [ ] **Step 6 — Bounded prefetch:** visible items plus at most two look-ahead cards; use B1 raw artwork/thumbnail cache. Never decode the complete History or Queue image set eagerly. All image reads honor the 8 MiB stream cap.
-- [ ] **Step 7 — Scroll owner:** HomeScrollStateHolder owns three LazyListStates above NavHost, outside Home NavBackStackEntry; do not rely on Navigation saveState/restoreState. On leaving resolved HOME destination (Search, any Library child, Settings, Player, Queue), reset all three to index zero. Normal Home and blurred RootBackdropShell use same state owner.
-- [ ] **Step 8 — Semantics:** stable test tags, accessible labels containing section/title and queue occurrence identity; cards/header controls retain 48dp touch targets. B5 wires Play All/Shuffle.
-- [ ] **Step 9 — Instrumentation:**
+- [x] **Step 1 — UI tests first:** assert order/labels, three independent horizontal LazyRows, all three rails visible, no verticalScroll parent, equal section weights within tolerance, and loading/empty/error states do not collapse their section.
+- [x] **Step 2 — Scroll reset tests:** scroll all three independently; navigate Home → Search → Home, Home → Library detail → Home, Home → full-screen Player/Queue → Home; every rail returns to index 0, with no cross-rail state leakage.
+- [x] **Step 3 — Layout:** full-size Column, three weight(1f) section containers. Compact header, artwork-dominant LazyRow. No vertical scrolling parent, arbitrary top/bottom spacer, or oversized section gap. All sections share root content area between AppBar and mini-player/navigation.
+- [x] **Step 4 — Adaptive covers:** calculate square artwork side from each section’s available height after header/metadata. On short displays reduce cover/spacing before hiding/cropping the third section. Text is compact and truncated.
+- [x] **Step 5 — Card identity/artwork:** Recent Updates/History group uses defined album cover source; AutoPlay creates one card per queue_item_id and uses that occurrence’s Song artwork. Never cross-fallback between unrelated tracks/albums.
+- [x] **Step 6 — Bounded prefetch:** visible items plus at most two look-ahead cards; use B1 raw artwork/thumbnail cache. Never decode the complete History or Queue image set eagerly. All image reads honor the 8 MiB stream cap.
+- [x] **Step 7 — Scroll owner:** HomeScrollStateHolder owns three LazyListStates above NavHost, outside Home NavBackStackEntry; do not rely on Navigation saveState/restoreState. On leaving resolved HOME destination (Search, any Library child, Settings, Player, Queue), reset all three to index zero. Normal Home and blurred RootBackdropShell use same state owner.
+- [x] **Step 8 — Semantics:** stable test tags, accessible labels containing section/title and queue occurrence identity; cards/header controls retain 48dp touch targets. B5 wires Play All/Shuffle.
+- [x] **Step 9 — Instrumentation:**
   ~~~bash
   ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.home.HomeScreenUiTest,io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollResetUiTest
   ~~~
-- [ ] **Step 10 — Local commit:** feat(home): render dense horizontal discovery rails.
+- [x] **Step 10 — Local commit:** feat(home): render dense horizontal discovery rails.
 
 **Exit gate:** all three rails fill available content; artwork is dominant; scroll is horizontal and independent; route exit always resets to index zero.
 
