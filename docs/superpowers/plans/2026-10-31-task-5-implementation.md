@@ -272,22 +272,22 @@ Keep these stable or update the plan and contract matrix in the same Batch befor
 - Unit tests: ui/library/LibraryRoutesTest.kt, LibraryProjectionTest.kt, ui/search/SearchProjectionTest.kt
 - Instrumentation: app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/library/LibraryNavigationUiTest.kt, SearchScreenUiTest.kt
 
-- [ ] **Step 1 — Route tests first:** Library root, Songs, all five category lists/details, Playlist list/detail, Favorites, Search result → category detail → back to Search. IDs survive URL encode/decode. All nested Library paths select Library root.
-- [ ] **Step 2 — Route contract:** library; library/{kind}; library/{kind}/{id}. Allowed kinds: songs/albums/artists/genres/years/tags/playlists/favorites. One root-destination resolver maps every nested Library route to LIBRARY and preserves saved root when Player/Queue opens.
-- [ ] **Step 3 — Shell integration:** use same root resolver in RootNavigationBar, AppShell title, RootBackdropShell, mini-player visibility and Player return. Replace Home/Search/Library placeholders in both normal and blurred root rendering.
-- [ ] **Step 4 — Library root:** exact category order Songs, Playlists, Artists, Albums, Genres, Years, Tags, Favorites; preserve Task3 row/icon/divider/touch/accessibility style; do not show fabricated counts.
-- [ ] **Step 5 — Songs list:** default sort_by=title&sort_order=asc; show every server row and availability. Null song_id row key falls back to file_uri. Only title/modified_at × asc/desc options. Changing sort issues a different GET key and renders server response; never sort locally.
-- [ ] **Step 6 — Categories:** typed summaries use server ID/name/count; member endpoints use exact server ID. Map albums→ALBUM, artists→ARTIST, genres→GENRE, years→YEAR, tags→TAG. Do not derive source_id from display names. Song list responses feed internSongs.
-- [ ] **Step 7 — Playlist/Favorites read views:** playlist list/detail/members preserve server song_ids order and is_system flag; Favorites use /api/favorites/members and shared Song entity store; IDs no longer in Library remain non-playable placeholders.
-- [ ] **Step 8 — Search controller:** blank/whitespace query sends no request; trimmed query encoded as q; 250ms debounce; cancel prior query UI subscription; guard results by query generation + origin/generation/epoch/library revision. Search grouping order: server groups and each group song_ids in response order, then top-level song_ids, de-duplicated by first appearance.
-- [ ] **Step 9 — Search UI:** render groups in service order; click routes with exact kind/source_id and keeps Search beneath for Back. Song results resolve through shared entity cache; never run local search or reorder.
-- [ ] **Step 10 — Error/race tests:** Empty success differs from API/DTO failure; old query cannot overwrite new; clear cancels current UI subscription; page leave releases observers but not AppRuntime cache.
-- [ ] **Step 11 — Unit + targeted instrumentation:**
+- [x] **Step 1 — Route tests first:** Library root, Songs, all five category lists/details, Playlist list/detail, Favorites, Search result → category detail → back to Search. IDs survive URL encode/decode. All nested Library paths select Library root.
+- [x] **Step 2 — Route contract:** library; library/{kind}; library/{kind}/{id}. Allowed kinds: songs/albums/artists/genres/years/tags/playlists/favorites. One root-destination resolver maps every nested Library route to LIBRARY and preserves saved root when Player/Queue opens.
+- [x] **Step 3 — Shell integration:** use same root resolver in RootNavigationBar, AppShell title, RootBackdropShell, mini-player visibility and Player return. Replace Home/Search/Library placeholders in both normal and blurred root rendering.
+- [x] **Step 4 — Library root:** exact category order Songs, Playlists, Artists, Albums, Genres, Years, Tags, Favorites; preserve Task3 row/icon/divider/touch/accessibility style; do not show fabricated counts.
+- [x] **Step 5 — Songs list:** default sort_by=title&sort_order=asc; show every server row and availability. Null song_id row key falls back to file_uri. Only title/modified_at × asc/desc options. Changing sort issues a different GET key and renders server response; never sort locally.
+- [x] **Step 6 — Categories:** typed summaries use server ID/name/count; member endpoints use exact server ID. Map albums→ALBUM, artists→ARTIST, genres→GENRE, years→YEAR, tags→TAG. Do not derive source_id from display names. Song list responses feed internSongs.
+- [x] **Step 7 — Playlist/Favorites read views:** playlist list/detail/members preserve server song_ids order and is_system flag; Favorites use /api/favorites/members and shared Song entity store; IDs no longer in Library remain non-playable placeholders.
+- [x] **Step 8 — Search controller:** blank/whitespace query sends no request; trimmed query encoded as q; 250ms debounce; cancel prior query UI subscription; guard results by query generation + origin/generation/epoch/library revision. Search grouping order: server groups and each group song_ids in response order, then top-level song_ids, de-duplicated by first appearance.
+- [x] **Step 9 — Search UI:** render groups in service order; click routes with exact kind/source_id and keeps Search beneath for Back. Song results resolve through shared entity cache; never run local search or reorder.
+- [x] **Step 10 — Error/race tests:** Empty success differs from API/DTO failure; old query cannot overwrite new; clear cancels current UI subscription; page leave releases observers but not AppRuntime cache.
+- [x] **Step 11 — Unit + targeted instrumentation:**
   ~~~bash
   ./gradlew :app:testDebugUnitTest
   ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.library.LibraryNavigationUiTest,io.github.qyxx2.mpdserver.remote.ui.search.SearchScreenUiTest
   ~~~
-- [ ] **Step 12 — Local commit:** feat(library): add library navigation and server-backed search.
+- [x] **Step 12 — Local commit:** feat(library): add library navigation and server-backed search.
 
 **Exit gate:** Library/Search read-only routes are complete; Songs is first; sorting/search are server-backed; root navigation and back stack are correct.
 

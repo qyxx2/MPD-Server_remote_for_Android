@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -49,6 +50,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -89,8 +92,14 @@ import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentation
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePresentationCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.queue.QueuePrefetchWindow
 import io.github.qyxx2.mpdserver.remote.ui.queue.createQueueSongCache
-import io.github.qyxx2.mpdserver.remote.ui.screens.LibraryPlaceholderScreen
-import io.github.qyxx2.mpdserver.remote.ui.screens.SearchPlaceholderScreen
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCategory
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCategoryScreen
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCollectionScreen
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryRoutes
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryScreen
+import io.github.qyxx2.mpdserver.remote.ui.search.SearchController
+import io.github.qyxx2.mpdserver.remote.ui.search.SearchProjection
+import io.github.qyxx2.mpdserver.remote.ui.search.SearchScreen
 import io.github.qyxx2.mpdserver.remote.ui.screens.StatusRingSettingsScreen
 import io.github.qyxx2.mpdserver.remote.ui.shell.AppShell
 import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayer
@@ -127,8 +136,12 @@ fun AppNavHost(
     val homeController = remember(runtime) { HomeDataController(runtime) }
     val homeState by homeController.state.collectAsStateWithLifecycle()
     val homeScrollStateHolder = rememberHomeScrollStateHolder()
-    DisposableEffect(homeController) {
-        onDispose { homeController.close() }
+    val searchController = remember(runtime) { SearchController(runtime) }
+    DisposableEffect(homeController, searchController) {
+        onDispose {
+            homeController.close()
+            searchController.close()
+        }
     }
     LaunchedEffect(homeController, currentRoute) {
         if (currentRoute == AppDestination.HOME.route) homeController.activate()
@@ -277,6 +290,7 @@ fun AppNavHost(
     }
     var showActivityStatus by remember { mutableStateOf(false) }
     var rootBeforeFullScreen by remember { mutableStateOf(AppDestination.HOME.route) }
+    var returnRouteBeforeFullScreen by remember { mutableStateOf(AppDestination.HOME.route) }
     var playerEntryProgress by remember { mutableFloatStateOf(1f) }
     var playerDragOffsetPx by remember { mutableFloatStateOf(0f) }
     var playerLayerHeightPx by remember { mutableFloatStateOf(1f) }
@@ -340,10 +354,17 @@ fun AppNavHost(
         if (currentRoute != AppDestination.FULL_SCREEN_PLAYER.route) playerDragOffsetPx = 0f
     }
 
-    LaunchedEffect(currentRoute) {
-        if (AppDestination.rootDestinations.any { it.route == currentRoute }) {
-            rootBeforeFullScreen = currentRoute!!
+    LaunchedEffect(currentRoute, backStackEntry?.arguments) {
+        val rootRoute = AppDestination.rootRouteFor(currentRoute)
+        if (rootRoute != null) {
+            rootBeforeFullScreen = rootRoute
+            returnRouteBeforeFullScreen = backStackEntry?.let(::concreteRootRoute) ?: rootRoute
         }
+    }
+    val activeRootRoute = AppDestination.rootRouteFor(currentRoute) ?: rootBeforeFullScreen
+    LaunchedEffect(searchController, activeRootRoute) {
+        if (activeRootRoute == AppDestination.SEARCH.route) searchController.activate()
+        else searchController.deactivate()
     }
 
     val visibilityController = remember { StatusRingVisibilityController() }
@@ -363,7 +384,7 @@ fun AppNavHost(
     // The full-player motion layer must be window-sized; safe insets are applied only to its
     // interactive foreground content, not to the animated surface behind transparent system bars.
     val title = AppDestination.rootDestinations
-        .firstOrNull { it.route == currentRoute }
+        .firstOrNull { it.route == AppDestination.rootRouteFor(currentRoute) }
         ?.label
         ?: AppDestination.HOME.label
     val safeInsets = windowGeometry.safeInsets
@@ -397,8 +418,10 @@ fun AppNavHost(
         if (!distancePx.isFinite()) return
         val activeRoute = navController.currentDestination?.route ?: currentRoute
         if (!isMiniPlayerExpansionPreview) {
-            if (distancePx <= 0f || !AppDestination.rootDestinations.any { it.route == activeRoute }) return
-            rootBeforeFullScreen = activeRoute!!
+            val rootRoute = AppDestination.rootRouteFor(activeRoute)
+            if (distancePx <= 0f || rootRoute == null) return
+            rootBeforeFullScreen = rootRoute
+            returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
             playerEntryProgress = 0f
             isMiniPlayerExpansionPreview = true
@@ -462,8 +485,10 @@ fun AppNavHost(
     fun openFullScreenPlayer() {
         val activeRoute = navController.currentDestination?.route ?: currentRoute
         if (activeRoute == AppDestination.FULL_SCREEN_PLAYER.route) return
-        if (AppDestination.rootDestinations.any { it.route == activeRoute }) {
-            rootBeforeFullScreen = activeRoute!!
+        val rootRoute = AppDestination.rootRouteFor(activeRoute)
+        if (rootRoute != null) {
+            rootBeforeFullScreen = rootRoute
+            returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
             playerEntryProgress = 0f
             isMiniPlayerExpansionPreview = false
@@ -511,7 +536,9 @@ fun AppNavHost(
                 },
             ) { value, _ -> playerDragOffsetPx = value }
             if (dismiss) {
-                if (!navController.popBackStack(rootBeforeFullScreen, inclusive = false)) {
+                if (!navController.popBackStack(returnRouteBeforeFullScreen, inclusive = false) &&
+                    !navController.popBackStack(rootBeforeFullScreen, inclusive = false)
+                ) {
                     navController.popBackStack()
                 }
                 isPlayerDismissTransitionActive = false
@@ -528,7 +555,9 @@ fun AppNavHost(
         navigationScope.launch {
             // Page 0 is the stable Player base when the whole fullscreen surface leaves.
             fullScreenPagerState.scrollToPage(0)
-            if (!navController.popBackStack(rootBeforeFullScreen, inclusive = false)) {
+            if (!navController.popBackStack(returnRouteBeforeFullScreen, inclusive = false) &&
+                !navController.popBackStack(rootBeforeFullScreen, inclusive = false)
+            ) {
                 navController.popBackStack()
             }
             isExitingFullScreen = false
@@ -630,6 +659,7 @@ fun AppNavHost(
                     homeScrollStateHolder = homeScrollStateHolder,
                     homeArtworkIdentity = homeArtworkIdentity,
                     miniPlayerPresentation = miniPlayerPresentation,
+                    searchController = searchController,
                     navController = navController,
                     uiPreferences = uiPreferences,
                     preferenceWriteScope = preferenceWriteScope,
@@ -774,7 +804,7 @@ fun AppNavHost(
                     title = title,
                     onStatusClick = { showActivityStatus = true },
                     miniPlayer = {
-                        if (currentRoute != AppDestination.SETTINGS.route) {
+                        if (AppDestination.rootRouteFor(currentRoute) != AppDestination.SETTINGS.route) {
                             MiniPlayer(
                                 presentation = miniPlayerPresentation,
                                 onOpen = ::openFullScreenPlayer,
@@ -808,6 +838,7 @@ fun AppNavHost(
                         homeState = homeState,
                         homeScrollStateHolder = homeScrollStateHolder,
                         homeArtworkIdentity = homeArtworkIdentity,
+                        searchController = searchController,
                         onRefreshRecent = homeController::refreshRecentUpdates,
                         onRefreshHistory = homeController::refreshPlaybackHistory,
                         onRefreshAutoplay = {
@@ -917,6 +948,24 @@ fun AppNavHost(
     }
 }
 
+private fun concreteRootRoute(entry: androidx.navigation.NavBackStackEntry): String {
+    return when (entry.destination.route) {
+        LibraryRoutes.CATEGORY_PATTERN -> entry.arguments
+            ?.getString(LibraryRoutes.KIND_ARGUMENT)
+            ?.let(LibraryRoutes::category)
+            ?: AppDestination.LIBRARY.route
+        LibraryRoutes.DETAIL_PATTERN -> {
+            val kind = entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT)
+            val sourceId = entry.arguments?.getString(LibraryRoutes.ID_ARGUMENT)
+            if (kind != null && sourceId != null) runCatching {
+                LibraryRoutes.detail(kind, sourceId)
+            }.getOrDefault(AppDestination.LIBRARY.route)
+            else AppDestination.LIBRARY.route
+        }
+        else -> AppDestination.rootRouteFor(entry.destination.route) ?: AppDestination.HOME.route
+    }
+}
+
 @Composable
 private fun RootBackdropShell(
     rootRoute: String,
@@ -925,6 +974,7 @@ private fun RootBackdropShell(
     homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
     homeArtworkIdentity: QueueResourceIdentity,
     miniPlayerPresentation: MiniPlayerPresentation,
+    searchController: SearchController,
     navController: NavHostController,
     uiPreferences: UiPreferencesRepository,
     preferenceWriteScope: CoroutineScope,
@@ -934,7 +984,8 @@ private fun RootBackdropShell(
     hideNavigationBar: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val rootTitle = AppDestination.rootDestinations.firstOrNull { it.route == rootRoute }?.label
+    val resolvedRootRoute = AppDestination.rootRouteFor(rootRoute) ?: rootRoute
+    val rootTitle = AppDestination.rootDestinations.firstOrNull { it.route == resolvedRootRoute }?.label
         ?: AppDestination.HOME.label
     Box(modifier = modifier.testTag("full-screen-root-backdrop")) {
         Box(
@@ -948,7 +999,7 @@ private fun RootBackdropShell(
                 title = rootTitle,
                 onStatusClick = {},
                 miniPlayer = {
-                    if (rootRoute != AppDestination.SETTINGS.route) {
+                    if (resolvedRootRoute != AppDestination.SETTINGS.route) {
                         MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
                     }
                 },
@@ -956,13 +1007,20 @@ private fun RootBackdropShell(
                     if (hideNavigationBar) {
                         Spacer(Modifier.fillMaxWidth().height(64.dp))
                     } else {
-                        RootNavigationBar(currentRoute = rootRoute, navController = navController)
+                        RootNavigationBar(currentRoute = resolvedRootRoute, navController = navController)
                     }
                 },
             ) {
-                when (rootRoute) {
-                    AppDestination.SEARCH.route -> SearchPlaceholderScreen()
-                    AppDestination.LIBRARY.route -> LibraryPlaceholderScreen()
+                when (resolvedRootRoute) {
+                    AppDestination.SEARCH.route -> SearchScreen(
+                        controller = searchController,
+                        onOpenCategory = { _, _, _ -> },
+                        interactionEnabled = false,
+                    )
+                    AppDestination.LIBRARY.route -> LibraryScreen(
+                        onOpenCategory = {},
+                        interactionEnabled = false,
+                    )
                     AppDestination.SETTINGS.route -> StatusRingSettingsScreen(
                         preferencesRepository = uiPreferences,
                         preferenceWriteScope = preferenceWriteScope,
@@ -1022,6 +1080,7 @@ private fun AppNavigationGraph(
     homeState: HomeUiState,
     homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
     homeArtworkIdentity: QueueResourceIdentity,
+    searchController: SearchController,
     onRefreshRecent: () -> Unit,
     onRefreshHistory: () -> Unit,
     onRefreshAutoplay: () -> Unit,
@@ -1066,8 +1125,59 @@ private fun AppNavigationGraph(
                 onRefreshAutoplay = onRefreshAutoplay,
             )
         }
-        composable(AppDestination.SEARCH.route) { SearchPlaceholderScreen() }
-        composable(AppDestination.LIBRARY.route) { LibraryPlaceholderScreen() }
+        composable(AppDestination.SEARCH.route) {
+            SearchScreen(
+                controller = searchController,
+                onOpenCategory = { kind, sourceId, _ ->
+                    navController.navigate(SearchProjection.categoryRoute(kind, sourceId)) {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+        composable(AppDestination.LIBRARY.route) {
+            LibraryScreen(
+                onOpenCategory = { category ->
+                    navController.navigate(LibraryRoutes.category(category)) { launchSingleTop = true }
+                },
+            )
+        }
+        composable(
+            route = LibraryRoutes.CATEGORY_PATTERN,
+            arguments = listOf(navArgument(LibraryRoutes.KIND_ARGUMENT) { type = NavType.StringType }),
+        ) { entry ->
+            val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
+            if (category == null) {
+                Text("不支持的音乐库分类")
+            } else {
+                LibraryCategoryScreen(
+                    runtime = runtime,
+                    category = category,
+                    onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+        composable(
+            route = LibraryRoutes.DETAIL_PATTERN,
+            arguments = listOf(
+                navArgument(LibraryRoutes.KIND_ARGUMENT) { type = NavType.StringType },
+                navArgument(LibraryRoutes.ID_ARGUMENT) { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
+            val sourceId = entry.arguments?.getString(LibraryRoutes.ID_ARGUMENT)
+            if (category == null || sourceId.isNullOrBlank()) {
+                Text("无效的音乐库资源")
+            } else {
+                LibraryCollectionScreen(
+                    runtime = runtime,
+                    category = category,
+                    sourceId = sourceId,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
         composable(AppDestination.SETTINGS.route) {
             StatusRingSettingsScreen(
                 preferencesRepository = uiPreferences,

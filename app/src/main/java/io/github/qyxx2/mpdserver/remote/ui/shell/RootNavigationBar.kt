@@ -32,6 +32,7 @@ fun RootNavigationBar(
     interactionEnabled: Boolean = true,
     onBoundsChanged: (topPx: Float, heightPx: Float) -> Unit = { _, _ -> },
 ) {
+    val selectedRootRoute = AppDestination.rootRouteFor(currentRoute)
     NavigationBar(
         modifier = modifier
             .fillMaxWidth()
@@ -46,7 +47,7 @@ fun RootNavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
         AppDestination.rootDestinations.forEach { destination ->
-            val selected = currentRoute == destination.route
+            val selected = selectedRootRoute == destination.route
             val selectedContentColor = MaterialTheme.colorScheme.primary
             val unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
             NavigationBarItem(

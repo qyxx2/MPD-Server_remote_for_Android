@@ -15,5 +15,12 @@ enum class AppDestination(
     companion object {
         /** Frozen left-to-right root navigation order. Do not include the full-screen player here. */
         val rootDestinations: List<AppDestination> = listOf(HOME, SEARCH, LIBRARY, SETTINGS)
+
+        /** Resolves a leaf Navigation route to its selected root tab. Player/Queue keep the saved root. */
+        fun rootRouteFor(route: String?): String? {
+            if (route == null) return null
+            if (route == LIBRARY.route || route.startsWith("${LIBRARY.route}/")) return LIBRARY.route
+            return rootDestinations.firstOrNull { it.route == route }?.route
+        }
     }
 }
