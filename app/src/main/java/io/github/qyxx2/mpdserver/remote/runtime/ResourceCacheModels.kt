@@ -24,6 +24,14 @@ data class ResourceWatermarks(
     val historyFingerprint: String,
 )
 
+/** Observable owner identity; lets consumers wait for the AppRuntime snapshot watermark handoff. */
+data class ResourceCacheIdentityState(
+    val session: ResourceSessionIdentity? = null,
+    val watermarks: ResourceWatermarks? = null,
+    val isFresh: Boolean = false,
+    val isClosed: Boolean = false,
+)
+
 /** Captured Library identity used to prevent an old GET response being interned into a new session. */
 data class ResourceLibraryIdentity(
     val session: ResourceSessionIdentity,

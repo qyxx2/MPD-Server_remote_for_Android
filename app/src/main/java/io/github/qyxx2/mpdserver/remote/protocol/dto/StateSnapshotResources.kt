@@ -6,6 +6,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
 
 /** Typed projections of resource-bearing fields inside the canonical snapshot wire document. */
 data class StateSnapshotResources(
+    val playback: PlaybackStateDto,
     val currentSong: SongDto?,
     val queue: QueueSnapshotDto,
     val playbackObservation: PlaybackObservationDto,
@@ -14,6 +15,7 @@ data class StateSnapshotResources(
 )
 
 fun StateSnapshotDto.decodeResources(): StateSnapshotResources = StateSnapshotResources(
+    playback = JsonConfiguration.json.decodeFromJsonElement<PlaybackStateDto>(playback),
     currentSong = if (currentSong == null || currentSong == JsonNull) null else JsonConfiguration.json.decodeFromJsonElement<SongDto>(currentSong),
     queue = JsonConfiguration.json.decodeFromJsonElement<QueueSnapshotDto>(queue),
     playbackObservation = JsonConfiguration.json.decodeFromJsonElement<PlaybackObservationDto>(playbackObservation),

@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.io.Closeable
@@ -74,6 +75,9 @@ class ResourceMemoryCache(
     )
 
     private val lock = Any()
+    private val identityMutableState = kotlinx.coroutines.flow.MutableStateFlow(ResourceCacheIdentityState())
+    val identityState: kotlinx.coroutines.flow.StateFlow<ResourceCacheIdentityState> =
+        identityMutableState.asStateFlow()
     private val slots = Semaphore(maxConcurrentRequests)
     private val entries = LinkedHashMap<ResourceCacheKey<*>, Entry>(32, 0.75f, true)
     private val stateFlows = LinkedHashMap<ResourceCacheKey<*>, kotlinx.coroutines.flow.MutableStateFlow<ResourceEntryState<Any>>>(32, 0.75f, true)
@@ -151,6 +155,11 @@ class ResourceMemoryCache(
             session = newSession
             watermarks = newWatermarks
             this.isFresh = isFresh
+            identityMutableState.value = ResourceCacheIdentityState(
+                session = newSession,
+                watermarks = newWatermarks,
+                isFresh = isFresh,
+            )
             if (!isFresh) {
                 entries.values.forEach(::markStaleLocked)
                 songEntities.values.forEach { it.stale = true }
@@ -459,6 +468,20 @@ class ResourceMemoryCache(
         return request.await()
     }
 
+    /**
+     * Remaining monotonic freshness window for a successfully cached History resource.
+     * Reading this value is observational only; it never refreshes or changes the entry.
+     */
+    fun remainingTtlMillis(key: ResourceCacheKey<*>): Long? = synchronized(lock) {
+        val entry = entries[key] ?: return@synchronized null
+        if (entry.dependency != ResourceDependency.HISTORY) return@synchronized null
+        if (entry.state.value !is ResourceEntryState.Ready<*> &&
+            entry.state.value !is ResourceEntryState.Stale<*>
+        ) return@synchronized null
+        val age = (clockMillis() - entry.cachedAtMillis).coerceAtLeast(0L)
+        (historyTtlMillis - age).coerceAtLeast(0L)
+    }
+
     fun clear() {
         val pending = synchronized(lock) {
             val all = flights.values.map { it.deferred } + artworkFlights.values.map { it.deferred }
@@ -478,7 +501,10 @@ class ResourceMemoryCache(
     }
 
     override fun close() {
-        synchronized(lock) { closed = true }
+        synchronized(lock) {
+            closed = true
+            identityMutableState.value = ResourceCacheIdentityState(isClosed = true)
+        }
         clear()
     }
 
