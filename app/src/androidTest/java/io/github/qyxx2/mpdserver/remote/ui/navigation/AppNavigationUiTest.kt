@@ -195,10 +195,16 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("activity-details-entry").assertIsDisplayed()
         composeRule.onAllNodesWithTag("status-ring-overlay").assertCountEquals(0)
         composeRule.onNodeWithTag("root-content").assertIsDisplayed()
-        assertTrue(
-            "Root placeholder content must expose scrolling semantics",
-            composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
-        )
+        listOf(
+            "home-rail-recently-updated",
+            "home-rail-playback-history",
+            "home-rail-autoplay",
+        ).forEach { railTag ->
+            assertTrue(
+                "Each Home section must expose its own horizontal scroll container: $railTag",
+                composeRule.onNodeWithTag(railTag).fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
+            )
+        }
         composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
         composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
         composeRule.onNodeWithTag("mini-player-body").assertIsDisplayed()
@@ -226,20 +232,43 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag("app-bar-title").assertIsDisplayed()
             composeRule.onNodeWithTag("root-content").assertIsDisplayed()
             composeRule.onNodeWithTag("root-navigation-bar").assertIsDisplayed()
+            when (destination) {
+                AppDestination.HOME -> {
+                    composeRule.onNodeWithTag("home-screen").assertIsDisplayed()
+                    listOf(
+                        "home-rail-recently-updated",
+                        "home-rail-playback-history",
+                        "home-rail-autoplay",
+                    ).forEach { railTag ->
+                        assertTrue(
+                            "Home must retain three independently scrollable rails: $railTag",
+                            composeRule.onNodeWithTag(railTag).fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
+                        )
+                    }
+                }
+                AppDestination.SEARCH -> composeRule.onNodeWithTag("search-screen").assertIsDisplayed()
+                AppDestination.LIBRARY -> {
+                    composeRule.onNodeWithTag("library-root-screen").assertIsDisplayed()
+                    assertTrue(
+                        "Library category list must remain scrollable",
+                        composeRule.onNodeWithTag("library-category-list").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
+                    )
+                }
+                AppDestination.SETTINGS -> {
+                    composeRule.onNodeWithTag("status-ring-settings-content").assertIsDisplayed()
+                    listOf(
+                        "status-ring-size-slider",
+                        "status-ring-line-width-slider",
+                        "status-ring-horizontal-offset-slider",
+                        "status-ring-vertical-offset-slider",
+                    ).forEach { tag -> composeRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed() }
+                }
+                AppDestination.FULL_SCREEN_PLAYER, AppDestination.QUEUE ->
+                    error("Full-screen destinations are not root navigation entries")
+            }
             if (destination == AppDestination.SETTINGS) {
-                composeRule.onNodeWithTag("status-ring-settings-content").assertIsDisplayed()
-                listOf(
-                    "status-ring-size-slider",
-                    "status-ring-line-width-slider",
-                    "status-ring-horizontal-offset-slider",
-                    "status-ring-vertical-offset-slider",
-                ).forEach { tag -> composeRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed() }
                 composeRule.onAllNodesWithTag("mini-player").assertCountEquals(0)
             } else {
-                assertTrue(
-                    "Root placeholder content must expose scrolling semantics",
-                    composeRule.onNodeWithTag("root-placeholder-content").fetchSemanticsNode().config.contains(SemanticsActions.ScrollBy),
-                )
                 composeRule.onNodeWithTag("mini-player").assertIsDisplayed()
                 assertMiniPlayerControlMatchesCanonicalState()
             }
@@ -315,7 +344,9 @@ class AppNavigationUiTest {
         launchNavigation()
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
         composeRule.waitForIdle()
-        val originalSnapshot = runtime.snapshots.state.value
+        val originalSnapshot = runtime.snapshots.state.value.snapshot
+        val originalConnectionGeneration = runtime.snapshots.state.value.connectionGeneration
+        val originalOrigin = runtime.realtimeController.currentOrigin()
         val originalActivities = runtime.mutations.activities.value
 
         composeRule.onNodeWithTag("status-ring-size-slider").performScrollTo()
@@ -335,7 +366,14 @@ class AppNavigationUiTest {
         composeRule.onNodeWithContentDescription(
             "状态环预览；尺寸 1.20×；线宽 4.5dp；水平偏移 12dp；垂直偏移 -8dp",
         ).performScrollTo().assertIsDisplayed()
-        assertEquals("Preview must not mutate the canonical snapshot", originalSnapshot, runtime.snapshots.state.value)
+        val afterPreview = runtime.snapshots.state.value
+        assertEquals("Preview must not replace the server session", originalSnapshot?.epoch, afterPreview.snapshot?.epoch)
+        assertTrue(
+            "An accepted server snapshot may advance during the preview, but must never move backwards",
+            afterPreview.snapshot == null || originalSnapshot == null || afterPreview.snapshot.sequence >= originalSnapshot.sequence,
+        )
+        assertEquals("Preview must not restart the canonical realtime connection", originalConnectionGeneration, afterPreview.connectionGeneration)
+        assertEquals("Preview must not change the configured MS origin", originalOrigin, runtime.realtimeController.currentOrigin())
         assertEquals("Preview must not mutate shared activity history", originalActivities, runtime.mutations.activities.value)
         assertSame(runtime, (composeRule.activity.application as MpdServerRemoteApplication).runtime)
 
@@ -358,7 +396,14 @@ class AppNavigationUiTest {
         composeRule.onNodeWithContentDescription(
             "状态环预览；尺寸 1.00×；线宽 3.0dp；水平偏移 0dp；垂直偏移 0dp",
         ).performScrollTo().assertIsDisplayed()
-        assertEquals("Settings controls must never mutate the snapshot", originalSnapshot, runtime.snapshots.state.value)
+        val afterReset = runtime.snapshots.state.value
+        assertEquals("Settings controls must not replace the server session", originalSnapshot?.epoch, afterReset.snapshot?.epoch)
+        assertTrue(
+            "Live server sequence must not move backwards while changing local settings",
+            afterReset.snapshot == null || originalSnapshot == null || afterReset.snapshot.sequence >= originalSnapshot.sequence,
+        )
+        assertEquals("Settings controls must not restart realtime", originalConnectionGeneration, afterReset.connectionGeneration)
+        assertEquals("Settings controls must not change the MS origin", originalOrigin, runtime.realtimeController.currentOrigin())
         assertEquals("Settings controls must never mutate activities", originalActivities, runtime.mutations.activities.value)
     }
 
