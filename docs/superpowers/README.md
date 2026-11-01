@@ -42,6 +42,8 @@
 - [Task 5 主页、搜索与音乐库业务合同](specs/2026-10-31-task-5-home-library-search-contract.md)：冻结 Home 三分区数据来源/布局、History 与 Queue Played 区分、AutoPlay occurrence、Library Songs 优先、Search/Playlist/Favorites 行为，以及 AppRuntime 全局资源内存缓存。
 - [Task 5 合同矩阵与验收覆盖](specs/2026-10-31-task-5-contract-matrix.md)：T5-00 至 T5-37，包含 API/DTO、共享缓存失效依赖、跨页面请求复用、B0–B7 批次边界和自动/人工验收门。
 - [Task 5 Implementation Plan](plans/2026-10-31-task-5-implementation.md)：397 行分批执行计划，细化 B0–B7 的文件范围、跨批接口、测试先行步骤、缓存与资源身份边界、人工验收和独立提交门；当前仅完成计划，尚未开始页面实现。
+- [Task 6 合同矩阵](specs/2026-11-01-task-6-contract-matrix.md)：冻结本次授权的四类设置导航、状态页活动迁移、服务器地址交互、外观/状态环预览、关于页和现有 `/api/system/mpd` 只读展示合同；明确取消旧计划中的 MPD 连接目标编辑与输出操作。
+- [Task 6 分批实施计划](plans/2026-11-01-task-6-settings-and-mpd-status.md)：按设置/本地偏好与 MPD 状态读取拆为 B1、B2，包含文件边界、TDD 测试、共享 Runtime/origin 防迟到约束、覆盖安装保留数据和退出门；当前仅完成合同与计划，尚未开始代码实现。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
 - [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。
 - [Task 3 Batch 7 集成验证报告](reports/2026-10-26-task-3-batch7-verification.md)：记录 clean 构建、105 项单测、10 项真机 instrumentation、边界审查及尚未关闭的人工验收门。机器验证通过不代表 Task 3 整体退出门或 Task 2 真实联调门已通过。
