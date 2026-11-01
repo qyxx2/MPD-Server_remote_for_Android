@@ -14,17 +14,17 @@ data class StatusRingPreferences(
         lineWidthDp = snap(lineWidthDp, LINE_WIDTH_MIN_DP, LINE_WIDTH_MAX_DP, LINE_WIDTH_STEP_DP, LINE_WIDTH_DEFAULT_DP),
         horizontalOffsetDp = snap(
             horizontalOffsetDp,
-            POSITION_OFFSET_MIN_DP,
-            POSITION_OFFSET_MAX_DP,
-            POSITION_OFFSET_STEP_DP,
-            POSITION_OFFSET_DEFAULT_DP,
+            HORIZONTAL_OFFSET_MIN_DP,
+            HORIZONTAL_OFFSET_MAX_DP,
+            HORIZONTAL_OFFSET_STEP_DP,
+            HORIZONTAL_OFFSET_DEFAULT_DP,
         ),
         verticalOffsetDp = snap(
             verticalOffsetDp,
-            POSITION_OFFSET_MIN_DP,
-            POSITION_OFFSET_MAX_DP,
-            POSITION_OFFSET_STEP_DP,
-            POSITION_OFFSET_DEFAULT_DP,
+            VERTICAL_OFFSET_MIN_DP,
+            VERTICAL_OFFSET_MAX_DP,
+            VERTICAL_OFFSET_STEP_DP,
+            VERTICAL_OFFSET_DEFAULT_DP,
         ),
     )
 
@@ -41,11 +41,24 @@ data class StatusRingPreferences(
         const val LINE_WIDTH_DEFAULT_DP = 3.0f
         const val LINE_WIDTH_SLIDER_STEPS = 5
 
-        const val POSITION_OFFSET_MIN_DP = -24.0f
-        const val POSITION_OFFSET_MAX_DP = 24.0f
-        const val POSITION_OFFSET_STEP_DP = 2.0f
-        const val POSITION_OFFSET_DEFAULT_DP = 0.0f
-        const val POSITION_OFFSET_SLIDER_STEPS = 23
+        const val HORIZONTAL_OFFSET_MIN_DP = -24.0f
+        const val HORIZONTAL_OFFSET_MAX_DP = 24.0f
+        const val HORIZONTAL_OFFSET_STEP_DP = 2.0f
+        const val HORIZONTAL_OFFSET_DEFAULT_DP = 0.0f
+        const val HORIZONTAL_OFFSET_SLIDER_STEPS = 23
+
+        const val VERTICAL_OFFSET_MIN_DP = -12.0f
+        const val VERTICAL_OFFSET_MAX_DP = 12.0f
+        const val VERTICAL_OFFSET_STEP_DP = 1.0f
+        const val VERTICAL_OFFSET_DEFAULT_DP = 0.0f
+        const val VERTICAL_OFFSET_SLIDER_STEPS = 23
+
+        // Preserve source compatibility while keeping axis contracts independent.
+        const val POSITION_OFFSET_MIN_DP = HORIZONTAL_OFFSET_MIN_DP
+        const val POSITION_OFFSET_MAX_DP = HORIZONTAL_OFFSET_MAX_DP
+        const val POSITION_OFFSET_STEP_DP = HORIZONTAL_OFFSET_STEP_DP
+        const val POSITION_OFFSET_DEFAULT_DP = HORIZONTAL_OFFSET_DEFAULT_DP
+        const val POSITION_OFFSET_SLIDER_STEPS = HORIZONTAL_OFFSET_SLIDER_STEPS
 
         val DEFAULT = StatusRingPreferences()
 

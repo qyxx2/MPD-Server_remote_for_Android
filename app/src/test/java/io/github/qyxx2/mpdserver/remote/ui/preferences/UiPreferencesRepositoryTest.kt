@@ -103,6 +103,33 @@ class UiPreferencesRepositoryTest {
     }
 
     @Test
+    fun legacyVerticalOffsetPreferenceIsClampedWhileSiblingPreferencesRemainIntact() = runBlocking {
+        val file = newPreferencesFile()
+        val (store, scope) = newStore(file)
+        try {
+            val repository = UiPreferencesRepository(store)
+            repository.setServerOrigin(ServerOrigin.parseAddress("preserved.example.com"))
+            repository.setThemePreference(ThemePreference.DARK)
+            store.edit { preferences ->
+                preferences[androidx.datastore.preferences.core.floatPreferencesKey("status_ring_size_scale")] = 1.25f
+                preferences[androidx.datastore.preferences.core.floatPreferencesKey("status_ring_line_width_dp")] = 4.5f
+                preferences[androidx.datastore.preferences.core.floatPreferencesKey("status_ring_horizontal_offset_dp")] = 18f
+                preferences[androidx.datastore.preferences.core.floatPreferencesKey("status_ring_vertical_offset_dp")] = 24f
+            }
+            val restored = repository.statusRingPreferences.first()
+            assertEquals(1.25f, restored.sizeScale, 0.0001f)
+            assertEquals(4.5f, restored.lineWidthDp, 0.0001f)
+            assertEquals(18f, restored.horizontalOffsetDp, 0.0001f)
+            assertEquals(12f, restored.verticalOffsetDp, 0.0001f)
+            assertEquals("http://preserved.example.com:18000", repository.serverOrigin.first())
+            assertEquals(ThemePreference.DARK, repository.themePreference.first())
+        } finally {
+            scope.cancel()
+            file.parentFile?.deleteRecursively()
+        }
+    }
+
+    @Test
     fun resettingStatusRingPreferencesPersistsEveryDefault() = runBlocking {
         val file = newPreferencesFile()
         val (store, scope) = newStore(file)

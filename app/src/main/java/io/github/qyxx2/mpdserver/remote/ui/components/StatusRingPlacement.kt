@@ -101,14 +101,14 @@ object StatusRingPlacementCalculator {
         ) ?: StatusRingPreferences.SIZE_SCALE_DEFAULT
         val requestedHorizontalOffset = settings.horizontalOffsetDp
             .takeIf { it.isFinite() }?.coerceIn(
-                StatusRingPreferences.POSITION_OFFSET_MIN_DP,
-                StatusRingPreferences.POSITION_OFFSET_MAX_DP,
-            ) ?: StatusRingPreferences.POSITION_OFFSET_DEFAULT_DP
+                StatusRingPreferences.HORIZONTAL_OFFSET_MIN_DP,
+                StatusRingPreferences.HORIZONTAL_OFFSET_MAX_DP,
+            ) ?: StatusRingPreferences.HORIZONTAL_OFFSET_DEFAULT_DP
         val requestedVerticalOffset = settings.verticalOffsetDp
             .takeIf { it.isFinite() }?.coerceIn(
-                StatusRingPreferences.POSITION_OFFSET_MIN_DP,
-                StatusRingPreferences.POSITION_OFFSET_MAX_DP,
-            ) ?: StatusRingPreferences.POSITION_OFFSET_DEFAULT_DP
+                StatusRingPreferences.VERTICAL_OFFSET_MIN_DP,
+                StatusRingPreferences.VERTICAL_OFFSET_MAX_DP,
+            ) ?: StatusRingPreferences.VERTICAL_OFFSET_DEFAULT_DP
 
         val baseDiameter = if (reliableCutout != null) {
             max(

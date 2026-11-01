@@ -24,7 +24,7 @@ class StatusRingPreferencesTest {
         assertEquals(1.15f, normalized.sizeScale, 0.0001f)
         assertEquals(4.5f, normalized.lineWidthDp, 0.0001f)
         assertEquals(12f, normalized.horizontalOffsetDp, 0.0001f)
-        assertEquals(-24f, normalized.verticalOffsetDp, 0.0001f)
+        assertEquals(-12f, normalized.verticalOffsetDp, 0.0001f)
     }
 
     @Test
@@ -45,11 +45,40 @@ class StatusRingPreferencesTest {
         assertEquals(StatusRingPreferences.SIZE_SCALE_MIN, minimum.sizeScale, 0.0001f)
         assertEquals(StatusRingPreferences.LINE_WIDTH_MIN_DP, minimum.lineWidthDp, 0.0001f)
         assertEquals(StatusRingPreferences.POSITION_OFFSET_MIN_DP, minimum.horizontalOffsetDp, 0.0001f)
-        assertEquals(StatusRingPreferences.POSITION_OFFSET_MIN_DP, minimum.verticalOffsetDp, 0.0001f)
+        assertEquals(StatusRingPreferences.VERTICAL_OFFSET_MIN_DP, minimum.verticalOffsetDp, 0.0001f)
         assertEquals(StatusRingPreferences.SIZE_SCALE_MAX, maximum.sizeScale, 0.0001f)
         assertEquals(StatusRingPreferences.LINE_WIDTH_MAX_DP, maximum.lineWidthDp, 0.0001f)
         assertEquals(StatusRingPreferences.POSITION_OFFSET_MAX_DP, maximum.horizontalOffsetDp, 0.0001f)
-        assertEquals(StatusRingPreferences.POSITION_OFFSET_MAX_DP, maximum.verticalOffsetDp, 0.0001f)
+        assertEquals(StatusRingPreferences.VERTICAL_OFFSET_MAX_DP, maximum.verticalOffsetDp, 0.0001f)
+    }
+
+    @Test
+    fun verticalOffsetUsesOneDpStepsAndTwelveDpBounds() {
+        assertEquals(-24f, StatusRingPreferences.HORIZONTAL_OFFSET_MIN_DP, 0.0001f)
+        assertEquals(24f, StatusRingPreferences.HORIZONTAL_OFFSET_MAX_DP, 0.0001f)
+        assertEquals(2f, StatusRingPreferences.HORIZONTAL_OFFSET_STEP_DP, 0.0001f)
+        assertEquals(-12f, StatusRingPreferences.VERTICAL_OFFSET_MIN_DP, 0.0001f)
+        assertEquals(12f, StatusRingPreferences.VERTICAL_OFFSET_MAX_DP, 0.0001f)
+        assertEquals(1f, StatusRingPreferences.VERTICAL_OFFSET_STEP_DP, 0.0001f)
+        assertEquals(23, StatusRingPreferences.VERTICAL_OFFSET_SLIDER_STEPS)
+    }
+
+    @Test
+    fun legacyVerticalOffsetValuesNormalizeWithoutChangingOtherPreferences() {
+        val oldNegative = StatusRingPreferences(
+            sizeScale = 1.25f, lineWidthDp = 4.5f, horizontalOffsetDp = 18f, verticalOffsetDp = -24f,
+        ).normalized()
+        val oldPositive = StatusRingPreferences(
+            sizeScale = 1.25f, lineWidthDp = 4.5f, horizontalOffsetDp = 18f, verticalOffsetDp = 24f,
+        ).normalized()
+
+        listOf(oldNegative, oldPositive).forEach { value ->
+            assertEquals(1.25f, value.sizeScale, 0.0001f)
+            assertEquals(4.5f, value.lineWidthDp, 0.0001f)
+            assertEquals(18f, value.horizontalOffsetDp, 0.0001f)
+        }
+        assertEquals(-12f, oldNegative.verticalOffsetDp, 0.0001f)
+        assertEquals(12f, oldPositive.verticalOffsetDp, 0.0001f)
     }
 
     @Test

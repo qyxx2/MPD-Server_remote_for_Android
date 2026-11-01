@@ -23,14 +23,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -48,13 +46,12 @@ fun GlobalStatusRingOverlay(
         modifier = modifier.clipToBounds().testTag("status-ring-overlay"),
     ) {
         val density = LocalDensity.current
-        val placement = StatusRingPlacementCalculator.calculate(
-            screenWidthPx = constraints.maxWidth,
-            screenHeightPx = constraints.maxHeight,
-            safeInsets = geometry.safeInsets,
-            cutoutBounds = geometry.cutoutBounds,
+        val placement = calculateWindowPlacement(
+            widthPx = constraints.maxWidth,
+            heightPx = constraints.maxHeight,
+            geometry = geometry,
             density = density.density,
-            settings = preferences.toPlacementSettings(),
+            preferences = preferences,
         )
         val diameter = with(density) { placement.diameterPx.toDp() }
         val ringLabel = "状态环：${presentation.statusLabel}；定位方式：${
@@ -78,14 +75,13 @@ fun GlobalStatusRingOverlay(
 }
 
 /**
- * Uses the same placement calculator and drawing code as the real overlay, scaled into a miniature
- * top-of-window preview. The INFO sample is local to this composable and never enters Runtime.
+ * Draft-only, non-interactive preview rendered in physical window coordinates. It calls the exact
+ * placement and visual pipeline used by GlobalStatusRingOverlay; the INFO state is local UI data.
  */
 @Composable
-fun StatusRingSettingsPreview(
+fun StatusRingDraftPreviewOverlay(
     geometry: StatusRingWindowGeometry,
     preferences: StatusRingPreferences,
-    previewDescription: String,
     modifier: Modifier = Modifier,
 ) {
     val previewPresentation = androidx.compose.runtime.remember {
@@ -100,44 +96,21 @@ fun StatusRingSettingsPreview(
         )
     }
     BoxWithConstraints(
-        modifier = modifier
-            .clipToBounds()
-            .semantics { contentDescription = previewDescription }
-            .testTag("status-ring-preview"),
+        modifier = modifier.fillMaxSize().clipToBounds().testTag("status-ring-draft-preview"),
     ) {
         val density = LocalDensity.current
-        val configuration = LocalConfiguration.current
-        val windowWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }.roundToInt().coerceAtLeast(1)
-        val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.roundToInt().coerceAtLeast(1)
-        val scale = min(1f, constraints.maxWidth.toFloat() / windowWidthPx)
-        val previewGeometry = StatusRingWindowGeometry(
-            cutoutBounds = geometry.cutoutBounds.map { rect ->
-                StatusRingRect(
-                    left = (rect.left * scale).roundToInt(),
-                    top = (rect.top * scale).roundToInt(),
-                    right = (rect.right * scale).roundToInt(),
-                    bottom = (rect.bottom * scale).roundToInt(),
-                )
-            },
-            safeInsets = StatusRingInsets(
-                left = (geometry.safeInsets.left * scale).roundToInt(),
-                top = (geometry.safeInsets.top * scale).roundToInt(),
-                right = (geometry.safeInsets.right * scale).roundToInt(),
-                bottom = (geometry.safeInsets.bottom * scale).roundToInt(),
-            ),
-        )
-        val placement = StatusRingPlacementCalculator.calculate(
-            screenWidthPx = constraints.maxWidth,
-            screenHeightPx = (windowHeightPx * scale).roundToInt().coerceAtLeast(constraints.maxHeight),
-            safeInsets = previewGeometry.safeInsets,
-            cutoutBounds = previewGeometry.cutoutBounds,
-            density = density.density * scale,
-            settings = preferences.toPlacementSettings(),
+        val placement = calculateWindowPlacement(
+            widthPx = constraints.maxWidth,
+            heightPx = constraints.maxHeight,
+            geometry = geometry,
+            density = density.density,
+            preferences = preferences,
         )
         val diameter = with(density) { placement.diameterPx.toDp() }
+        val placementLabel = "状态环预览；中心 ${placement.centerXpx.toInt()},${placement.centerYpx.toInt()}；直径 ${placement.diameterPx.toInt()}px"
         StatusRingVisual(
             presentation = previewPresentation,
-            lineWidthDp = preferences.lineWidthDp * scale,
+            lineWidthDp = preferences.lineWidthDp,
             modifier = Modifier
                 .offset {
                     IntOffset(
@@ -146,10 +119,26 @@ fun StatusRingSettingsPreview(
                     )
                 }
                 .size(diameter)
-                .testTag("status-ring-preview-visual"),
+                .semantics { contentDescription = placementLabel }
+                .testTag("status-ring-draft-preview-visual"),
         )
     }
 }
+
+private fun calculateWindowPlacement(
+    widthPx: Int,
+    heightPx: Int,
+    geometry: StatusRingWindowGeometry,
+    density: Float,
+    preferences: StatusRingPreferences,
+) = StatusRingPlacementCalculator.calculate(
+    screenWidthPx = widthPx,
+    screenHeightPx = heightPx,
+    safeInsets = geometry.safeInsets,
+    cutoutBounds = geometry.cutoutBounds,
+    density = density,
+    settings = preferences.toPlacementSettings(),
+)
 
 private fun StatusRingPreferences.toPlacementSettings() = StatusRingPlacementSettings(
     sizeScale = sizeScale,

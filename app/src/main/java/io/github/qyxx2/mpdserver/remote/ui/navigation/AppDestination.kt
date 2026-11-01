@@ -20,6 +20,7 @@ enum class AppDestination(
         fun rootRouteFor(route: String?): String? {
             if (route == null) return null
             if (route == LIBRARY.route || route.startsWith("${LIBRARY.route}/")) return LIBRARY.route
+            if (route.startsWith("${SETTINGS.route}/")) return SETTINGS.route
             return rootDestinations.firstOrNull { it.route == route }?.route
         }
     }

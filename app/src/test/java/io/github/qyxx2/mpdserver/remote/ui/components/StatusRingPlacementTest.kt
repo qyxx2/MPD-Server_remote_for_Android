@@ -99,6 +99,32 @@ class StatusRingPlacementTest {
     }
 
     @Test
+    fun verticalPlacementIsBoundedToTwelveDpWhileHorizontalRemainsTwentyFourDp() {
+        val safeInsets = StatusRingInsets(left = 0, top = 144, right = 0, bottom = 90)
+        val positive = StatusRingPlacementCalculator.calculate(
+            screenWidthPx = 1080,
+            screenHeightPx = 2400,
+            safeInsets = safeInsets,
+            cutoutBounds = emptyList(),
+            density = 3f,
+            settings = StatusRingPlacementSettings(horizontalOffsetDp = 100f, verticalOffsetDp = 100f),
+        )
+        val negative = StatusRingPlacementCalculator.calculate(
+            screenWidthPx = 1080,
+            screenHeightPx = 2400,
+            safeInsets = safeInsets,
+            cutoutBounds = emptyList(),
+            density = 3f,
+            settings = StatusRingPlacementSettings(horizontalOffsetDp = -100f, verticalOffsetDp = -100f),
+        )
+
+        assertEquals(612f, positive.centerXpx, 0.01f)
+        assertEquals(108f, positive.centerYpx, 0.01f)
+        assertEquals(468f, negative.centerXpx, 0.01f)
+        assertEquals(36f, negative.centerYpx, 0.01f)
+    }
+
+    @Test
     fun aLargeCutoutAndScaleCannotExpandTheRingBeyondAvailableWidth() {
         val placement = StatusRingPlacementCalculator.calculate(
             screenWidthPx = 120,

@@ -1,5 +1,6 @@
 package io.github.qyxx2.mpdserver.remote.ui.navigation
 
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.test.assertCountEquals
@@ -23,6 +24,13 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxSize
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingInsets
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingRect
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
+import io.github.qyxx2.mpdserver.remote.ui.components.GlobalStatusRingOverlay
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingDraftPreviewOverlay
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
@@ -32,6 +40,13 @@ import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityPresentation
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusContent
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityRowPresentation
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityVisualState
+import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusSheet
+import io.github.qyxx2.mpdserver.remote.ui.settings.createRepositoryLinkIntent
+import io.github.qyxx2.mpdserver.remote.ui.settings.AboutScreen
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -104,7 +119,7 @@ class AppNavigationUiTest {
         if (enabled) control.assertIsEnabled() else control.assertIsNotEnabled()
     }
 
-    private fun launchNavigation() {
+    private fun launchNavigation(geometry: StatusRingWindowGeometry = StatusRingWindowGeometry()) {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         runBlocking { application.uiPreferences.resetStatusRingPreferences() }
         runtime = application.runtime
@@ -117,6 +132,7 @@ class AppNavigationUiTest {
                 uiPreferences = application.uiPreferences,
                 preferenceWriteScope = application.uiPreferencesWriteScope,
                 applyServerOrigin = application::saveAndApplyServerOrigin,
+                windowGeometry = geometry,
             )
         }
         composeRule.waitForIdle()
@@ -146,9 +162,288 @@ class AppNavigationUiTest {
     }
 
     @Test
+    fun settingsRootShowsExactlyFourCategoriesAndNestedPagesReturnToSettings() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-root-screen").assertIsDisplayed()
+        val categories = listOf(
+            Triple("status", "状态", "settings/status"),
+            Triple("server", "服务器", "settings/server"),
+            Triple("appearance", "外观", "settings/appearance"),
+            Triple("about", "关于", "settings/about"),
+        )
+        categories.forEachIndexed { index, (id, title, route) ->
+            composeRule.onNodeWithTag("settings-category-$id").assertIsDisplayed().performClick()
+            composeRule.waitForIdle()
+            assertEquals(route, navController.currentDestination?.route)
+            composeRule.onNodeWithTag("app-bar-title").assertTextEquals(title)
+            composeRule.onNodeWithTag("settings-child-back").assertIsDisplayed()
+            composeRule.onNodeWithTag("root-nav-settings").assertIsSelected()
+            val pageTag = when (id) {
+                "status" -> "status-settings-screen"
+                "server" -> "server-settings-screen"
+                "appearance" -> "appearance-settings-screen"
+                else -> "about-settings-screen"
+            }
+            composeRule.onNodeWithTag(pageTag).assertIsDisplayed()
+
+            if (index == 0) {
+                composeRule.onNodeWithTag("settings-child-back").performClick()
+            } else {
+                composeRule.runOnIdle {
+                    composeRule.activity.onBackPressedDispatcher.onBackPressed()
+                }
+            }
+            composeRule.waitForIdle()
+            assertEquals(AppDestination.SETTINGS.route, navController.currentDestination?.route)
+            composeRule.onNodeWithTag("settings-root-screen").assertIsDisplayed()
+            composeRule.onNodeWithTag("root-nav-settings").assertIsSelected()
+        }
+    }
+
+    @Test
+    fun appBarDoesNotExposeActivityEntryOnAnyRootPage() {
+        launchNavigation()
+        AppDestination.rootDestinations.forEach { destination ->
+            composeRule.onNodeWithTag("root-nav-${destination.route}").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
+            composeRule.onAllNodesWithTag("activity-details-entry").assertCountEquals(0)
+        }
+    }
+
+    @Test
+    fun serverAddressHelpIconTogglesExistingFormatHint() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-settings").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-server").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("server-origin-input").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("server-origin-supporting-text").assertCountEquals(0)
+        composeRule.onNodeWithTag("server-origin-help-toggle").performClick()
+        composeRule.onNodeWithTag("server-origin-supporting-text").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "支持 IPv4、IPv6 和域名；可输入完整 http(s):// 地址。省略协议使用 HTTP，省略端口默认 18000；IPv6 自定义端口请写成 [地址]:端口。",
+        ).assertIsDisplayed()
+        composeRule.onNodeWithTag("server-origin-help-toggle").performClick()
+        composeRule.onAllNodesWithTag("server-origin-supporting-text").assertCountEquals(0)
+    }
+
+    @Test
+    fun serverAddressPageHasOnlyOneLineInputAndSaveAction() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-settings").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-server").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("server-origin-input").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("server-origin-save").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("server-origin-current").assertCountEquals(0)
+        composeRule.onAllNodesWithText("当前配置：").assertCountEquals(0)
+    }
+
+    @Test
+    fun aboutPageShowsRepositoryAndAuthorAndUsesRepositoryViewIntent() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-settings").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-about").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("about-app-name").assertIsDisplayed()
+        composeRule.onNodeWithTag("about-introduction").assertIsDisplayed()
+        composeRule.onNodeWithTag("about-author").assertIsDisplayed()
+        composeRule.onNodeWithTag("about-version").assertIsDisplayed()
+        composeRule.onNodeWithTag("about-repository-link").assertIsDisplayed()
+        composeRule.onNodeWithText("https://github.com/qyxx2/MPD-Server_remote_for_Android").assertIsDisplayed()
+
+        val repositoryIntent = createRepositoryLinkIntent()
+        assertEquals(Intent.ACTION_VIEW, repositoryIntent.action)
+        assertEquals(
+            "https://github.com/qyxx2/MPD-Server_remote_for_Android",
+            repositoryIntent.dataString,
+        )
+    }
+
+    @Test
+    fun aboutRepositoryButtonInvokesTheOpenAction() {
+        var openRequested = false
+        composeRule.setContent {
+            AboutScreen(onOpenRepository = { openRequested = true })
+        }
+
+        composeRule.onNodeWithTag("about-repository-link").performClick()
+        composeRule.runOnIdle { assertTrue(openRequested) }
+        val intent = createRepositoryLinkIntent()
+        assertEquals(Intent.ACTION_VIEW, intent.action)
+        assertEquals("https://github.com/qyxx2/MPD-Server_remote_for_Android", intent.dataString)
+    }
+
+    @Test
+    fun appearancePreviewUsesTheSameProductionWindowPlacementForCutoutAndManualFallback() {
+        val screenWidth = composeRule.activity.resources.displayMetrics.widthPixels
+        val geometries = listOf(
+            StatusRingWindowGeometry(
+                cutoutBounds = listOf(
+                    StatusRingRect(
+                        left = screenWidth / 2 - 36,
+                        top = 0,
+                        right = screenWidth / 2 + 36,
+                        bottom = 72,
+                    ),
+                ),
+                safeInsets = StatusRingInsets(left = 0, top = 120, right = 0, bottom = 72),
+            ),
+            StatusRingWindowGeometry(
+                cutoutBounds = emptyList(),
+                safeInsets = StatusRingInsets(left = 0, top = 120, right = 0, bottom = 72),
+            ),
+        )
+        val presentation = ActivityPresentation(
+            visualState = ActivityVisualState.INFO,
+            statusLabel = "预览对照",
+            connectionLabel = "预览",
+            freshnessLabel = "预览",
+            readError = null,
+            activities = emptyList(),
+            isConfirmedAvailable = false,
+        )
+        val geometryState = androidx.compose.runtime.mutableStateOf(geometries.first())
+
+        composeRule.setContent {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                GlobalStatusRingOverlay(
+                    presentation = presentation,
+                    geometry = geometryState.value,
+                    preferences = StatusRingPreferences.DEFAULT,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                StatusRingDraftPreviewOverlay(
+                    geometry = geometryState.value,
+                    preferences = StatusRingPreferences.DEFAULT,
+                )
+            }
+        }
+        geometries.forEach { geometry ->
+            composeRule.runOnIdle { geometryState.value = geometry }
+            composeRule.waitForIdle()
+            val production = composeRule.onNodeWithTag("status-ring-visual")
+                .fetchSemanticsNode().boundsInRoot
+            val draft = composeRule.onNodeWithTag("status-ring-draft-preview-visual")
+                .fetchSemanticsNode().boundsInRoot
+            assertEquals(production.center.x, draft.center.x, 0.5f)
+            assertEquals(production.center.y, draft.center.y, 0.5f)
+            assertEquals(production.width, draft.width, 0.5f)
+            assertEquals(production.height, draft.height, 0.5f)
+        }
+    }
+
+    @Test
+    fun statusPageShowsCanonicalConnectionFreshnessAndEmptyActivityState() {
+        launchNavigation()
+        composeRule.onNodeWithTag("root-nav-settings").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-status").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("status-settings-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-summary").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-connection").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-freshness").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-empty").assertIsDisplayed()
+    }
+
+    @Test
+    fun statusContentPreservesPendingAndFailedActivityRowsAndTheirOrder() {
+        val presentation = ActivityPresentation(
+            visualState = ActivityVisualState.FAILED,
+            statusLabel = "操作失败",
+            connectionLabel = "已连接",
+            freshnessLabel = "最新",
+            readError = null,
+            activities = listOf(
+                ActivityRowPresentation(
+                    intentId = "queue:failed-17",
+                    title = "更新播放队列",
+                    statusLabel = "操作失败",
+                    message = "服务端拒绝了队列更新",
+                    syncError = "write rejected",
+                    canRetry = false,
+                ),
+                ActivityRowPresentation(
+                    intentId = "player:pending-16",
+                    title = "切换播放曲目",
+                    statusLabel = "等待处理",
+                    message = "等待服务端确认",
+                    syncError = null,
+                    canRetry = false,
+                ),
+            ),
+            isConfirmedAvailable = true,
+        )
+        composeRule.setContent {
+            ActivityStatusContent(presentation = presentation)
+        }
+
+        composeRule.onNodeWithText("更新播放队列").assertIsDisplayed()
+        composeRule.onNodeWithText("操作失败").assertIsDisplayed()
+        composeRule.onNodeWithText("服务端拒绝了队列更新").assertIsDisplayed()
+        composeRule.onNodeWithText("同步错误：write rejected").assertIsDisplayed()
+        composeRule.onNodeWithText("切换播放曲目").assertIsDisplayed()
+        composeRule.onNodeWithText("等待处理").assertIsDisplayed()
+        composeRule.onNodeWithText("等待服务端确认").assertIsDisplayed()
+
+        val failedTop = composeRule.onNodeWithTag("activity-row-queue:failed-17")
+            .fetchSemanticsNode().boundsInRoot.top
+        val pendingTop = composeRule.onNodeWithTag("activity-row-player:pending-16")
+            .fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Status rows must preserve the canonical newest-first order", failedTop < pendingTop)
+    }
+
+    @Test
+    fun statusActivityRetryPreservesTheOriginalUnknownIntentId() {
+        val originalIntentId = "queue:original-unknown-intent-17"
+        var retriedIntentId: String? = null
+        val presentation = ActivityPresentation(
+            visualState = ActivityVisualState.UNKNOWN,
+            statusLabel = "结果未知",
+            connectionLabel = "已连接",
+            freshnessLabel = "最新",
+            readError = null,
+            activities = listOf(
+                ActivityRowPresentation(
+                    intentId = originalIntentId,
+                    title = "调整播放队列",
+                    statusLabel = "结果未知",
+                    message = "等待服务端确认",
+                    syncError = null,
+                    canRetry = true,
+                ),
+            ),
+            isConfirmedAvailable = true,
+        )
+        composeRule.setContent {
+            ActivityStatusSheet(
+                presentation = presentation,
+                onDismiss = {},
+                onRetryUnknown = { retriedIntentId = it },
+            )
+        }
+        composeRule.onNodeWithTag("activity-retry-$originalIntentId").performClick()
+        composeRule.waitForIdle()
+        assertEquals(originalIntentId, retriedIntentId)
+    }
+
+    @Test
     fun settingsCanSelectAndPersistAllThemePreferences() {
         launchNavigation()
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-appearance").performClick()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("主题").assertIsDisplayed()
@@ -192,7 +487,7 @@ class AppNavigationUiTest {
 
         composeRule.onNodeWithTag("app-bar").assertIsDisplayed()
         composeRule.onNodeWithTag("app-bar-title").assertIsDisplayed()
-        composeRule.onNodeWithTag("activity-details-entry").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("activity-details-entry").assertCountEquals(0)
         composeRule.onAllNodesWithTag("status-ring-overlay").assertCountEquals(0)
         composeRule.onNodeWithTag("root-content").assertIsDisplayed()
         listOf(
@@ -216,10 +511,6 @@ class AppNavigationUiTest {
         assertTrue("Root content must end above the mini-player", contentBounds.bottom <= miniBounds.top + 1f)
         assertTrue("Mini-player must end above the fixed navigation", miniBounds.bottom <= navigationBounds.top + 1f)
 
-        val detailsBounds = composeRule.onNodeWithTag("activity-details-entry").fetchSemanticsNode().boundsInRoot
-        val minimumTouchTargetPx = with(composeRule.density) { 48.dp.toPx() }
-        assertTrue("Independent activity details entry must preserve a 48dp touch target", detailsBounds.width >= minimumTouchTargetPx)
-        assertTrue("Independent activity details entry must preserve a 48dp touch target", detailsBounds.height >= minimumTouchTargetPx)
     }
 
     @Test
@@ -255,13 +546,10 @@ class AppNavigationUiTest {
                     )
                 }
                 AppDestination.SETTINGS -> {
-                    composeRule.onNodeWithTag("status-ring-settings-content").assertIsDisplayed()
-                    listOf(
-                        "status-ring-size-slider",
-                        "status-ring-line-width-slider",
-                        "status-ring-horizontal-offset-slider",
-                        "status-ring-vertical-offset-slider",
-                    ).forEach { tag -> composeRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed() }
+                    composeRule.onNodeWithTag("settings-root-screen").assertIsDisplayed()
+                    listOf("status", "server", "appearance", "about").forEach { category ->
+                        composeRule.onNodeWithTag("settings-category-$category").assertIsDisplayed()
+                    }
                 }
                 AppDestination.FULL_SCREEN_PLAYER, AppDestination.QUEUE ->
                     error("Full-screen destinations are not root navigation entries")
@@ -289,6 +577,8 @@ class AppNavigationUiTest {
         try {
             composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
             composeRule.waitForIdle()
+            composeRule.onNodeWithTag("settings-category-server").performClick()
+            composeRule.waitForIdle()
             composeRule.onNodeWithTag("server-origin-settings-title").assertIsDisplayed()
             composeRule.onNodeWithTag("server-origin-input").performScrollTo()
             val serverOriginField = composeRule.onNodeWithTag("server-origin-input")
@@ -297,7 +587,7 @@ class AppNavigationUiTest {
             composeRule.onNodeWithTag("server-origin-save").performScrollTo().performClick()
             composeRule.waitForIdle()
 
-            composeRule.onNodeWithTag("server-origin-supporting-text", useUnmergedTree = true)
+            composeRule.onNodeWithTag("server-origin-supporting-text")
                 .assertTextEquals("地址格式不正确：请检查主机、端口、协议和路径。")
             assertEquals(
                 ServerOrigin.DEFAULT_ADDRESS,
@@ -324,7 +614,10 @@ class AppNavigationUiTest {
         launchNavigation()
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-appearance").performClick()
+        composeRule.waitForIdle()
 
+        composeRule.onNodeWithTag("appearance-settings-screen").assertIsDisplayed()
         composeRule.onNodeWithText("状态环").assertIsDisplayed()
         listOf(
             "status-ring-size-slider",
@@ -333,6 +626,8 @@ class AppNavigationUiTest {
             "status-ring-vertical-offset-slider",
         ).forEach { tag -> composeRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed() }
         composeRule.onNodeWithTag("status-ring-preview").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-draft-preview").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-draft-preview-visual").assertIsDisplayed()
         composeRule.onNodeWithText("1.00×").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("3.0dp").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("恢复默认值").performScrollTo().assertIsDisplayed()
@@ -343,6 +638,8 @@ class AppNavigationUiTest {
     fun allRingSlidersUpdateTheLocalPreviewWithoutChangingRuntimeAndResetRestoresDefaults() {
         launchNavigation()
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-appearance").performClick()
         composeRule.waitForIdle()
         val originalSnapshot = runtime.snapshots.state.value.snapshot
         val originalConnectionGeneration = runtime.snapshots.state.value.connectionGeneration
@@ -363,9 +660,7 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("status-ring-line-width-value").performScrollTo().assertTextEquals("4.5dp")
         composeRule.onNodeWithTag("status-ring-horizontal-offset-value").performScrollTo().assertTextEquals("12dp")
         composeRule.onNodeWithTag("status-ring-vertical-offset-value").performScrollTo().assertTextEquals("-8dp")
-        composeRule.onNodeWithContentDescription(
-            "状态环预览；尺寸 1.20×；线宽 4.5dp；水平偏移 12dp；垂直偏移 -8dp",
-        ).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-draft-preview-visual").assertIsDisplayed()
         val afterPreview = runtime.snapshots.state.value
         assertEquals("Preview must not replace the server session", originalSnapshot?.epoch, afterPreview.snapshot?.epoch)
         assertTrue(
@@ -378,10 +673,23 @@ class AppNavigationUiTest {
         assertSame(runtime, (composeRule.activity.application as MpdServerRemoteApplication).runtime)
 
         // Leaving and re-entering Settings must retain the persisted local values.
-        composeRule.onNodeWithTag("root-nav-${AppDestination.HOME.route}").performClick()
+        composeRule.onNodeWithTag("settings-child-back").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
+        composeRule.onNodeWithTag("settings-root-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings-category-appearance").performClick()
         composeRule.waitForIdle()
+        composeRule.waitUntil(2_000) {
+            runBlocking {
+                val saved = (composeRule.activity.application as MpdServerRemoteApplication)
+                    .uiPreferences.statusRingPreferences.first()
+                saved == StatusRingPreferences(
+                    sizeScale = 1.20f,
+                    lineWidthDp = 4.5f,
+                    horizontalOffsetDp = 12f,
+                    verticalOffsetDp = -8f,
+                ).normalized()
+            }
+        }
         composeRule.onNodeWithTag("status-ring-size-value").performScrollTo().assertTextEquals("1.20×")
         composeRule.onNodeWithTag("status-ring-line-width-value").performScrollTo().assertTextEquals("4.5dp")
         composeRule.onNodeWithTag("status-ring-horizontal-offset-value").performScrollTo().assertTextEquals("12dp")
@@ -393,9 +701,13 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("status-ring-line-width-value").performScrollTo().assertTextEquals("3.0dp")
         composeRule.onNodeWithTag("status-ring-horizontal-offset-value").performScrollTo().assertTextEquals("0dp")
         composeRule.onNodeWithTag("status-ring-vertical-offset-value").performScrollTo().assertTextEquals("0dp")
-        composeRule.onNodeWithContentDescription(
-            "状态环预览；尺寸 1.00×；线宽 3.0dp；水平偏移 0dp；垂直偏移 0dp",
-        ).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("status-ring-draft-preview-visual").assertIsDisplayed()
+        composeRule.waitUntil(2_000) {
+            runBlocking {
+                (composeRule.activity.application as MpdServerRemoteApplication)
+                    .uiPreferences.statusRingPreferences.first() == StatusRingPreferences.DEFAULT
+            }
+        }
         val afterReset = runtime.snapshots.state.value
         assertEquals("Settings controls must not replace the server session", originalSnapshot?.epoch, afterReset.snapshot?.epoch)
         assertTrue(
@@ -430,21 +742,24 @@ class AppNavigationUiTest {
     }
 
     @Test
-    fun independentActivityEntryOpensReadableEmptySheetWhileRingRemainsHiddenWhenIdle() {
+    fun statusPageReplacesGlobalActivityEntryAndShowsCanonicalActivityWhenIdle() {
         launchNavigation()
-        composeRule.onNodeWithTag("activity-details-entry").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("activity-details-entry").assertCountEquals(0)
         composeRule.onAllNodesWithTag("status-ring-overlay").assertCountEquals(0)
-        composeRule.onNodeWithTag("activity-details-entry").performClick()
+        composeRule.onNodeWithTag("root-nav-settings").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-category-status").performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("连接与活动").assertIsDisplayed()
+        composeRule.onNodeWithTag("status-settings-screen").assertIsDisplayed()
         composeRule.onNodeWithTag("activity-status-summary").assertIsDisplayed()
-        // Connectivity/freshness labels are projections of the configured canonical Runtime.
-        // This test verifies the sheet and empty activity state without assuming localhost/offline.
+        composeRule.onNodeWithTag("activity-status-connection").assertIsDisplayed()
+        composeRule.onNodeWithTag("activity-status-freshness").assertIsDisplayed()
         composeRule.onNodeWithTag("activity-status-empty").assertIsDisplayed()
-        composeRule.onNodeWithTag("activity-status-close").performClick()
-        composeRule.waitForIdle()
         composeRule.onAllNodesWithTag("activity-status-sheet").assertCountEquals(0)
+        composeRule.onNodeWithTag("settings-child-back").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("settings-root-screen").assertIsDisplayed()
     }
 
     @Test

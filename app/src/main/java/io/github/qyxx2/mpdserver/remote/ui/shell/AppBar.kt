@@ -16,30 +16,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Compact shared app bar; the status ring itself is anchored to window cutout geometry, not here. */
+/** Shared app bar; page-specific activity details are accessed from Settings > Status. */
 @Composable
 fun AppBar(
     title: String,
-    onStatusClick: () -> Unit,
     modifier: Modifier = Modifier,
+    showBackButton: Boolean = false,
+    onBackClick: () -> Unit = {},
 ) {
     Row(
         modifier = modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp).testTag("app-bar"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (showBackButton) {
+            TextButton(onClick = onBackClick, modifier = Modifier.height(48.dp).testTag("settings-child-back")) {
+                Text("‹  返回", fontWeight = FontWeight.Medium)
+            }
+        }
         Text(
             text = title,
             modifier = Modifier.testTag("app-bar-title"),
             style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(modifier = Modifier.weight(1f))
-        TextButton(
-            onClick = onStatusClick,
-            modifier = Modifier.height(48.dp).testTag("activity-details-entry"),
-        ) {
-            Text("活动")
-        }
     }
 }

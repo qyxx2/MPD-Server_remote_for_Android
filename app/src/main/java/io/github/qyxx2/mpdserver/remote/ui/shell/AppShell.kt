@@ -14,18 +14,16 @@ import androidx.compose.ui.platform.testTag
 fun AppShell(
     title: String,
     modifier: Modifier = Modifier,
-    onStatusClick: () -> Unit,
+    showBackButton: Boolean = false,
+    onBackClick: () -> Unit = {},
     miniPlayer: @Composable () -> Unit = {},
     bottomBar: @Composable () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        AppBar(title = title, onStatusClick = onStatusClick)
+        AppBar(title = title, showBackButton = showBackButton, onBackClick = onBackClick)
         Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .testTag("root-content"),
+            modifier = Modifier.weight(1f).fillMaxWidth().testTag("root-content"),
             content = content,
         )
         miniPlayer()

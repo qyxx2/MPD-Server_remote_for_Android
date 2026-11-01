@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -74,8 +75,8 @@ import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
 import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCollectionActions
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeCollectionActions
 import io.github.qyxx2.mpdserver.remote.ui.components.ActivityPresentation
-import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusSheet
 import io.github.qyxx2.mpdserver.remote.ui.components.GlobalStatusRingOverlay
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingDraftPreviewOverlay
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingVisibilityController
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerScreen
@@ -114,7 +115,14 @@ import io.github.qyxx2.mpdserver.remote.ui.library.LibraryScreen
 import io.github.qyxx2.mpdserver.remote.ui.search.SearchController
 import io.github.qyxx2.mpdserver.remote.ui.search.SearchProjection
 import io.github.qyxx2.mpdserver.remote.ui.search.SearchScreen
-import io.github.qyxx2.mpdserver.remote.ui.screens.StatusRingSettingsScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.SettingsHomeScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.SettingsSection
+import io.github.qyxx2.mpdserver.remote.ui.settings.StatusSettingsScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.ServerSettingsScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.AppearanceSettingsScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.AboutScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.createRepositoryLinkIntent
+import androidx.compose.ui.platform.testTag
 import io.github.qyxx2.mpdserver.remote.ui.shell.AppShell
 import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayer
 import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayerPresentation
@@ -122,6 +130,7 @@ import io.github.qyxx2.mpdserver.remote.ui.shell.RootNavigationBar
 import io.github.qyxx2.mpdserver.remote.ui.preferences.StatusRingPreferences
 import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -288,6 +297,17 @@ fun AppNavHost(
         retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds +
             retryableHomeAutoplayIntentIds + retryablePlaylistIntentIds + retryableFavoriteIntentIds,
     )
+    val retryUnknownActivity: (String) -> Unit = { intentId ->
+        when {
+            intentId.startsWith("player:") -> {
+                if (playerActions.state.value.activeIntentId == intentId) playerActions.retryUnknown()
+            }
+            intentId.startsWith("home-autoplay:") -> homeCollectionActions.retryAutoplayUnknown(intentId)
+            intentId.startsWith("playlist:") -> playlistActions.retryUnknown(intentId)
+            intentId.startsWith("favorite:") -> favoritesActions.retryUnknown(intentId)
+            else -> runtime.mutations.retryUnknown(intentId)
+        }
+    }
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }
     val miniPlayerPresentation = remember(snapshotState, playerPresentation) {
         MiniPlayerPresentation.from(snapshotState, playerPresentation)
@@ -318,6 +338,11 @@ fun AppNavHost(
     val ringPreferences by uiPreferences.statusRingPreferences.collectAsStateWithLifecycle(
         initialValue = StatusRingPreferences.DEFAULT,
     )
+    var appearanceRingDraft by remember { mutableStateOf(StatusRingPreferences.DEFAULT) }
+    var ringDraftPersistJob by remember { mutableStateOf<Job?>(null) }
+    LaunchedEffect(ringPreferences) {
+        appearanceRingDraft = ringPreferences.normalized()
+    }
     val navigationScope = rememberCoroutineScope()
     val fullScreenPagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     // App-scoped for the lifetime of this navigation shell: preload once when the canonical
@@ -384,7 +409,6 @@ fun AppNavHost(
         if (artworkCacheKey == null) artworkCache.clear()
         else artworkCache.preload(runtime, artworkCacheKey)
     }
-    var showActivityStatus by remember { mutableStateOf(false) }
     var rootBeforeFullScreen by remember { mutableStateOf(AppDestination.HOME.route) }
     var returnRouteBeforeFullScreen by remember { mutableStateOf(AppDestination.HOME.route) }
     var playerEntryProgress by remember { mutableFloatStateOf(1f) }
@@ -479,10 +503,12 @@ fun AppNavHost(
 
     // The full-player motion layer must be window-sized; safe insets are applied only to its
     // interactive foreground content, not to the animated surface behind transparent system bars.
-    val title = AppDestination.rootDestinations
-        .firstOrNull { it.route == AppDestination.rootRouteFor(currentRoute) }
-        ?.label
+    val title = SettingsSection.fromRoute(currentRoute)?.title
+        ?: AppDestination.rootDestinations
+            .firstOrNull { it.route == AppDestination.rootRouteFor(currentRoute) }
+            ?.label
         ?: AppDestination.HOME.label
+    val isSettingsChildRoute = SettingsSection.fromRoute(currentRoute) != null
     val safeInsets = windowGeometry.safeInsets
     val entryProgress = playerEntryProgress.coerceIn(0f, 1f)
     val safeContentPadding = with(LocalDensity.current) {
@@ -696,7 +722,7 @@ fun AppNavHost(
         }
     }
 
-    BackHandler(enabled = currentRoute?.startsWith("${AppDestination.LIBRARY.route}/") == true) {
+    BackHandler(enabled = currentRoute?.startsWith("${AppDestination.LIBRARY.route}/") == true || isSettingsChildRoute) {
         navController.popBackStack()
     }
 
@@ -911,7 +937,8 @@ fun AppNavHost(
             ) {
                 AppShell(
                     title = title,
-                    onStatusClick = { showActivityStatus = true },
+                    showBackButton = isSettingsChildRoute,
+                    onBackClick = { navController.popBackStack() },
                     miniPlayer = {
                         if (AppDestination.rootRouteFor(currentRoute) != AppDestination.SETTINGS.route) {
                             MiniPlayer(
@@ -962,6 +989,8 @@ fun AppNavHost(
                             navigationScope.launch { runtime.refreshSnapshot() }
                         },
                         snapshotState = snapshotState,
+                        statusPresentation = statusPresentation,
+                        onRetryUnknownActivity = retryUnknownActivity,
                         playerPresentation = playerPresentation,
                         playerMediaPresentation = mediaProjection.mediaPresentation,
                         playerMediaHandoffActive = mediaProjection.isHandoff,
@@ -974,6 +1003,18 @@ fun AppNavHost(
                         preferenceWriteScope = preferenceWriteScope,
                         windowGeometry = windowGeometry,
                         applyServerOrigin = applyServerOrigin,
+                        ringDraft = appearanceRingDraft,
+                        onRingDraftChange = { nextDraft ->
+                            val normalized = nextDraft.normalized()
+                            appearanceRingDraft = normalized
+                            ringDraftPersistJob?.cancel()
+                            // The app-owned preference scope survives destination disposal, so a
+                            // user can leave Appearance while the final drag value is being saved.
+                            ringDraftPersistJob = preferenceWriteScope.launch {
+                                delay(300)
+                                uiPreferences.setStatusRingPreferences(normalized)
+                            }
+                        },
                         onPlayerEntityNavigationRequest = ::navigatePlayerEntity,
                         onArtistClick = ::requestArtistNavigation,
                         onExitFullScreen = ::exitFullScreenToRoot,
@@ -1040,7 +1081,13 @@ fun AppNavHost(
                 }
             }
         }
-        if (ringVisibility.visible) {
+        if (currentRoute == SettingsSection.APPEARANCE.route) {
+            StatusRingDraftPreviewOverlay(
+                geometry = windowGeometry,
+                preferences = appearanceRingDraft,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (ringVisibility.visible) {
             GlobalStatusRingOverlay(
                 presentation = statusPresentation,
                 geometry = windowGeometry,
@@ -1049,23 +1096,6 @@ fun AppNavHost(
             )
         }
 
-        if (showActivityStatus) {
-            ActivityStatusSheet(
-                presentation = statusPresentation,
-                onDismiss = { showActivityStatus = false },
-                onRetryUnknown = { intentId ->
-                    when {
-                        intentId.startsWith("player:") -> {
-                            if (playerActions.state.value.activeIntentId == intentId) playerActions.retryUnknown()
-                        }
-                        intentId.startsWith("home-autoplay:") -> homeCollectionActions.retryAutoplayUnknown(intentId)
-                        intentId.startsWith("playlist:") -> playlistActions.retryUnknown(intentId)
-                        intentId.startsWith("favorite:") -> favoritesActions.retryUnknown(intentId)
-                        else -> runtime.mutations.retryUnknown(intentId)
-                    }
-                },
-            )
-        }
     }
 }
 
@@ -1118,7 +1148,6 @@ private fun RootBackdropShell(
         ) {
             AppShell(
                 title = rootTitle,
-                onStatusClick = {},
                 miniPlayer = {
                     if (resolvedRootRoute != AppDestination.SETTINGS.route) {
                         MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
@@ -1146,12 +1175,7 @@ private fun RootBackdropShell(
                         onOpenCategory = {},
                         interactionEnabled = false,
                     )
-                    AppDestination.SETTINGS.route -> StatusRingSettingsScreen(
-                        preferencesRepository = uiPreferences,
-                        preferenceWriteScope = preferenceWriteScope,
-                        windowGeometry = windowGeometry,
-                        onApplyServerOrigin = onApplyServerOrigin,
-                    )
+                    AppDestination.SETTINGS.route -> SettingsHomeScreen(onOpenSection = {})
                     else -> HomeScreen(
                         state = homeState,
                         scrollStateHolder = homeScrollStateHolder,
@@ -1218,6 +1242,8 @@ private fun AppNavigationGraph(
     onRefreshHistory: () -> Unit,
     onRefreshAutoplay: () -> Unit,
     snapshotState: SnapshotStoreState,
+    statusPresentation: ActivityPresentation,
+    onRetryUnknownActivity: (String) -> Unit,
     playerPresentation: PlayerPresentation,
     playerMediaPresentation: PlayerPresentation,
     playerMediaHandoffActive: Boolean,
@@ -1230,6 +1256,8 @@ private fun AppNavigationGraph(
     preferenceWriteScope: CoroutineScope,
     windowGeometry: StatusRingWindowGeometry,
     applyServerOrigin: suspend (ServerOrigin) -> Unit,
+    ringDraft: StatusRingPreferences,
+    onRingDraftChange: (StatusRingPreferences) -> Unit,
     onPlayerEntityNavigationRequest: (PlayerEntityNavigationRequest) -> Unit,
     onArtistClick: (String) -> Unit,
     onExitFullScreen: () -> Unit,
@@ -1338,12 +1366,37 @@ private fun AppNavigationGraph(
             }
         }
         composable(AppDestination.SETTINGS.route) {
-            StatusRingSettingsScreen(
-                preferencesRepository = uiPreferences,
-                preferenceWriteScope = preferenceWriteScope,
-                windowGeometry = windowGeometry,
-                onApplyServerOrigin = applyServerOrigin,
-            )
+            SettingsHomeScreen(onOpenSection = { section ->
+                navController.navigate(section.route) { launchSingleTop = true }
+            })
+        }
+        SettingsSection.entries.forEach { section ->
+            composable(section.route) {
+                when (section) {
+                    SettingsSection.STATUS -> StatusSettingsScreen(
+                        presentation = statusPresentation,
+                        onRetryUnknown = onRetryUnknownActivity,
+                    )
+                    SettingsSection.SERVER -> ServerSettingsScreen(
+                        preferencesRepository = uiPreferences,
+                        onApplyServerOrigin = applyServerOrigin,
+                    )
+                    SettingsSection.APPEARANCE -> AppearanceSettingsScreen(
+                        preferencesRepository = uiPreferences,
+                        preferenceWriteScope = preferenceWriteScope,
+                        ringDraft = ringDraft,
+                        onRingDraftChange = onRingDraftChange,
+                    )
+                    SettingsSection.ABOUT -> {
+                        val context = LocalContext.current
+                        AboutScreen(onOpenRepository = {
+                            runCatching {
+                                context.startActivity(createRepositoryLinkIntent())
+                            }
+                        })
+                    }
+                }
+            }
         }
         composable(
             route = AppDestination.FULL_SCREEN_PLAYER.route,
