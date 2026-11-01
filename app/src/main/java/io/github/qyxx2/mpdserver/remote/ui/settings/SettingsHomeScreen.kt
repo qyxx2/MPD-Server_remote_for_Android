@@ -37,7 +37,6 @@ fun SettingsHomeScreen(
             .padding(horizontal = 18.dp, vertical = 16.dp).testTag("settings-root-screen"),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         SettingsSection.entries.forEach { section ->
             Surface(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))

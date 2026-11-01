@@ -5,9 +5,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,8 +33,16 @@ fun AppBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showBackButton) {
-            TextButton(onClick = onBackClick, modifier = Modifier.height(48.dp).testTag("settings-child-back")) {
-                Text("‹  返回", fontWeight = FontWeight.Medium)
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.size(48.dp).testTag("settings-child-back"),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
             }
         }
         Text(

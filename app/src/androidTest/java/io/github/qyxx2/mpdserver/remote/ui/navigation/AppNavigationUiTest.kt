@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -167,6 +168,7 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("root-nav-${AppDestination.SETTINGS.route}").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("settings-root-screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings-root-screen").onChildren().assertCountEquals(4)
         val categories = listOf(
             Triple("status", "状态", "settings/status"),
             Triple("server", "服务器", "settings/server"),
@@ -179,6 +181,7 @@ class AppNavigationUiTest {
             assertEquals(route, navController.currentDestination?.route)
             composeRule.onNodeWithTag("app-bar-title").assertTextEquals(title)
             composeRule.onNodeWithTag("settings-child-back").assertIsDisplayed()
+            composeRule.onNodeWithContentDescription("返回").assertIsDisplayed()
             composeRule.onNodeWithTag("root-nav-settings").assertIsSelected()
             val pageTag = when (id) {
                 "status" -> "status-settings-screen"
