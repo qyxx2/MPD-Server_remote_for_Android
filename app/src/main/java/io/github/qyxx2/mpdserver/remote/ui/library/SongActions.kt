@@ -19,6 +19,7 @@ internal class PlaybackMutationGateway(
     private val retryUnknown: (String) -> MutationOutcome,
     private val canRetryUnknown: (String) -> Boolean,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
+    private val onSynchronizationFailure: (String, String) -> Unit = { _, _ -> },
 ) {
     private val writeGate = Any()
     @Volatile
@@ -30,6 +31,7 @@ internal class PlaybackMutationGateway(
         submitter = runtime.mutations::submit,
         retryUnknown = runtime.mutations::retryUnknown,
         canRetryUnknown = runtime.mutations::canRetryUnknown,
+        onSynchronizationFailure = runtime.mutations::recordSynchronizationFailure,
     )
 
     fun currentState(): SnapshotStoreState = stateProvider()
@@ -46,11 +48,12 @@ internal class PlaybackMutationGateway(
     fun submit(
         intentPrefix: String,
         path: String,
-        payload: String = "{}",
+        payload: String? = "{}",
         label: String,
         resourceFresh: Boolean = true,
         retryScope: String? = null,
         precondition: () -> Boolean = { true },
+        method: String = "POST",
     ): MutationOutcome? = submitWithIntentId(
         intentId = newIntentId(intentPrefix),
         path = path,
@@ -59,6 +62,7 @@ internal class PlaybackMutationGateway(
         resourceFresh = resourceFresh,
         retryScope = retryScope,
         precondition = precondition,
+        method = method,
     )
 
     /** Atomic within the shared B5 gateway: simultaneous Home/Library/Search taps cannot pass the
@@ -66,17 +70,18 @@ internal class PlaybackMutationGateway(
     fun submitWithIntentId(
         intentId: String,
         path: String,
-        payload: String = "{}",
+        payload: String? = "{}",
         label: String,
         resourceFresh: Boolean = true,
         retryScope: String? = null,
         precondition: () -> Boolean = { true },
+        method: String = "POST",
     ): MutationOutcome? = synchronized(writeGate) {
         if (!canSubmit(resourceFresh) || !precondition() || !canSubmit(resourceFresh)) return@synchronized null
         val outcome = submitter(
             MutationIntent(
                 id = intentId,
-                method = "POST",
+                method = method.uppercase(),
                 path = path,
                 payload = payload,
                 label = label,
@@ -99,6 +104,10 @@ internal class PlaybackMutationGateway(
     } == true
 
     fun canRetry(intentId: String): Boolean = canRetryUnknown(intentId)
+
+    fun recordSynchronizationFailure(intentId: String, message: String) {
+        onSynchronizationFailure(intentId, message)
+    }
 
     fun retry(intentId: String, precondition: () -> Boolean = { true }): MutationOutcome? =
         synchronized(writeGate) {

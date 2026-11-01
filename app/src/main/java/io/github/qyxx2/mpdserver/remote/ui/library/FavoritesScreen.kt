@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
@@ -27,10 +28,12 @@ fun FavoritesScreen(
     collectionActions: LibraryCollectionActions? = null,
 ) {
     var retryToken by remember { mutableIntStateOf(0) }
+    val refreshGeneration = LocalFavoritesActions.current?.refreshGeneration
+        ?.collectAsStateWithLifecycle(initialValue = 0L)?.value ?: 0L
     val state = rememberLibraryLoadState(
         runtime,
         "library-favorites-members",
-        retryToken,
+        retryToken + refreshGeneration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         dependsOnPlaylistRevision = true,
     ) {
         readFavoriteSongs(runtime)

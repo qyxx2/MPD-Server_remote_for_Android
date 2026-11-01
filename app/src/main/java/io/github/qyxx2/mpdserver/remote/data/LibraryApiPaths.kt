@@ -33,8 +33,13 @@ object LibraryApiPaths {
     fun playlists(): String = path("playlists")
     fun playlist(playlistId: String): String = path("playlists", id(playlistId))
     fun playlistSongs(playlistId: String): String = path("playlists", id(playlistId), "songs")
+    fun playlistSong(playlistId: String, songId: String): String =
+        path("playlists", id(playlistId), "songs", id(songId))
+    fun playlistSongsOrder(playlistId: String): String =
+        path("playlists", id(playlistId), "songs", "order")
     fun favoriteMembers(): String = path("favorites", "members")
     fun favorites(): String = path("favorites")
+    fun favorite(songId: String): String = path("favorites", id(songId))
 
     private fun id(value: String): String {
         require(value.isNotBlank() && value != "." && value != ".." && '/' !in value && '\\' !in value) {

@@ -177,6 +177,17 @@ class ResourceMemoryCache(
     /** Dynamic Queue reads can bypass value caching while still sharing the global GET limit. */
     internal suspend fun <T> readUncached(loader: suspend () -> T): T = slots.withPermit { loader() }
 
+    /** Invalidate one cached GET before an explicit post-mutation readback. */
+    fun <T : Any> invalidateResource(key: ResourceCacheKey<T>) {
+        val pending = synchronized(lock) {
+            if (closed) return
+            val request = flights.remove(key)?.deferred
+            removeEntryLocked(key)
+            request
+        }
+        pending?.cancel(CancellationException("Resource explicitly invalidated for readback"))
+    }
+
     /** A caller may cancel its await without cancelling the runtime-owned shared request. */
     @Suppress("UNCHECKED_CAST")
     suspend fun <T : Any> readResource(

@@ -34,12 +34,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.ui.library.hasUnresolvedPlaybackMutation
 
-/** AppNavHost reduces the shared activity list once; visible rows/cards consume this O(1) lock. */
+/** AppNavHost reduces shared server-owned resource state once for every Song action surface. */
 val LocalPlaybackActionsEnabled = staticCompositionLocalOf { true }
+val LocalFavoritesActions = staticCompositionLocalOf<FavoritesActions?> { null }
+val LocalFavoriteSongIds = staticCompositionLocalOf<Set<String>> { emptySet() }
+val LocalFavoritesResourceFresh = staticCompositionLocalOf { false }
 
 /**
  * A song's complete visual surface is the anchor for its Web-equivalent action menu.
- * No separate overflow affordance is rendered: tapping any part of the row/card opens it.
+ * Playback stays availability-gated; Favorite can still remove an indexed server member whose
+ * Library metadata is missing, matching the Web unavailable-member path.
  */
 @Composable
 fun SongActionMenu(
@@ -50,15 +54,30 @@ fun SongActionMenu(
     onFavorite: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    // Keep row composition O(1): the authoritative snapshot/write gate is checked on tap by
-    // SongActions.perform; the shared activity projection disables all row affordances immediately.
-    val enabled = item.isPlayable && resourceFresh && LocalPlaybackActionsEnabled.current
+    val snapshotWritable = LocalPlaybackActionsEnabled.current
+    val playbackEnabled = item.isPlayable && resourceFresh && snapshotWritable
+    val favoriteActions = LocalFavoritesActions.current
+    val favoritesFresh = LocalFavoritesResourceFresh.current
+    val favoriteSongId = item.songId?.takeIf(String::isNotBlank)
+    val isFavorite = favoriteSongId != null && favoriteSongId in LocalFavoriteSongIds.current
+    val favoriteEnabled = favoriteSongId != null &&
+        favoriteActions != null &&
+        favoritesFresh &&
+        snapshotWritable
+    val favoriteCallback = onFavorite ?: favoriteSongId?.let { songId ->
+        favoriteActions?.let { owner ->
+            { owner.setFavorite(songId, isFavorite = isFavorite, resourceFresh = favoritesFresh); Unit }
+        }
+    }
     AnchoredSongActionMenu(
         menuKey = item.key.hashCode().toString(),
-        enabled = enabled,
+        enabled = playbackEnabled || favoriteEnabled,
+        playbackEnabled = playbackEnabled,
+        favoriteEnabled = favoriteEnabled,
+        favoriteLabel = if (isFavorite) "取消收藏" else "收藏",
         modifier = modifier,
         onAction = { action -> actions.perform(item, action, resourceFresh) },
-        onFavorite = onFavorite,
+        onFavorite = favoriteCallback,
         content = content,
     )
 }
@@ -71,6 +90,9 @@ internal fun AnchoredSongActionMenu(
     modifier: Modifier = Modifier,
     onAction: (SongPlaybackAction) -> Unit,
     onFavorite: (() -> Unit)? = null,
+    playbackEnabled: Boolean = enabled,
+    favoriteEnabled: Boolean = enabled,
+    favoriteLabel: String = "收藏",
     content: @Composable () -> Unit,
 ) {
     var expanded by remember(menuKey) { mutableStateOf(false) }
@@ -80,8 +102,6 @@ internal fun AnchoredSongActionMenu(
             .testTag("song-action-area-$menuKey"),
     ) {
         content()
-        // Keep the popup near the row's trailing edge (the old overflow affordance location),
-        // while the actual click target remains the entire song surface.
         Box(modifier = Modifier.align(Alignment.CenterEnd).size(1.dp)) {
             DropdownMenu(
                 expanded = expanded,
@@ -93,7 +113,7 @@ internal fun AnchoredSongActionMenu(
                 SongPlaybackAction.entries.forEach { action ->
                     DropdownMenuItem(
                         text = { Text(action.label) },
-                        enabled = enabled,
+                        enabled = playbackEnabled,
                         modifier = Modifier.testTag("song-action-${action.name.lowercase()}-$menuKey"),
                         onClick = {
                             expanded = false
@@ -103,7 +123,8 @@ internal fun AnchoredSongActionMenu(
                 }
                 if (onFavorite != null) {
                     DropdownMenuItem(
-                        text = { Text("收藏") },
+                        text = { Text(favoriteLabel) },
+                        enabled = favoriteEnabled,
                         modifier = Modifier.testTag("song-action-favorite-$menuKey"),
                         onClick = {
                             expanded = false

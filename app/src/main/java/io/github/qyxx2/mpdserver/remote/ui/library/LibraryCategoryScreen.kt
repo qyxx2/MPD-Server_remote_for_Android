@@ -39,11 +39,12 @@ fun LibraryCategoryScreen(
     modifier: Modifier = Modifier,
     songActions: SongActions? = null,
     collectionActions: LibraryCollectionActions? = null,
+    playlistActions: PlaylistActions? = null,
 ) {
     when (category) {
         LibraryCategory.SONGS -> SongsLibraryScreen(runtime, onBack, modifier, songActions, collectionActions)
         LibraryCategory.PLAYLISTS -> PlaylistScreen(runtime, onOpenDetail, onBack, modifier = modifier,
-            songActions = songActions, collectionActions = collectionActions)
+            songActions = songActions, collectionActions = collectionActions, playlistActions = playlistActions)
         LibraryCategory.FAVORITES -> FavoritesScreen(runtime, onBack, modifier, songActions, collectionActions)
         else -> SummaryLibraryCategoryScreen(runtime, category, onOpenDetail, onBack, modifier)
     }

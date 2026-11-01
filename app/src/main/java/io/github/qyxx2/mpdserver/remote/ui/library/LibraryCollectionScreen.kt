@@ -27,6 +27,7 @@ fun LibraryCollectionScreen(
     artworkIdentity: io.github.qyxx2.mpdserver.remote.ui.queue.QueueResourceIdentity? = null,
     songActions: SongActions? = null,
     collectionActions: LibraryCollectionActions? = null,
+    playlistActions: PlaylistActions? = null,
 ) {
     if (category == LibraryCategory.ALBUMS) {
         LibraryAlbumDetailScreen(
@@ -43,7 +44,7 @@ fun LibraryCollectionScreen(
 
     if (category == LibraryCategory.PLAYLISTS) {
         PlaylistScreen(runtime, onOpenDetail = {}, onBack = onBack, playlistId = sourceId, modifier = modifier,
-            songActions = songActions, collectionActions = collectionActions)
+            songActions = songActions, collectionActions = collectionActions, playlistActions = playlistActions)
         return
     }
 

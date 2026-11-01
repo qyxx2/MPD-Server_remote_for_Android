@@ -51,6 +51,59 @@ class RuntimeReadApiTest {
         assertEquals(0, result.value.count)
     }
 
+    @Test fun postMutationRefreshMethodsBypassCachedPlaylistAndFavoriteResources() = runBlocking {
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val resources = ResourceMemoryCache(owner)
+        resources.updateIdentity(
+            ResourceSessionIdentity("http://server.example", 1, "epoch-1"),
+            ResourceWatermarks(3, 5, "history-1"),
+            isFresh = true,
+        )
+        val requests = mutableListOf<String>()
+        val api = RuntimeReadApi(
+            originProvider = { ServerOrigin.parse("http://server.example") },
+            client = OkHttpClient(),
+            resources = resources,
+            execute = { _, request ->
+                requests += request.url.encodedPath
+                val body = when (request.url.encodedPath) {
+                    "/api/playlists/pl-1" ->
+                        """{"playlist_id":"pl-1","name":"Mix","created_at":"","updated_at":"","is_system":false,"song_ids":[]}"""
+                    "/api/favorites/members" -> """{"song_ids":[]}"""
+                    "/api/favorites" ->
+                        """{"source_type":"FAVORITES","source_id":null,"song_ids":[],"unavailable_song_ids":[],"random_seed":null}"""
+                    else -> emptyListBody().decodeToString()
+                }
+                HttpResult.Body(200, "application/json", body.toByteArray())
+            },
+        )
+        val expected = listOf(
+            "/api/playlists",
+            "/api/playlists/pl-1",
+            "/api/playlists/pl-1/songs",
+            "/api/favorites/members",
+            "/api/favorites",
+        )
+        try {
+            assertTrue(api.getPlaylists() is ApiResult.Success)
+            assertTrue(api.getPlaylist("pl-1") is ApiResult.Success)
+            assertTrue(api.getPlaylistSongs("pl-1") is ApiResult.Success)
+            assertTrue(api.getFavoriteMembers() is ApiResult.Success)
+            assertTrue(api.getFavorites() is ApiResult.Success)
+            assertEquals(expected, requests)
+
+            assertTrue(api.refreshPlaylists() is ApiResult.Success)
+            assertTrue(api.refreshPlaylist("pl-1") is ApiResult.Success)
+            assertTrue(api.refreshPlaylistSongs("pl-1") is ApiResult.Success)
+            assertTrue(api.refreshFavoriteMembers() is ApiResult.Success)
+            assertTrue(api.refreshFavorites() is ApiResult.Success)
+            assertEquals(expected + expected, requests)
+        } finally {
+            resources.close()
+            owner.cancel()
+        }
+    }
+
     @Test fun artistsReadUsesExistingNavigationEndpointAndWireShape() = runBlocking {
         var path = ""
         var method = ""

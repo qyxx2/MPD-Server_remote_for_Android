@@ -63,6 +63,7 @@ private fun LibrarySongRowContent(
     modifier: Modifier,
 ) {
     val song = item.song
+    val favorite = item.songId?.let { it in LocalFavoriteSongIds.current } == true
     val title = song?.title?.takeIf { it.isNotBlank() }
         ?: if (item.songId == null) "未索引的音乐文件" else "歌曲已不在音乐库"
     val subtitle = when {
@@ -129,6 +130,14 @@ private fun LibrarySongRowContent(
                 text = it,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (favorite) {
+            Text(
+                text = "♥",
+                modifier = Modifier.testTag("library-favorite-${item.key.hashCode()}"),
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 18.sp,
             )
         }
     }

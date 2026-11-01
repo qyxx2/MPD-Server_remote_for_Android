@@ -62,8 +62,14 @@ import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
+import io.github.qyxx2.mpdserver.remote.runtime.ResourceEntryState
 import io.github.qyxx2.mpdserver.remote.ui.library.PlaybackMutationGateway
 import io.github.qyxx2.mpdserver.remote.ui.library.LocalPlaybackActionsEnabled
+import io.github.qyxx2.mpdserver.remote.ui.library.LocalFavoritesActions
+import io.github.qyxx2.mpdserver.remote.ui.library.LocalFavoriteSongIds
+import io.github.qyxx2.mpdserver.remote.ui.library.LocalFavoritesResourceFresh
+import io.github.qyxx2.mpdserver.remote.ui.library.PlaylistActions
+import io.github.qyxx2.mpdserver.remote.ui.library.FavoritesActions
 import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
 import io.github.qyxx2.mpdserver.remote.ui.library.LibraryCollectionActions
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeCollectionActions
@@ -175,6 +181,52 @@ fun AppNavHost(
     val songActions = remember(playbackMutationGateway) { SongActions(playbackMutationGateway) }
     val collectionActions = remember(playbackMutationGateway) { LibraryCollectionActions(playbackMutationGateway) }
     val homeCollectionActions = remember(playbackMutationGateway) { HomeCollectionActions(playbackMutationGateway) }
+    val playlistActions = remember(playbackMutationGateway, runtime) {
+        PlaylistActions(playbackMutationGateway, runtime)
+    }
+    val favoritesActions = remember(playbackMutationGateway, runtime) {
+        FavoritesActions(playbackMutationGateway, runtime)
+    }
+    val favoriteMembersState by favoritesActions.memberState.collectAsStateWithLifecycle()
+    val favoriteResourceIdentity by runtime.resources.identityState.collectAsStateWithLifecycle()
+    val favoriteSongIds = remember(favoriteMembersState) {
+        when (val current = favoriteMembersState) {
+            is ResourceEntryState.Ready -> current.value.songIds.toSet()
+            is ResourceEntryState.Stale -> current.value.songIds.toSet()
+            else -> emptySet()
+        }
+    }
+    val favoritesResourceFresh = favoriteMembersState is ResourceEntryState.Ready &&
+        favoriteResourceIdentity.isFresh && snapshotState.controlsEligible
+    LaunchedEffect(
+        favoritesActions,
+        snapshotState.controlsEligible,
+        snapshotState.connectionGeneration,
+        snapshotState.snapshot?.epoch,
+        snapshotState.snapshot?.libraryRevision,
+        favoriteResourceIdentity,
+        favoriteMembersState,
+    ) {
+        val membershipNeedsRead = favoriteMembersState is ResourceEntryState.Empty ||
+            favoriteMembersState is ResourceEntryState.Stale
+        if (snapshotState.controlsEligible && favoriteResourceIdentity.isFresh && membershipNeedsRead) {
+            favoritesActions.load()
+        }
+    }
+    LaunchedEffect(playlistActions) {
+        playlistActions.lastAction.collect { ticket ->
+            if (ticket != null && playlistActions.awaitAndRefresh(ticket)) {
+                // Playlist mutations advance the shared Playlist resource watermark. Revalidate
+                // the Favorites member projection against that new watermark after playlist readback.
+                favoritesActions.load()
+            }
+        }
+    }
+    LaunchedEffect(favoritesActions) {
+        favoritesActions.lastAction.collect { ticket ->
+            if (ticket != null) favoritesActions.awaitAndRefresh(ticket)
+        }
+    }
     // This transient presentation adapter is shell-scoped; all requests/retries still belong to
     // the Application-owned MutationCoordinator and survive player route disposal.
     val playerActions = remember(runtime) { PlayerActions(runtime) }
@@ -219,11 +271,22 @@ fun AppNavHost(
         .map { it.intentId }
         .filter(homeCollectionActions::canRetryAutoplayUnknown)
         .toSet()
+    val retryablePlaylistIntentIds = activities.asSequence()
+        .filter { it.intentId.startsWith("playlist:") && it.status == io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.UNKNOWN }
+        .map { it.intentId }
+        .filter(playlistActions::canRetryUnknown)
+        .toSet()
+    val retryableFavoriteIntentIds = activities.asSequence()
+        .filter { it.intentId.startsWith("favorite:") && it.status == io.github.qyxx2.mpdserver.remote.runtime.MutationStatus.UNKNOWN }
+        .map { it.intentId }
+        .filter(favoritesActions::canRetryUnknown)
+        .toSet()
     val statusPresentation = ActivityPresentation.from(
         snapshotState,
         activities,
         currentOrigin = currentServerOrigin,
-        retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds + retryableHomeAutoplayIntentIds,
+        retryableIntentIds = retryablePlayerIntentIds + retryableQueueIntentIds +
+            retryableHomeAutoplayIntentIds + retryablePlaylistIntentIds + retryableFavoriteIntentIds,
     )
     val playerPresentation = remember(snapshotState) { PlayerPresentation.from(snapshotState) }
     val miniPlayerPresentation = remember(snapshotState, playerPresentation) {
@@ -884,6 +947,10 @@ fun AppNavHost(
                         playbackWritesLocked = playbackWritesLocked,
                         songActions = songActions,
                         collectionActions = collectionActions,
+                        playlistActions = playlistActions,
+                        favoritesActions = favoritesActions,
+                        favoriteSongIds = favoriteSongIds,
+                        favoritesResourceFresh = favoritesResourceFresh,
                         homeCollectionActions = homeCollectionActions,
                         homeState = homeState,
                         homeScrollStateHolder = homeScrollStateHolder,
@@ -992,6 +1059,8 @@ fun AppNavHost(
                             if (playerActions.state.value.activeIntentId == intentId) playerActions.retryUnknown()
                         }
                         intentId.startsWith("home-autoplay:") -> homeCollectionActions.retryAutoplayUnknown(intentId)
+                        intentId.startsWith("playlist:") -> playlistActions.retryUnknown(intentId)
+                        intentId.startsWith("favorite:") -> favoritesActions.retryUnknown(intentId)
                         else -> runtime.mutations.retryUnknown(intentId)
                     }
                 },
@@ -1136,6 +1205,10 @@ private fun AppNavigationGraph(
     playbackWritesLocked: Boolean,
     songActions: SongActions,
     collectionActions: LibraryCollectionActions,
+    playlistActions: PlaylistActions,
+    favoritesActions: FavoritesActions,
+    favoriteSongIds: Set<String>,
+    favoritesResourceFresh: Boolean,
     homeCollectionActions: HomeCollectionActions,
     homeState: HomeUiState,
     homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
@@ -1171,6 +1244,9 @@ private fun AppNavigationGraph(
     // All playback-facing surfaces receive the same shell-owned adapters over one Runtime coordinator.
     CompositionLocalProvider(
         LocalPlaybackActionsEnabled provides (snapshotState.controlsEligible && !playbackWritesLocked),
+        LocalFavoritesActions provides favoritesActions,
+        LocalFavoriteSongIds provides favoriteSongIds,
+        LocalFavoritesResourceFresh provides favoritesResourceFresh,
     ) {
     NavHost(
         navController = navController,
@@ -1233,6 +1309,7 @@ private fun AppNavigationGraph(
                     onBack = { navController.popBackStack() },
                     songActions = songActions,
                     collectionActions = collectionActions,
+                    playlistActions = playlistActions,
                 )
             }
         }
@@ -1256,6 +1333,7 @@ private fun AppNavigationGraph(
                     artworkIdentity = homeArtworkIdentity,
                     songActions = songActions,
                     collectionActions = collectionActions,
+                    playlistActions = playlistActions,
                 )
             }
         }

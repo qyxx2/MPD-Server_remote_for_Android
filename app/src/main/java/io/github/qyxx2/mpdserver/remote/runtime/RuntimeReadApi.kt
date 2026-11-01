@@ -92,6 +92,22 @@ class RuntimeReadApi(
     suspend fun getFavoriteMembers(): ApiResult<FavoriteMembersDto> = jsonGet(LibraryApiPaths.favoriteMembers(), ResourceDependency.PLAYLIST)
     suspend fun getFavorites(): ApiResult<CollectionDto> = jsonGet(LibraryApiPaths.favorites(), ResourceDependency.PLAYLIST)
 
+    /** Explicit post-mutation reads bypass a previously fresh value while retaining the shared cache owner. */
+    suspend fun refreshPlaylists(): ApiResult<PlaylistListDto> =
+        refreshJsonGet(LibraryApiPaths.playlists(), ResourceDependency.PLAYLIST)
+
+    suspend fun refreshPlaylist(playlistId: String): ApiResult<PlaylistDto> =
+        refreshJsonGet(LibraryApiPaths.playlist(playlistId), ResourceDependency.PLAYLIST)
+
+    suspend fun refreshPlaylistSongs(playlistId: String): ApiResult<SongListDto> =
+        refreshJsonGet(LibraryApiPaths.playlistSongs(playlistId), ResourceDependency.PLAYLIST)
+
+    suspend fun refreshFavoriteMembers(): ApiResult<FavoriteMembersDto> =
+        refreshJsonGet(LibraryApiPaths.favoriteMembers(), ResourceDependency.PLAYLIST)
+
+    suspend fun refreshFavorites(): ApiResult<CollectionDto> =
+        refreshJsonGet(LibraryApiPaths.favorites(), ResourceDependency.PLAYLIST)
+
     /** Returns original image bytes. In the app runtime, one shared cache owns the raw response. */
     suspend fun getArtwork(songId: String): HttpResult {
         val cache = resources ?: return fetchArtwork(songId)
@@ -126,6 +142,14 @@ class RuntimeReadApi(
             is HttpResult.NoContent -> HttpResult.Failed(HttpFailure.Protocol("Artwork endpoint returned no content"))
             else -> result
         }
+    }
+
+    private suspend inline fun <reified T : Any> refreshJsonGet(
+        path: String,
+        dependency: ResourceDependency,
+    ): ApiResult<T> {
+        resources?.invalidateResource(ResourceCacheKey.get<T>(path))
+        return jsonGet(path, dependency)
     }
 
     private suspend inline fun <reified T : Any> jsonGet(

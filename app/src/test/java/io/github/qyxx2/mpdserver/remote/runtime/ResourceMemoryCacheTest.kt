@@ -64,6 +64,36 @@ class ResourceMemoryCacheTest {
         }
     }
 
+    @Test fun explicitInvalidationForcesFreshReadWithinTheSameServerIdentity() = runBlocking {
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val cache = cache(owner)
+        val key = ResourceCacheKey.get<String>("/api/playlists")
+        val calls = AtomicInteger()
+        try {
+            cache.updateIdentity(session(), watermarks(), isFresh = true)
+            val first = cache.readResource(key, ResourceDependency.PLAYLIST) {
+                calls.incrementAndGet()
+                ApiResult.Success("before-mutation", 200)
+            } as ApiResult.Success
+            assertEquals("before-mutation", first.value)
+            assertEquals(ResourceEntryState.Ready("before-mutation"), cache.observeResource<String>(key).value)
+
+            cache.invalidateResource(key)
+            assertEquals(ResourceEntryState.Empty, cache.observeResource<String>(key).value)
+
+            val refreshed = cache.readResource(key, ResourceDependency.PLAYLIST) {
+                calls.incrementAndGet()
+                ApiResult.Success("after-mutation", 200)
+            } as ApiResult.Success
+            assertEquals("after-mutation", refreshed.value)
+            assertEquals(2, calls.get())
+            assertEquals(ResourceEntryState.Ready("after-mutation"), cache.observeResource<String>(key).value)
+        } finally {
+            cache.close()
+            owner.cancel()
+        }
+    }
+
     @Test fun historyFingerprintIgnoresObjectKeyOrderButPreservesArrayOrder() {
         val first = Json.parseToJsonElement("""{"played":[{"song_id":"a","at":1},{"song_id":"b","at":2}],"count":2}""")
         val reorderedKeys = Json.parseToJsonElement("""{"count":2,"played":[{"at":1,"song_id":"a"},{"at":2,"song_id":"b"}]}""")
