@@ -93,3 +93,13 @@ SHA-256：0f35fdb523a927ec819c4428b64fcfb7619c59c950b3031c04859c8aa6034222
 - DataStore 偏好文件 files/datastore/ui_preferences.preferences_pb 的 SHA-256 覆盖安装前后均为 9231e0497905a55fd74e239ce742734b6e470a6c0f05cf65a5b578d40805bf7b，现有服务器地址/外观设置没有被重置。
 - 签名证书 SHA-256 仍为 36c589d3e947dee7f36204d1d19f4e96275159a6a7ff9cd058e5cdd448a2c89f；packageId=io.github.qyxx2.mpdserver.remote、targetSdk=36、versionName=0.1.0 保持不变。
 - 通过 launcher intent 启动后进程 io.github.qyxx2.mpdserver.remote 正常存活；crash buffer 没有该包的 FATAL EXCEPTION。
+
+## 7. 后续用户确认的平台范围调整（2026-11-01）
+
+本报告第 4 节记录的是 Batch 0 当时的原始设备覆盖事实，并不表示 API 26/36 后来已经实测。Batch 1 开始前，用户明确接受 Task 7 系统媒体功能以 Android 13（API 33）及以上为保证范围。因此：
+
+- API 26–32 runtime 未覆盖的事实不变，但不再阻塞 Task 7 Batch 1 或后续媒体功能验收；应用整体 minSdk=26 保持不变。
+- API 34+ 的通知权限、后台执行与服务限制，在后续批次实际引入对应平台能力时验证。
+- API 33 真机探针作为当前最低平台验收证据，不将其描述成 API 26–36 全版本通过。
+
+该用户确认已反映在 Task 7 合同矩阵第 9 节和实施计划的 Batch 0/1 阶段门中。

@@ -12,7 +12,7 @@
 
 - 不需要新增人工产品决策。动作集合、元数据范围、唯一状态来源、stale/Stop、权限受限降级和进程重建语义均已由上位合同确定。
 - **开始实现的前置门：** 用户于 2026-11-01 明确确认 Task 0–6 已完成并通过实机验收，主计划中未勾选的复选框只是记录未同步，不构成阻塞。本次按该确认直接开始 Batch 0；后续文档以本次授权事实为准，不再因旧 checkbox 暂停实现。
-- Batch 0 必须先冻结平台技术细节：选择可覆盖 minSdk 26 / targetSdk 36 的 MediaSession 与 MediaStyle 实现；证明 notification channel、POST_NOTIFICATIONS、后台 Service/foreground service type、权限与进程恢复策略。选择基于实际 SDK 和真机日志，不凭经验预设。不引入 Media3/ExoPlayer 播放器。
+- Batch 0 采用平台原生 MediaSession + Notification.MediaStyle；API 33 真机探针已证明原生 Session/MediaStyle token 路径可行。用户于 2026-11-01 明确接受 Task 7 系统媒体功能的保证范围为 Android 13（API 33）及以上，故 API 26–32 runtime 覆盖不再阻塞 B1；应用 minSdk=26 不变。B1 不新增通知、Service、FGS 权限或依赖；通知权限与 Android 14+ 后台限制只在后续批次实际接入对应能力时验证。不得引入 Media3/ExoPlayer 播放器。
 - 当前实机：SM-G986N / Android 13 / API 33；本地 SDK 含 android-36。API 36 相关前台服务与权限约束需在 API 36 环境单独覆盖。真机锁屏验收仍以 SM-G986N 实测为准。
 
 ## 跨 Batch 设计约束
@@ -62,9 +62,9 @@
 - [ ] AppRuntime 单一 Session owner 的实际创建/释放在 B1 实现；后台 Service 的创建/停止/sticky/recreate 与 force-stop 恢复属于 B3 生命周期实现，须在对应批次/API 级回归中验证。
 - [x] 更新本计划与合同矩阵的平台决策记录：原生 MediaSession/MediaStyle、无新增依赖/权限/Service 声明；API 26/36 runtime 覆盖缺口单独列出。未改变产品范围。
 
-**Batch 0 退出条件：** shared gateway 单测通过；已有 PlayerActions 行为无回归；API 26/33/36 平台集成方案有证据；service type/permission 不再靠猜测；没有新增 Runtime、WebSocket 或 MutationCoordinator。
+**Batch 0 退出条件：** shared gateway 单测通过；已有 PlayerActions 行为无回归；API 33 原生 MediaSession/MediaStyle 路径有真机证据；系统媒体功能的最低保证版本为 Android 13。API 26–32 不纳入 Task 7 媒体功能验收，应用 minSdk 仍保持 26；API 34+ 的通知/后台服务限制在后续实际接入对应能力时验证。没有新增 Runtime、WebSocket 或 MutationCoordinator。
 
-**B0 实际结果（2026-11-01）：** Runtime Gateway、UI 命令收敛、共享 control identity、origin transition 原子锁和对应回归测试已实现并通过 focused/full-unit/build/Lint 验证（80 suites / 445 tests）；API 33 原生 Session/MediaStyle 已在真机验证。当前设备环境没有 API 26 或 API 36 runtime，API 36 FGS 限制与 API 26 最低行为尚未实测，因此 Batch 0 的跨版本平台退出门仍保持开放，不据此启动 Batch 1。详细 evidence 见 [Batch 0 verification report](../reports/2026-11-01-task-7-batch0-verification.md)。
+**B0 实际结果（2026-11-01）：** Runtime Gateway、UI 命令收敛、共享 control identity、origin transition 原子锁和对应回归测试已实现并通过 focused/full-unit/build/Lint 验证（80 suites / 445 tests）；API 33 原生 Session/MediaStyle 已在真机验证。用户接受 Android 13+ 作为 Task 7 媒体功能范围后，API 26–32 runtime 缺失不再阻塞 B1；API 34+ 通知/后台限制按后续批次实际引入的能力验证。没有声称未测版本已通过。详细 evidence 见 [Batch 0 verification report](../reports/2026-11-01-task-7-batch0-verification.md)。
 
 **提交建议：** `refactor(playback): share player commands with system controls`
 
@@ -81,23 +81,23 @@
 
 ### Task 7.1.1 — Prove projection rules first
 
-- [ ] 写 RED 测试覆盖 fresh PLAYING、fresh PAUSED、actual STOPPED、missing current、ambiguous current、observation stale、actual stale、sync unconfirmed、bound mismatch、target missing、origin/generation change。
-- [ ] 写 metadata fixture：title/artist/album 完整、部分缺失、空串、非法 DTO、重复歌曲不同 occurrence。
-- [ ] 写 actions fixture：只有 current、current 前后均有项、仅 previous、仅 next、pause disabled/resume disabled、player action pending。
-- [ ] 写 stale transition：已发布 session → 同 origin stale/disconnect 保留最后确认 metadata、actions 清零；新 session 首次 stale 不发布。
-- [ ] 写 Stop 对照：no current / explicit_stop_generation 前进撤销；仅 `playback.state=STOPPED` 或仅 Queue pending clear 不误撤销。
+- [x] 写 RED 测试覆盖 fresh PLAYING、fresh PAUSED、actual STOPPED、missing current、ambiguous current、observation stale、actual stale、sync unconfirmed、bound mismatch、target missing、origin/generation change。
+- [x] 写 metadata fixture：title/artist/album 完整、部分缺失、空串、非法 DTO、重复歌曲不同 occurrence。
+- [x] 写 actions fixture：只有 current、current 前后均有项、仅 previous、仅 next、pause disabled/resume disabled、player action pending。
+- [x] 写 stale transition：已发布 session → 同 origin stale/disconnect 保留最后确认 metadata、actions 清零；新 session 首次 stale 不发布。
+- [x] 写 Stop 对照：no current / explicit_stop_generation 前进撤销；仅 `playback.state=STOPPED` 或仅 Queue pending clear 不误撤销。
 
 ### Task 7.1.2 — Implement app-scoped MediaSession projection
 
-- [ ] 实现 `MediaSessionProjection`，只消费共享 `PlayerPresentation`/canonical snapshot，不引入业务规则副本。
-- [ ] 实现 `RemoteMediaSessionController`，保证创建/激活/更新/释放均幂等；Activity 重建和重复 snapshot 不产生第二个 Session。
-- [ ] 会话 metadata 至少包括 title、artist、album（若存在）、duration（若有效）；current song 不可用时不伪造身份。
-- [ ] PLAYING/PAUSED state 仅映射真实已确认 actual state；stale 保留最后确认 metadata 且动作清零，不制造新的确认状态。
-- [ ] available actions 仅发布 Previous、Play/Pause、Next，并逐项匹配 `PlayerPresentation.controls`。
-- [ ] 对 `server origin` 变化、无 current、explicit Stop generation 变化撤销会话。
-- [ ] 在 Application 中确保单一 owner，提供受控的 `close()`/release，不让 Activity 负责关闭进程级会话。
+- [x] 实现 `MediaSessionProjection`，只消费共享 `PlayerPresentation`/canonical snapshot，不引入业务规则副本。
+- [x] 实现 `RemoteMediaSessionController`，保证创建/激活/更新/释放均幂等；Activity 重建和重复 snapshot 不产生第二个 Session。
+- [x] 会话 metadata 至少包括 title、artist、album（若存在）、duration（若有效）；current song 不可用时不伪造身份。
+- [x] PLAYING/PAUSED state 仅映射真实已确认 actual state；stale 保留最后确认 metadata 且动作清零，不制造新的确认状态。
+- [x] available actions 仅发布 Previous、Play/Pause、Next，并逐项匹配 `PlayerPresentation.controls`。
+- [x] 对 `server origin` 变化、无 current、explicit Stop generation 变化撤销会话。
+- [x] 在 Application 中确保单一 owner，提供受控的 `close()`/release，不让 Activity 负责关闭进程级会话。
 
-**Batch 1 退出条件：** projection 单测通过；active session 数量稳定为 0 或 1；state/actions 与 App Player 一致；stale/Stop/origin 语义正确；尚未接入后台 Service 时不声称锁屏验收完成。
+**Batch 1 退出条件：** projection 单测通过；active session 数量稳定为 0 或 1；state/actions 与 App Player 一致；stale/Stop/origin 语义正确；Application 持有唯一 owner；API 33 真机 session 发布通过；尚未接入后台 Service/MediaStyle 通知/回调时不声称锁屏控制端到端验收完成。
 
 **提交建议：** `feat(media): publish authoritative playback session`
 

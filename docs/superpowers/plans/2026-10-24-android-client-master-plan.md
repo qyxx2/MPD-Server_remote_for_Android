@@ -202,13 +202,13 @@
 
 ### Task 7：Android 系统媒体会话、通知与锁屏控制
 
-- [x] 完成额外人工产品冻结评估：现有权威规格已固定媒体会话产品行为，无需新增用户决策；平台权限、Service 类型和 Session API 在 Batch 0 以 targetSdk 实测冻结。
+- [x] 完成额外人工产品冻结评估：现有权威规格已固定媒体会话产品行为，无需新增用户决策；用户接受 Android 13+ 作为 Task 7 系统媒体功能范围，API 33 原生 Session/MediaStyle 探针通过。B0 不声明 FGS/Service；如 B3 确需 Service，再按实际 Service 能力核验 targetSdk/权限。
 - [x] 完成 [Task 7 合同矩阵](../specs/2026-11-01-task-7-contract-matrix.md) 与 [B0–B4 分批实施计划](2026-11-01-task-7-system-media-session.md)。
 - [ ] 完成本 Task 实施、机器验证、真实设备人工验收与退出门，并记录证据。
 
 **目标：** 使用 Android 系统媒体控件远程控制服务端播放，使锁屏/通知栏的播放状态与 App 共享状态一致。
 
-**当前状态：Task 7 合同/计划已建立；Batch 0 Runtime command gateway、origin transition 原子锁已实施并通过 445 项单测及完整构建/Lint 验证；API 33 原生 MediaSession/MediaStyle 已完成真机平台探针。** 用户确认 Task 3–6 已实机验收，checkbox 未同步不作为阻塞。本轮 API 26/36 runtime 缺失，跨版本平台验收仍有明确未覆盖项；未开始 Batch 1。
+**当前状态（2026-11-01）：Batch 0 与 Batch 1 已完成，并分别保留验证记录。** B0 实现 Runtime player command gateway 和 origin transition 原子锁；B1 实现 canonical MediaSession projection、Application 级唯一原生 Session owner。最终回归为 81 suites / 466 tests，0 failures/errors；Lint 16 warnings / 4 hints / 0 errors。SM-G986N / Android 13 真机覆盖安装后，SystemUI 已注册 App 的 active MediaSession，当前服务端曲目 metadata 与 PAUSED 状态已成功投影；签名、firstInstallTime 与 DataStore 偏好保持。用户接受 Android 13+ 作为 Task 7 系统媒体功能范围，API 26–32 不纳入媒体功能保证，应用 minSdk=26 保持不变；API 34+ 通知/后台限制在实际接入相应能力时验证。**Batch 2–4 尚未开始；Task 7 整体仍未完成。**
 
 **额外人工冻结判断：** 不需要新增产品选择。媒体元数据、三类系统动作、服务端状态唯一权威、stale/unknown、Stop/no-current 撤销、权限受限降级和进程恢复已由现行权威规格定义。剩余 Android API / 通知权限 / Service type 是平台实现验证，不要求用户先选择技术实现。
 

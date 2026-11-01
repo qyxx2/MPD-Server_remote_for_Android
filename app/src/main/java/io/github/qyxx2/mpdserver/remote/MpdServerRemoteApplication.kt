@@ -1,6 +1,7 @@
 package io.github.qyxx2.mpdserver.remote
 
 import android.app.Application
+import io.github.qyxx2.mpdserver.remote.media.RemoteMediaSessionController
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
@@ -21,6 +22,13 @@ class MpdServerRemoteApplication : Application() {
     lateinit var uiPreferences: UiPreferencesRepository
         private set
 
+    /** One process-level native media session adapter; it shares the existing Runtime owner. */
+    lateinit var mediaSessionController: RemoteMediaSessionController
+        private set
+
+    private val mediaSessionScope: CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     /** Keeps local preference writes alive when the Settings destination leaves composition. */
     val uiPreferencesWriteScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -30,6 +38,7 @@ class MpdServerRemoteApplication : Application() {
         super.onCreate()
         uiPreferences = UiPreferencesRepository(uiPreferencesDataStore)
         runtime = AppRuntime.create(ServerOrigin.parse(DEFAULT_ORIGIN))
+        mediaSessionController = RemoteMediaSessionController(this, runtime, mediaSessionScope)
 
         // Restore the configured local origin without probing the server or creating another owner.
         uiPreferencesWriteScope.launch {

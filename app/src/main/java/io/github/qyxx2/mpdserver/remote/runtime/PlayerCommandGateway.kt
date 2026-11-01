@@ -8,6 +8,27 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import java.util.UUID
 
+data class PlayerCommandAvailability(
+    val snapshot: SnapshotStoreState,
+    val pause: Boolean = false,
+    val resume: Boolean = false,
+    val previous: Boolean = false,
+    val next: Boolean = false,
+    val seek: Boolean = false,
+) {
+    fun allows(action: PlayerAction): Boolean = when (action) {
+        PlayerAction.PAUSE -> pause
+        PlayerAction.RESUME -> resume
+        PlayerAction.PREVIOUS -> previous
+        PlayerAction.NEXT -> next
+        PlayerAction.SEEK -> seek
+    }
+
+    companion object {
+        fun unavailable(snapshot: SnapshotStoreState) = PlayerCommandAvailability(snapshot)
+    }
+}
+
 data class PlayerCommandSubmission(
     val intent: MutationIntent,
     val outcome: MutationOutcome,
@@ -33,11 +54,25 @@ class PlayerCommandGateway(
     private var activeIntentId: String? = null
     private var activeControlIdentity: PlayerControlIdentity? = null
 
-    fun isEnabled(action: PlayerAction): Boolean = synchronized(commandLock) {
+    /** One atomic snapshot of all player capabilities, including the shared mutation lock. */
+    fun availability(): PlayerCommandAvailability = synchronized(commandLock) {
         val snapshot = stateProvider()
         retireObsoleteIntent(snapshot)
-        canDispatch(action, snapshot)
+        if (!commandEligibilityProvider() || !snapshot.controlsEligible || isLocked(snapshot)) {
+            return@synchronized PlayerCommandAvailability.unavailable(snapshot)
+        }
+        val controls = PlayerPresentation.from(snapshot).controls
+        PlayerCommandAvailability(
+            snapshot = snapshot,
+            pause = controls.pause,
+            resume = controls.resume,
+            previous = controls.previous,
+            next = controls.next,
+            seek = controls.seek,
+        )
     }
+
+    fun isEnabled(action: PlayerAction): Boolean = availability().allows(action)
 
     /** Re-checks canonical state and serializes intent creation/submission across all callers. */
     fun dispatch(action: PlayerAction, seconds: Double? = null): PlayerCommandSubmission? =

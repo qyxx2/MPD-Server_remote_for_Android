@@ -57,6 +57,27 @@ class PlayerCommandGatewayTest {
     }
 
     @Test
+    fun availabilityProjectsAllCapabilitiesAtomicallyAndAppliesSharedMutationLock() {
+        val queue = """{"revision":19,"items":[{"queue_item_id":"played-1","song_id":"song-0","position":-1,"source":"MANUAL"},{"queue_item_id":"occurrence-1","song_id":"song-1","position":0,"source":"MANUAL"},{"queue_item_id":"next-1","song_id":"song-2","position":1,"source":"MANUAL"}]}"""
+        val harness = Harness(PlayerTestFixtures.state(queue = queue))
+        val available = harness.gateway.availability()
+        assertTrue(available.snapshot.controlsEligible)
+        assertTrue(available.pause)
+        assertFalse(available.resume)
+        assertTrue(available.previous)
+        assertTrue(available.next)
+        assertTrue(available.seek)
+
+        harness.gateway.dispatch(PlayerAction.PAUSE)
+        val locked = harness.gateway.availability()
+        assertFalse(locked.pause)
+        assertFalse(locked.resume)
+        assertFalse(locked.previous)
+        assertFalse(locked.next)
+        assertFalse(locked.seek)
+    }
+
+    @Test
     fun dispatchMapsPausePreviousAndNextToTheExistingApiCommands() {
         val queue = """{"revision":19,"items":[{"queue_item_id":"played-1","song_id":"song-0","position":-1,"source":"MANUAL"},{"queue_item_id":"occurrence-1","song_id":"song-1","position":0,"source":"MANUAL"},{"queue_item_id":"next-1","song_id":"song-2","position":1,"source":"MANUAL"}]}"""
         val harness = Harness(PlayerTestFixtures.state(queue = queue))

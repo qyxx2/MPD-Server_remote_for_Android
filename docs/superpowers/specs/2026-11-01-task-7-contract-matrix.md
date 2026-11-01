@@ -1,6 +1,6 @@
 # Task 7：Android 系统媒体会话、通知与锁屏控制 — 合同矩阵
 
-> 状态：合同分析与冻结完成；Batch 0 Runtime command gateway 已实施并完成 API 33 平台探针；API 26/36 runtime 平台覆盖仍未关闭，暂不进入 Batch 1。
+> 状态：Batch 0 与 Batch 1 已实施并完成当前批次验证；Batch 2–4 尚未实施。系统媒体功能验收范围按用户确认设为 Android 13（API 33）及以上；API 26–32 不属于 Task 7 媒体功能保证范围，API 34+ 专项限制在后续接入相应能力时验证。
 > Android 基线：`task7` 分支，起点 `main` / `1b01447`。本矩阵不改变 MPD-Server 上游基线。
 
 ## 1. 合同冻结判断
@@ -29,7 +29,7 @@
 | 写操作入口 | Runtime `PlayerAction`、`PlayerControlIdentity`、`PlayerCommandGateway` 已由 AppRuntime 单例持有；PlayerActions 保留 typealias 并委托同一入口。Gateway 与 AppRuntime.changeOrigin 共用 monitor，切换窗口拒绝命令 | B1/B3 系统 callback 继续复用同一 gateway；不得由 Service 重写 URL、payload 或 target 规则 |
 | 封面资源 | `RuntimeReadApi.getArtwork()` 和 `ResourceMemoryCache` 已提供有身份约束的原图 bytes | 后台媒体元数据复用同一资源入口；不可依赖 Compose 页面存活或另发无身份约束请求 |
 | 现有缺口 | 当前无 MediaSession、MediaStyle 通知或媒体 Service；`PlayerActions` 实例由 `AppNavHost` 的 Composition `remember` 持有 | 新适配层必须具备应用进程级生命周期，不得把 Activity/Composable 当后台 owner |
-| 实机基线 | 已连接 SM-G986N，Android 13 / API 33；本地 SDK 已有 android-36 平台 | API 33 真机负责锁屏验收；targetSdk 36 相关限制还需 API 36 环境覆盖 |
+| 实机基线 | 已连接 SM-G986N，Android 13 / API 33；原生 MediaSession/MediaStyle 探针已通过 | Task 7 系统媒体功能验收基线为 Android 13+；API 26–32 不作保证。后续若引入后台服务/通知专项能力，再验证对应 Android 14+ 平台限制。 |
 
 ## 3. 合同矩阵
 
@@ -133,7 +133,7 @@ MediaSession 只发布当前真实可用的 action flags。stale、unknown、未
 | Foreground Service | B0 不新增 Service、FGS permission 或 service type。当前 App 是 NAS 远端遥控器，不执行本地解码/音频输出；API 33 证明 Session/MediaStyle 可在无 FGS 下创建和发布。 | 进程回收/长期后台恢复由 B3 决策；API 36 FGS 规则未有 runtime 证据，不声明不匹配的 `mediaPlayback` 或未经证明的 `connectedDevice`。 |
 | SDK 环境 | App `minSdk=26`、`targetSdk=36`；API 36 android.jar 静态确认 MediaSession、Notification.MediaStyle 与 FGS constants。 | 设备仅有 SM-G986N / API 33；无 API 26 或 API 36 AVD/runtime。 |
 
-B0 已实现 Runtime command gateway；API 26/36 runtime matrix 是明确的未覆盖项。不得将 API 33 的单机结果描述为 API 26–36 全平台通过。详见 [Batch 0 verification report](../reports/2026-11-01-task-7-batch0-verification.md)。
+B0 已实现 Runtime command gateway；API 26/36 runtime matrix 是明确的未覆盖项。按用户接受的 Android 13+ 范围，API 26–32 不属 Task 7 媒体功能验收目标，API 34+ 专项后台限制留到对应后续批次验证。不得将 API 33 的单机结果描述为 API 26–36 全平台通过。详见 [Batch 0 verification report](../reports/2026-11-01-task-7-batch0-verification.md)。
 
 
 ### 8.1 Batch 0 Runtime implementation status
@@ -144,5 +144,19 @@ B0 已实现 Runtime command gateway；API 26/36 runtime matrix 是明确的未�
 - AppRuntime origin transition 与 Gateway 使用同一个 monitor 原子化；origin 更新期间拒绝 dispatch / UNKNOWN retry。
 - Gateway tests cover pause/resume/previous/next/seek eligibility、opaque Resume target、stale/UNKNOWN、PENDING/SYNCING、same intent retry、identity/generation changes、queue boundaries、two callers shared lock、origin-transition critical section and concurrency.
 - 最终机器验证：80 suites / 445 tests / 0 failures / 0 errors / 0 skipped；Lint 16 warnings / 4 hints / 0 errors；Debug + instrumentation APK assembled.
-- API 33 SM-G986N 真机原生 MediaSession/MediaStyle probe passed；API 26/36 runtime 缺失仍未满足跨版本平台退出条件。
+- API 33 SM-G986N 真机原生 MediaSession/MediaStyle probe passed；API 26/36 runtime 未执行的事实保留记录。按用户接受的 Android 13+ 系统媒体验收范围，API 26–32 不作为 Task 7 媒体功能退出门；API 34+ 通知/后台限制留到相应后续批次验证。
 - 最终 Debug APK 已 `adb install -r` 覆盖安装，DataStore preference SHA-256 与 firstInstallTime 保持不变。
+
+
+## 9. 用户确认的平台验收范围（2026-11-01）
+
+用户明确接受 Task 7 系统媒体功能以 Android 13（API 33）及以上为可用范围，API 33 真机作为最低验收基线。由此调整阶段门：
+
+- Batch 0 的 API 26 runtime 覆盖不再阻塞 Batch 1；Android 12 及以下不纳入 Task 7 系统媒体功能保证范围。
+- Batch 1 使用的原生 MediaSession/PlaybackState API 已在 API 33 真机探针验证；该批不增加通知、Service、FGS permission 或新的平台依赖。
+- API 34+ 没有在本设备逐版本实测。涉及通知权限和后台执行限制的能力，只在对应后续 Batch 实施时按当时真实使用的 API/Service 类型验证；不得把 API 33 结果描述成所有厂商界面和后台策略完全一致。
+- 应用现有 minSdk=26 保持不变；本次只调整 Task 7 系统媒体功能的验收承诺，不缩小其他应用功能的安装兼容范围。
+- API 33 已验证的通知权限 denied 探针结果保留；granted/channel-disabled 组合属于 Batch 2，不影响本批 MediaSession projection。
+
+
+Batch 1 验证记录见 [Task 7 Batch 1 verification report](../reports/2026-11-01-task-7-batch1-verification.md)。
