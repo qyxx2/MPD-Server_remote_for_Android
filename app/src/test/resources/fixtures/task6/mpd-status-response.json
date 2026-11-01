@@ -1,0 +1,23 @@
+{
+  "version": "0.23.5",
+  "version_source": "mpd --version",
+  "stats": {
+    "artists": 18,
+    "albums": 42,
+    "songs": 407,
+    "uptime": 183845.9,
+    "db_playtime": 987654.75,
+    "db_update": 1793520000,
+    "playtime": 54321.5
+  },
+  "database_update_status": {
+    "updating": true,
+    "job_id": null
+  },
+  "connected": true,
+  "errors": {
+    "database": "permission denied",
+    "mpd": {"code": "READ_TIMEOUT", "retryable": true}
+  },
+  "observed_at": "2026-11-01T06:30:00Z"
+}

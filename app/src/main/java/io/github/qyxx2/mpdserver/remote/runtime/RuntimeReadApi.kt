@@ -13,6 +13,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.dto.CollectionDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.FavoriteMembersDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.GenreListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.HistoryListDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.MpdStatusDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
@@ -76,6 +77,24 @@ class RuntimeReadApi(
     suspend fun getPlayed(): ApiResult<QueueListDto> {
         val loader: suspend () -> ApiResult<QueueListDto> = {
             rawJsonGet(LibraryApiPaths.played())
+        }
+        return resources?.readUncached(loader) ?: loader()
+    }
+
+    /**
+     * Reads the live MPD status from the currently configured MS origin.
+     * This endpoint is intentionally uncached because its values are not tied to Library revisions.
+     * The request is bounded by the same global read semaphore as other uncached Runtime GETs.
+     */
+    suspend fun getMpdStatus(): ApiResult<MpdStatusDto> {
+        val requestOrigin = originProvider()
+        val loader: suspend () -> ApiResult<MpdStatusDto> = {
+            val result = rawJsonGet<MpdStatusDto>("/api/system/mpd", requestOrigin)
+            if (result is ApiResult.Success && originProvider().address != requestOrigin.address) {
+                ApiResult.ProtocolError("MPD status response discarded because the server origin changed during the request")
+            } else {
+                result
+            }
         }
         return resources?.readUncached(loader) ?: loader()
     }
@@ -172,8 +191,11 @@ class RuntimeReadApi(
         } else result
     }
 
-    private suspend inline fun <reified T : Any> rawJsonGet(path: String): ApiResult<T> = withContext(dispatcher) {
-        val transport = HttpTransport(originProvider(), client)
+    private suspend inline fun <reified T : Any> rawJsonGet(
+        path: String,
+        requestOrigin: ServerOrigin = originProvider(),
+    ): ApiResult<T> = withContext(dispatcher) {
+        val transport = HttpTransport(requestOrigin, client)
         execute(transport, transport.buildRequest("GET", path)).decodeJson<T>()
     }
 

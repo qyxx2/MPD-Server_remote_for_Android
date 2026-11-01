@@ -1380,6 +1380,7 @@ private fun AppNavigationGraph(
                     SettingsSection.SERVER -> ServerSettingsScreen(
                         preferencesRepository = uiPreferences,
                         onApplyServerOrigin = applyServerOrigin,
+                        readMpdStatus = { runtime.reads.getMpdStatus() },
                     )
                     SettingsSection.APPEARANCE -> AppearanceSettingsScreen(
                         preferencesRepository = uiPreferences,
