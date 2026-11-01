@@ -46,6 +46,7 @@ internal fun HomeSection(
     onRefresh: () -> Unit,
     homeCollectionActions: HomeCollectionActions? = null,
     songActions: SongActions? = null,
+    onOpenAlbum: ((String) -> Unit)? = null,
     interactionEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -159,6 +160,7 @@ internal fun HomeSection(
                             coverSize = coverSize,
                             artworkIdentity = artworkIdentity,
                             songActions = songActions.takeIf { interactionEnabled },
+                            onOpenAlbum = onOpenAlbum.takeIf { interactionEnabled },
                             homeCollectionActions = homeCollectionActions.takeIf { interactionEnabled },
                             autoplayIdentity = autoplayData?.identity,
                             resourceFresh = isReady,

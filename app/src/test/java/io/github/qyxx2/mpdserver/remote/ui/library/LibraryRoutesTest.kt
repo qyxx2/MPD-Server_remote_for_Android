@@ -60,6 +60,16 @@ class LibraryRoutesTest {
     }
 
     @Test
+    fun albumEntryPointsShareOneCanonicalRouteAndPreserveOpaqueServerIds() {
+        val albumId = "artist album & #1"
+        val expected = "library/albums/artist%20album%20&%20%231"
+
+        assertEquals(expected, LibraryRoutes.album(albumId))
+        assertEquals(expected, LibraryRoutes.detail(LibraryCategory.ALBUMS, albumId))
+        assertEquals(albumId, LibraryRoutes.decodePathSegment(expected.substringAfterLast('/')))
+    }
+
+    @Test
     fun unsafeOrBlankIdsAreRejectedBeforeBuildingNavigationRoutes() {
         listOf("", " ", ".", "..", "../other", "a/b", "a\\b").forEach { id ->
             assertThrows(IllegalArgumentException::class.java) {

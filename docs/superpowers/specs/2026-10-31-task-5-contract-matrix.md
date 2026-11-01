@@ -57,6 +57,7 @@
 | T5-35 | No backend/local authority drift | architecture boundary | 无新 API、业务 DB、客户端 AutoPlay/history/queue 算法 | diff/dependency audit、网络请求清单、持久化清单 | B7 |
 | T5-36 | Home collection controls | Task 3 §9.1 + existing collections API | 最近更新 Play All/Shuffle uses LIBRARY modified_at desc; History uses SONGS plus complete unique history IDs | payload source/sort/order/randomize; not only visible items; stale/unknown disabled | B5 |
 | T5-37 | Home AutoPlay occurrence preservation | Snapshot queue.items + queue-item play API | one card per AUTOPLAY occurrence; no album or song dedup; play by queue_item_id | same album/repeated song occurrences remain independently visible and actionable | B2/B3 |
+| T5-38 | Home album-card navigation and shared album detail | Server `album_id` + `library/albums/{album_id}` | Every Home card with a server album ID, including one-track/SINGLE_SONG cards and AutoPlay occurrences, opens the Album route used by Search, Library and Player | opaque ID preserved; no display-name-derived ID; all entry points share Web-equivalent Album hero/actions/song rows; AutoPlay occurrence Play remains independent | B5 correction |
 
 ## 3. DTO / API 缺口矩阵
 

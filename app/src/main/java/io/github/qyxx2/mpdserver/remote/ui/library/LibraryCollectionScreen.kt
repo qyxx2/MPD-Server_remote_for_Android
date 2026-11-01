@@ -28,6 +28,19 @@ fun LibraryCollectionScreen(
     songActions: SongActions? = null,
     collectionActions: LibraryCollectionActions? = null,
 ) {
+    if (category == LibraryCategory.ALBUMS) {
+        LibraryAlbumDetailScreen(
+            runtime = runtime,
+            sourceId = sourceId,
+            onBack = onBack,
+            modifier = modifier,
+            artworkIdentity = artworkIdentity,
+            songActions = songActions,
+            collectionActions = collectionActions,
+        )
+        return
+    }
+
     if (category == LibraryCategory.PLAYLISTS) {
         PlaylistScreen(runtime, onOpenDetail = {}, onBack = onBack, playlistId = sourceId, modifier = modifier,
             songActions = songActions, collectionActions = collectionActions)

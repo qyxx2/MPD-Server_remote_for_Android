@@ -36,6 +36,9 @@ object LibraryRoutes {
 
     fun category(category: LibraryCategory): String = "$ROOT/${category.pathSegment}"
 
+    /** Canonical destination shared by Home, Search, Library and Player album entry points. */
+    fun album(albumId: String): String = detail(LibraryCategory.ALBUMS, albumId)
+
     fun category(kind: String): String {
         val category = LibraryCategory.fromPathSegment(kind)
             ?: throw IllegalArgumentException("Unsupported Library category")

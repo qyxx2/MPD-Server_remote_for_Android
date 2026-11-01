@@ -85,6 +85,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerAction
 import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
+import io.github.qyxx2.mpdserver.remote.ui.player.albumRouteOrNull
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeDataController
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.home.HomeScreen
@@ -623,6 +624,15 @@ fun AppNavHost(
         }
     }
 
+    fun navigatePlayerEntity(request: PlayerEntityNavigationRequest) {
+        val albumRoute = request.albumRouteOrNull()
+        if (albumRoute != null) {
+            navController.navigate(albumRoute) { launchSingleTop = true }
+        } else {
+            onPlayerEntityNavigationRequest(request)
+        }
+    }
+
     BackHandler(enabled = currentRoute?.startsWith("${AppDestination.LIBRARY.route}/") == true) {
         navController.popBackStack()
     }
@@ -768,7 +778,7 @@ fun AppNavHost(
                                         navigationScope.launch { fullScreenPagerState.animateScrollToPage(0) }
                                     },
                                     onArtistClick = ::requestArtistNavigation,
-                                    onEntityNavigationRequest = onPlayerEntityNavigationRequest,
+                                    onEntityNavigationRequest = ::navigatePlayerEntity,
                                     onDismissDragDelta = ::updatePlayerDismissDrag,
                                     onDismissGestureEnd = ::finishPlayerDismissGesture,
                                     onDismissGestureCancel = ::animatePlayerDragBack,
@@ -897,7 +907,7 @@ fun AppNavHost(
                         preferenceWriteScope = preferenceWriteScope,
                         windowGeometry = windowGeometry,
                         applyServerOrigin = applyServerOrigin,
-                        onPlayerEntityNavigationRequest = onPlayerEntityNavigationRequest,
+                        onPlayerEntityNavigationRequest = ::navigatePlayerEntity,
                         onArtistClick = ::requestArtistNavigation,
                         onExitFullScreen = ::exitFullScreenToRoot,
                         onOpenFullScreenPlayer = ::openFullScreenPlayer,
@@ -1179,6 +1189,9 @@ private fun AppNavigationGraph(
                 onRefreshAutoplay = onRefreshAutoplay,
                 homeCollectionActions = homeCollectionActions,
                 songActions = songActions,
+                onOpenAlbum = { albumId ->
+                    navController.navigate(LibraryRoutes.album(albumId)) { launchSingleTop = true }
+                },
                 interactionEnabled = true,
             )
         }

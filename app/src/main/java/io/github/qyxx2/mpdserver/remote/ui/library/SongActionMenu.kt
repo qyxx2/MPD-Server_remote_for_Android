@@ -125,6 +125,7 @@ fun CollectionPlaybackControls(
     modifier: Modifier = Modifier,
     tag: String = "collection-playback-controls",
     activities: kotlinx.coroutines.flow.StateFlow<List<io.github.qyxx2.mpdserver.remote.runtime.OperationActivity>>? = null,
+    playAllLabel: String = "全部播放",
 ) {
     val activityState = activities?.collectAsStateWithLifecycle(initialValue = emptyList())
     val activityLock = activityState?.value?.hasUnresolvedPlaybackMutation()
@@ -151,7 +152,7 @@ fun CollectionPlaybackControls(
                 tint = MaterialTheme.colorScheme.primary,
             )
             Spacer(Modifier.width(5.dp))
-            Text("全部播放")
+            Text(playAllLabel)
         }
         androidx.compose.material3.TextButton(
             onClick = onShuffle,

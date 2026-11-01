@@ -25,6 +25,7 @@ import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.library.PlaybackMutationGateway
 import io.github.qyxx2.mpdserver.remote.ui.library.SongActions
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -109,13 +110,13 @@ class HomeScreenUiTest {
 
     @Test
     fun tappingAnywhereOnAHomeSingleSongCardOpensTheSongActionMenu() {
-        val song = song(1).copy(availabilityStatus = AvailabilityStatus.AVAILABLE)
+        val song = song(1).copy(albumId = null, album = null, availabilityStatus = AvailabilityStatus.AVAILABLE)
         val card = HomeArtworkCard(
             key = "song:${song.songId}",
             kind = HomeCardKind.SINGLE_SONG,
             song = song,
             songId = song.songId,
-            albumId = song.albumId,
+            albumId = null,
             artworkSongId = song.songId,
             artwork = null,
             isPlayable = true,
@@ -139,6 +140,77 @@ class HomeScreenUiTest {
         }
         composeRule.onNodeWithTag("song-action-menu-${"home:${card.key}".hashCode()}").assertIsDisplayed()
         composeRule.onAllNodesWithText("⋮").assertCountEquals(0)
+    }
+
+    @Test
+    fun everyAlbumLinkedHomeCardOpensItsServerAlbumEvenWhenProjectedAsSingleSong() {
+        val singleTrackSong = song(40)
+        val historySong = song(41)
+        val autoplaySong = song(42)
+        val cards = listOf(
+            HomeArtworkCard(
+                key = "one-track-album",
+                kind = HomeCardKind.SINGLE_SONG,
+                song = singleTrackSong,
+                songId = singleTrackSong.songId,
+                albumId = "album-one-track-server-id",
+                artworkSongId = singleTrackSong.songId,
+                artwork = null,
+                isPlayable = true,
+            ),
+            HomeArtworkCard(
+                key = "history-album",
+                kind = HomeCardKind.ALBUM,
+                song = historySong,
+                songId = historySong.songId,
+                albumId = "album-history-server-id",
+                artworkSongId = historySong.songId,
+                artwork = null,
+                isPlayable = true,
+            ),
+            HomeArtworkCard(
+                key = "autoplay-album-occurrence",
+                kind = HomeCardKind.AUTOPLAY_OCCURRENCE,
+                song = autoplaySong,
+                songId = autoplaySong.songId,
+                albumId = "album-autoplay-server-id",
+                artworkSongId = autoplaySong.songId,
+                artwork = null,
+                isPlayable = true,
+                queueItemId = "queue-occurrence-42",
+            ),
+        )
+        val state = HomeUiState(
+            recentlyUpdated = HomeSectionState.Ready(HomeRecentUpdates(listOf(cards[0]))),
+            playbackHistory = HomeSectionState.Ready(HomePlaybackHistory(listOf(cards[1]), listOfNotNull(historySong.songId))),
+            autoplay = HomeSectionState.Ready(HomeAutoplay(listOf(cards[2]))),
+        )
+        val openedAlbums = mutableListOf<String>()
+        composeRule.setContent {
+            HomeScreen(
+                state = state,
+                scrollStateHolder = rememberHomeScrollStateHolder(),
+                songActions = songActions(),
+                onOpenAlbum = openedAlbums::add,
+            )
+        }
+
+        listOf(
+            "最近更新" to cards[0],
+            "播放历史" to cards[1],
+            "猜你喜欢" to cards[2],
+        ).forEach { (sectionTitle, card) ->
+            composeRule.onNodeWithTag(
+                "home-card-${sectionTitle.hashCode()}-${card.key.hashCode()}",
+            ).performTouchInput { click(Offset(40f, 35f)) }
+            composeRule.waitForIdle()
+        }
+
+        assertEquals(
+            listOf("album-one-track-server-id", "album-history-server-id", "album-autoplay-server-id"),
+            openedAlbums,
+        )
+        composeRule.onAllNodesWithTag("song-action-menu-${"home:${cards[0].key}".hashCode()}").assertCountEquals(0)
     }
 
     @Test

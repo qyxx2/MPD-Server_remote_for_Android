@@ -42,6 +42,7 @@ internal fun HomeArtworkCardItem(
     artworkIdentity: QueueResourceIdentity?,
     onClick: (() -> Unit)? = null,
     songActions: SongActions? = null,
+    onOpenAlbum: ((String) -> Unit)? = null,
     homeCollectionActions: HomeCollectionActions? = null,
     autoplayIdentity: HomeAutoplayIdentity? = null,
     resourceFresh: Boolean = true,
@@ -130,35 +131,44 @@ internal fun HomeArtworkCardItem(
         }
     }
 
-    when (card.kind) {
-        HomeCardKind.SINGLE_SONG, HomeCardKind.HISTORY_ORPHAN -> {
-            val songId = card.songId
-            val menuItem = songId?.let {
-                LibrarySongRowModel(key = "home:${card.key}", songId = it, song = card.song)
-            }
-            if (songActions != null && menuItem != null) {
-                SongActionMenu(
-                    item = menuItem,
-                    actions = songActions,
-                    resourceFresh = resourceFresh,
-                    modifier = tileModifier,
-                    content = cardContent,
-                )
-            } else {
-                Column(modifier = tileModifier, horizontalAlignment = Alignment.Start) {
-                    cardContent()
+    val albumId = card.albumId?.takeIf(String::isNotBlank)
+    if (albumId != null && onOpenAlbum != null) {
+        // Album identity is independent of card projection kind and member count. This also
+        // handles a one-track album that HomeProjection may represent as SINGLE_SONG.
+        Column(
+            modifier = tileModifier.clickable { onOpenAlbum(albumId) },
+            horizontalAlignment = Alignment.Start,
+        ) {
+            cardContent()
+        }
+    } else {
+        when (card.kind) {
+            HomeCardKind.SINGLE_SONG, HomeCardKind.HISTORY_ORPHAN -> {
+                val songId = card.songId
+                val menuItem = songId?.let {
+                    LibrarySongRowModel(key = "home:${card.key}", songId = it, song = card.song)
+                }
+                if (songActions != null && menuItem != null) {
+                    SongActionMenu(
+                        item = menuItem,
+                        actions = songActions,
+                        resourceFresh = resourceFresh,
+                        modifier = tileModifier,
+                        content = cardContent,
+                    )
+                } else {
+                    Column(modifier = tileModifier, horizontalAlignment = Alignment.Start) {
+                        cardContent()
+                    }
                 }
             }
-        }
-        HomeCardKind.AUTOPLAY_OCCURRENCE -> {
-            Column(modifier = tileModifier, horizontalAlignment = Alignment.Start) {
-                cardContent()
-            }
-        }
-        HomeCardKind.ALBUM -> {
-            val interactiveModifier = if (onClick != null) tileModifier.clickable(onClick = onClick) else tileModifier
-            Column(modifier = interactiveModifier, horizontalAlignment = Alignment.Start) {
-                cardContent()
+            HomeCardKind.AUTOPLAY_OCCURRENCE, HomeCardKind.ALBUM -> {
+                val interactiveModifier = if (onClick != null && card.kind == HomeCardKind.ALBUM) {
+                    tileModifier.clickable(onClick = onClick)
+                } else tileModifier
+                Column(modifier = interactiveModifier, horizontalAlignment = Alignment.Start) {
+                    cardContent()
+                }
             }
         }
     }

@@ -65,6 +65,7 @@ internal fun HomeScreen(
     onRefreshAutoplay: () -> Unit = {},
     homeCollectionActions: HomeCollectionActions? = null,
     songActions: SongActions? = null,
+    onOpenAlbum: ((String) -> Unit)? = null,
     interactionEnabled: Boolean = true,
 ) {
     // Each Home instance owns its visible-key registration. Multiple shell/NavHost instances can
@@ -89,6 +90,7 @@ internal fun HomeScreen(
             onRefresh = onRefreshRecent,
             homeCollectionActions = homeCollectionActions,
             songActions = songActions,
+            onOpenAlbum = onOpenAlbum,
             interactionEnabled = interactionEnabled,
             modifier = Modifier.weight(1f),
         )
@@ -105,6 +107,7 @@ internal fun HomeScreen(
             onRefresh = onRefreshHistory,
             homeCollectionActions = homeCollectionActions,
             songActions = songActions,
+            onOpenAlbum = onOpenAlbum,
             interactionEnabled = interactionEnabled,
             modifier = Modifier.weight(1f),
         )
@@ -121,6 +124,7 @@ internal fun HomeScreen(
             onRefresh = onRefreshAutoplay,
             homeCollectionActions = homeCollectionActions,
             songActions = songActions,
+            onOpenAlbum = onOpenAlbum,
             interactionEnabled = interactionEnabled,
             modifier = Modifier.weight(1f),
         )

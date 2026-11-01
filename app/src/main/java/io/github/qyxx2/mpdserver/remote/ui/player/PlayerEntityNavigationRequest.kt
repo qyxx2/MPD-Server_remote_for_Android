@@ -1,6 +1,7 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtistListDto
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryRoutes
 
 enum class PlayerEntityType { ARTIST, ALBUM }
 
@@ -29,3 +30,7 @@ internal fun resolveArtistNavigationRequest(
         displayName = match.name,
     )
 }
+
+/** Album requests use the canonical Library detail route and the opaque server-owned album ID. */
+fun PlayerEntityNavigationRequest.albumRouteOrNull(): String? =
+    if (type == PlayerEntityType.ALBUM) LibraryRoutes.album(id) else null

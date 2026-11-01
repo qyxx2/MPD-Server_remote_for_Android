@@ -4,6 +4,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchGroupDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchGroupKindDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SearchResultsDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.SongDto
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryRoutes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -76,6 +77,16 @@ class SearchProjectionTest {
         assertEquals(
             "library/albums/id%20with%20spaces",
             SearchProjection.categoryRoute(SearchGroupKindDto.ALBUMS, "id with spaces"),
+        )
+    }
+
+    @Test
+    fun albumSearchGroupResolvesToTheSameCanonicalLibraryAlbumRoute() {
+        val albumId = "opaque album #1"
+
+        assertEquals(
+            LibraryRoutes.album(albumId),
+            SearchProjection.categoryRoute(SearchGroupKindDto.ALBUMS, albumId),
         )
     }
 

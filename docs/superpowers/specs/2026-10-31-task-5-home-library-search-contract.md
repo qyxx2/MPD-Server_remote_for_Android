@@ -86,7 +86,7 @@
 - 专辑身份优先使用 album_id；无 album_id 的歌曲按 song_id 形成单曲卡片，不得把多首未知专辑歌曲错误合并。
 - 卡片封面从该专辑的服务端歌曲中，按原服务端顺序选取第一首同时满足 availability_status=AVAILABLE 且 artwork 非空的曲目，调用既有 GET /api/library/songs/{song_id}/artwork；若没有符合条件的成员则显示明确默认占位，不得借用其他专辑封面。
 - 缺失/不可读歌曲仍保留其服务端列表事实，不因 UI 过滤改变最近修改排序；播放入口按 availability_status 禁用不可播放成员。
-- 点击有 album_id 的卡片进入对应专辑详情；单曲 fallback 卡片沿用 Web 单曲菜单/动作，不新增一个未经定义的 Song Detail 业务页。
+- Home 任意分区中，只要卡片代表曲目具有非空 `album_id`，点击卡片/专辑封面就必须进入该 `album_id` 对应的专辑详情；不因卡片仅代表一首歌曲、被投影为 SINGLE_SONG，或该专辑仅包含一首曲目而改为单曲菜单。仅 `album_id` 为空/缺失时，才沿用 Web 单曲菜单/动作，不新增 Song Detail 业务页。AutoPlay 卡片仍保留独立的 occurrence Play 控件，点击卡片主体进入专辑不改变其队列项身份。
 - 最近更新列表的数量不在客户端硬截断；按服务端完整列表形成全部可滚动专辑项。资源解码采用可见窗口与有限预取，不需要一次解码全部封面。
 
 ### 4.3 播放历史

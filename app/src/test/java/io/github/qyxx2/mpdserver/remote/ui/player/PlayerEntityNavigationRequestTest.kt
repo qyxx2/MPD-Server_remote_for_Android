@@ -2,6 +2,7 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtistListDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ArtistSummaryDto
+import io.github.qyxx2.mpdserver.remote.ui.library.LibraryRoutes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -30,6 +31,18 @@ class PlayerEntityNavigationRequestTest {
         assertNull(resolveArtistNavigationRequest("beta", artists))
         assertNull(resolveArtistNavigationRequest("Missing", artists))
         assertNull(resolveArtistNavigationRequest("", artists))
+    }
+
+    @Test
+    fun playerAlbumRequestResolvesToTheCanonicalAlbumRouteUsingOnlyServerId() {
+        val request = PlayerEntityNavigationRequest(
+            type = PlayerEntityType.ALBUM,
+            id = "server id-7",
+            displayName = "Untrusted display title",
+        )
+
+        assertEquals("library/albums/server%20id-7", request.albumRouteOrNull())
+        assertNull(request.copy(type = PlayerEntityType.ARTIST).albumRouteOrNull())
     }
 
     @Test
