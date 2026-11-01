@@ -49,7 +49,7 @@ class SongActionMenuUiTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun menuIsAnchoredToItsOwnSongButtonAndContainsNoCancelAction() {
+    fun menuIsCenteredOnItsSongRowAndShowsAnIconForEveryAction() {
         composeRule.setContent {
             MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
                 AnchoredMenuFixture(onAction = {})
@@ -59,6 +59,7 @@ class SongActionMenuUiTest {
         val anchorNode = composeRule.onNodeWithTag("song-action-area-song-a").fetchSemanticsNode()
         val anchorOrigin = anchorNode.layoutInfo.coordinates.localToScreen(Offset.Zero)
         val anchorCenterX = anchorOrigin.x + anchorNode.size.width / 2f
+        val anchorCenterY = anchorOrigin.y + anchorNode.size.height / 2f
         composeRule.onNodeWithTag("song-action-area-song-a").performClick()
         composeRule.onNodeWithTag("song-action-menu-song-a").assertIsDisplayed()
 
@@ -67,19 +68,34 @@ class SongActionMenuUiTest {
         val menuCenterX = menuOrigin.x + menuNode.size.width / 2f
         val menuCenterY = menuOrigin.y + menuNode.size.height / 2f
         val display = composeRule.activity.resources.displayMetrics
-        val horizontalDistance = kotlin.math.abs(menuCenterX - anchorCenterX)
+        val tolerancePx = 16f * display.density
         assertTrue(
-            "Popup should follow its song button, not appear in the center of the screen: anchorX=" + anchorCenterX + " menuX=" + menuCenterX + " menuY=" + menuCenterY + " size=" + menuNode.size + " display=" + display.widthPixels + "x" + display.heightPixels,
-            horizontalDistance < display.widthPixels * 0.34f,
+            "Popup must be horizontally centered on the song row: anchorX=" + anchorCenterX + " menuX=" + menuCenterX,
+            kotlin.math.abs(menuCenterX - anchorCenterX) < tolerancePx,
         )
         assertTrue(
-            "Popup should remain near the bottom-end song row that opened it",
-            menuCenterY > display.heightPixels / 2f,
+            "Popup must vertically follow the song row: anchorY=" + anchorCenterY + " menuY=" + menuCenterY,
+            kotlin.math.abs(menuCenterY - anchorCenterY) < tolerancePx,
         )
         composeRule.onAllNodesWithText("取消").assertCountEquals(0)
         composeRule.onNodeWithText("立即播放").assertIsDisplayed()
         composeRule.onNodeWithText("下一首播放").assertIsDisplayed()
         composeRule.onNodeWithText("添加到播放队列").assertIsDisplayed()
+        composeRule.onNodeWithText("收藏").assertIsDisplayed()
+        listOf("play_now", "play_next", "add_to_queue", "favorite").forEach { action ->
+            composeRule.onNodeWithTag("song-action-icon-$action-song-a", useUnmergedTree = true)
+                .assertIsDisplayed()
+        }
+        val labels = listOf("play_now", "play_next", "add_to_queue", "favorite").map { action ->
+            composeRule.onNodeWithTag("song-action-label-$action-song-a").fetchSemanticsNode().boundsInRoot
+        }
+        val labelLefts = labels.map { it.left }
+        assertTrue("All menu labels must share one left edge", labelLefts.maxOrNull()!! - labelLefts.minOrNull()!! < 1f)
+        val longestLabel = labels[2]
+        assertTrue("The longest option must define the menu's right content edge", labels.all { it.right <= longestLabel.right + 1f })
+        val menuBounds = composeRule.onNodeWithTag("song-action-menu-song-a").fetchSemanticsNode().boundsInRoot
+        val rightInsetDp = (menuBounds.right - longestLabel.right) / display.density
+        assertTrue("Menu right edge should closely follow the longest label, inset=$rightInsetDp dp", rightInsetDp in 4f..24f)
     }
 
     @Test
@@ -247,7 +263,10 @@ class SongActionMenuUiTest {
     private fun displayHeight(): Float = composeRule.activity.resources.displayMetrics.heightPixels.toFloat()
 
     @Composable
-    private fun AnchoredMenuFixture(onAction: (SongPlaybackAction) -> Unit) {
+    private fun AnchoredMenuFixture(
+        onAction: (SongPlaybackAction) -> Unit,
+        onFavorite: () -> Unit = {},
+    ) {
         Box(Modifier.fillMaxSize()) {
             Text(
                 "outside",
@@ -256,13 +275,12 @@ class SongActionMenuUiTest {
                     .clickable {}
                     .testTag("song-menu-outside-tap"),
             )
-            Box(
-                modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
-            ) {
+            Box(modifier = Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 24.dp)) {
                 AnchoredSongActionMenu(
                     menuKey = "song-a",
                     enabled = true,
                     onAction = onAction,
+                    onFavorite = onFavorite,
                     content = { Text("Song A") },
                 )
             }
