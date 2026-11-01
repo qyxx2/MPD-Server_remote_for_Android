@@ -1,25 +1,23 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
-import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackControlTargetDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.MutationIntent
 import io.github.qyxx2.mpdserver.remote.runtime.MutationOutcome
 import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
 import io.github.qyxx2.mpdserver.remote.runtime.OperationActivity
+import io.github.qyxx2.mpdserver.remote.runtime.PlayerCommandGateway
+import io.github.qyxx2.mpdserver.remote.runtime.PlayerControlIdentity
 import io.github.qyxx2.mpdserver.remote.runtime.RuntimeConnectionStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import java.time.Instant
 import java.util.UUID
 
-enum class PlayerAction { PAUSE, RESUME, PREVIOUS, NEXT, SEEK }
+typealias PlayerAction = io.github.qyxx2.mpdserver.remote.runtime.PlayerAction
 
 data class PlayerActionsState(
     val action: PlayerAction? = null,
@@ -49,20 +47,8 @@ class PlayerActions internal constructor(
     private val submitter: (MutationIntent) -> MutationOutcome,
     private val retryUnknownSubmitter: (String) -> MutationOutcome,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
+    sharedCommandGateway: PlayerCommandGateway? = null,
 ) {
-    /** Mirrors the Web player controlIdentity, deliberately independent of read freshness. */
-    private data class ControlIdentity(
-        val epoch: String?,
-        val generation: Long,
-        val boundQueueItemId: String?,
-        val targetQueueItemId: String?,
-        val targetToken: String?,
-        val actualEntryId: Long?,
-        val businessSongId: String?,
-        val businessContextId: String?,
-        val queueCurrentItemId: String?,
-    )
-
     private data class InteractionIdentity(
         val epoch: String?,
         val generation: Long,
@@ -80,6 +66,14 @@ class PlayerActions internal constructor(
         val actualFreshness: String?,
     )
 
+    private val commandGateway = sharedCommandGateway ?: PlayerCommandGateway(
+        stateProvider = stateProvider,
+        activitiesProvider = activitiesProvider,
+        submitter = submitter,
+        retryUnknownSubmitter = retryUnknownSubmitter,
+        idFactory = idFactory,
+    )
+
     private val _state = MutableStateFlow(PlayerActionsState())
     val state: StateFlow<PlayerActionsState> = _state.asStateFlow()
 
@@ -87,7 +81,7 @@ class PlayerActions internal constructor(
     private var latestActivities: List<OperationActivity> = activitiesProvider()
     private var draftIdentity: InteractionIdentity? = null
     private var activeIdentity: InteractionIdentity? = null
-    private var activeControlIdentity: ControlIdentity? = null
+    private var activeControlIdentity: PlayerControlIdentity? = null
     private var seekSampleAtSubmission: String? = null
     private var seekReceiptUpdatedAt: String? = null
 
@@ -96,6 +90,7 @@ class PlayerActions internal constructor(
         activitiesProvider = { runtime.mutations.activities.value },
         submitter = { runtime.mutations.submit(it) },
         retryUnknownSubmitter = { runtime.mutations.retryUnknown(it) },
+        sharedCommandGateway = runtime.playerCommands,
     )
 
     /** Read-only current canonical state for the screen's presentation/clock. */
@@ -146,7 +141,7 @@ class PlayerActions internal constructor(
         // or when the Runtime connection/generation is no longer writable. The shared coordinator
         // continues to retain the immutable operation for the global activity sheet.
         if (activeControlIdentity != null &&
-            (activeControlIdentity != controlIdentity(snapshot) || !connectionWritable(snapshot))
+            (activeControlIdentity != PlayerControlIdentity.from(snapshot) || !connectionWritable(snapshot))
         ) {
             activeIdentity = null
             activeControlIdentity = null
@@ -160,42 +155,17 @@ class PlayerActions internal constructor(
 
     fun reconcile() = update(stateProvider(), activitiesProvider())
 
-    fun isEnabled(action: PlayerAction): Boolean {
-        val snapshot = stateProvider()
-        val presentation = PlayerPresentation.from(snapshot)
-        if (isLocked(snapshot)) return false
-        return when (action) {
-            PlayerAction.PAUSE -> presentation.controls.pause
-            PlayerAction.RESUME -> presentation.controls.resume
-            PlayerAction.PREVIOUS -> presentation.controls.previous
-            PlayerAction.NEXT -> presentation.controls.next
-            PlayerAction.SEEK -> presentation.controls.seek
-        }
-    }
+    fun isEnabled(action: PlayerAction): Boolean = commandGateway.isEnabled(action)
 
     fun perform(action: PlayerAction, seconds: Double? = null): MutationOutcome? {
         reconcile()
-        if (!isEnabled(action)) return null
-
-        val snapshot = stateProvider()
-        val presentation = PlayerPresentation.from(snapshot)
+        val submission = commandGateway.dispatch(action, seconds) ?: return null
+        val intent = submission.intent
+        val snapshot = submission.snapshot
         val observation = PlayerFacts.from(snapshot).playbackObservation
-        val target = observation?.controlTarget
-        if (action == PlayerAction.SEEK) {
-            val duration = observation?.durationSeconds
-            if (seconds == null || !seconds.isFinite() || duration == null ||
-                !duration.isFinite() || duration <= 0.0 || seconds !in 0.0..duration ||
-                target == null || target.queueItemId != presentation.currentOccurrenceId
-            ) return null
-        }
-        if ((action == PlayerAction.RESUME || action == PlayerAction.SEEK) &&
-            (target == null || target.queueItemId != presentation.currentOccurrenceId || target.token.isBlank())
-        ) return null
-
-        val intent = createIntent(action, target, seconds)
         val identity = identity(snapshot)
         activeIdentity = identity
-        activeControlIdentity = controlIdentity(snapshot)
+        activeControlIdentity = PlayerControlIdentity.from(snapshot)
         seekSampleAtSubmission = observation?.observedAt
         seekReceiptUpdatedAt = null
         _state.value = PlayerActionsState(
@@ -204,7 +174,7 @@ class PlayerActions internal constructor(
             seekPreviewSeconds = if (action == PlayerAction.SEEK) seconds else null,
             pending = true,
         )
-        val outcome = submitter(intent)
+        val outcome = submission.outcome
         applyImmediateOutcome(outcome)
         refreshFromActivity()
         return outcome
@@ -256,9 +226,9 @@ class PlayerActions internal constructor(
         val id = current.activeIntentId ?: return false
         val snapshot = stateProvider()
         if (!current.unknown || !connectionWritable(snapshot) ||
-            activeControlIdentity == null || activeControlIdentity != controlIdentity(snapshot)
+            activeControlIdentity == null || activeControlIdentity != PlayerControlIdentity.from(snapshot)
         ) return false
-        return latestActivities.any { it.intentId == id && it.status == MutationStatus.UNKNOWN }
+        return commandGateway.canRetryUnknown(id)
     }
 
     fun retryUnknown(): MutationOutcome? {
@@ -266,7 +236,7 @@ class PlayerActions internal constructor(
         val current = _state.value
         val id = current.activeIntentId ?: return null
         if (!canRetryUnknown()) return null
-        val outcome = retryUnknownSubmitter(id)
+        val outcome = commandGateway.retryUnknown(id)
         if (outcome == MutationOutcome.Submitted) {
             _state.value = current.copy(pending = true, unknown = false, failed = false, message = "正在使用原操作重试")
         } else {
@@ -276,89 +246,11 @@ class PlayerActions internal constructor(
         return outcome
     }
 
-    private fun createIntent(
-        action: PlayerAction,
-        target: PlaybackControlTargetDto?,
-        seconds: Double?,
-    ): MutationIntent {
-        val path = when (action) {
-            PlayerAction.PAUSE -> "/api/playback/pause"
-            PlayerAction.RESUME -> "/api/playback/resume"
-            PlayerAction.PREVIOUS -> "/api/playback/previous"
-            PlayerAction.NEXT -> "/api/playback/next"
-            PlayerAction.SEEK -> "/api/playback/seek"
-        }
-        val payload = when (action) {
-            PlayerAction.PAUSE, PlayerAction.PREVIOUS, PlayerAction.NEXT -> "{}"
-            PlayerAction.RESUME -> targetPayload(requireNotNull(target))
-            PlayerAction.SEEK -> seekPayload(requireNotNull(seconds), requireNotNull(target))
-        }
-        val label = when (action) {
-            PlayerAction.PAUSE -> "播放器 · 暂停"
-            PlayerAction.RESUME -> "播放器 · 继续播放"
-            PlayerAction.PREVIOUS -> "播放器 · 上一首"
-            PlayerAction.NEXT -> "播放器 · 下一首"
-            PlayerAction.SEEK -> "播放器 · 调整进度"
-        }
-        return MutationIntent(
-            id = "player:${idFactory()}",
-            method = "POST",
-            path = path,
-            payload = payload,
-            label = label,
-        )
-    }
-
-    private fun targetPayload(target: PlaybackControlTargetDto): String = buildJsonObject {
-        putJsonObject("target") {
-            put("queue_item_id", target.queueItemId)
-            put("token", target.token)
-        }
-    }.toString()
-
-    private fun seekPayload(seconds: Double, target: PlaybackControlTargetDto): String = buildJsonObject {
-        put("seconds", seconds)
-        putJsonObject("target") {
-            put("queue_item_id", target.queueItemId)
-            put("token", target.token)
-        }
-    }.toString()
-
-    private fun isLocked(snapshot: SnapshotStoreState): Boolean {
-        if (!snapshot.controlsEligible) return true
-        if (_state.value.locked) return true
-        return activitiesProvider().any {
-            (it.intentId.startsWith("player:") || it.label.startsWith("播放器 ·")) &&
-                it.status in setOf(MutationStatus.PENDING, MutationStatus.SYNCING)
-        }
-    }
-
     private fun connectionWritable(snapshot: SnapshotStoreState): Boolean =
         snapshot.snapshot != null &&
             snapshot.connectionStatus == RuntimeConnectionStatus.CONNECTED &&
             snapshot.snapshotConnectionGeneration == snapshot.connectionGeneration
 
-    private fun controlIdentity(snapshot: SnapshotStoreState): ControlIdentity? {
-        val canonical = snapshot.snapshot ?: return null
-        val facts = PlayerFacts.from(snapshot)
-        val observation = facts.playbackObservation
-        val wirePlayback = runCatching {
-            io.github.qyxx2.mpdserver.remote.protocol.JsonConfiguration.json.decodeFromJsonElement<
-                io.github.qyxx2.mpdserver.remote.protocol.dto.PlaybackStateDto
-            >(canonical.wire.playback)
-        }.getOrNull()
-        return ControlIdentity(
-            epoch = canonical.epoch,
-            generation = snapshot.connectionGeneration,
-            boundQueueItemId = observation?.boundQueueItemId,
-            targetQueueItemId = observation?.controlTarget?.queueItemId,
-            targetToken = observation?.controlTarget?.token,
-            actualEntryId = observation?.actualCurrent?.entryId,
-            businessSongId = wirePlayback?.songId,
-            businessContextId = wirePlayback?.playbackContextId,
-            queueCurrentItemId = facts.queue?.items?.firstOrNull { it.position == 0 }?.queueItemId,
-        )
-    }
 
     private fun identity(snapshot: SnapshotStoreState): InteractionIdentity {
         val facts = PlayerFacts.from(snapshot)

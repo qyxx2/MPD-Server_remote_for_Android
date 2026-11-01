@@ -44,6 +44,9 @@
 - [Task 5 Implementation Plan](plans/2026-10-31-task-5-implementation.md)：397 行分批执行计划，细化 B0–B7 的文件范围、跨批接口、测试先行步骤、缓存与资源身份边界、人工验收和独立提交门；当前仅完成计划，尚未开始页面实现。
 - [Task 6 合同矩阵](specs/2026-11-01-task-6-contract-matrix.md)：冻结本次授权的四类设置导航、状态页活动迁移、服务器地址交互、外观/状态环预览、关于页和现有 `/api/system/mpd` 只读展示合同；明确取消旧计划中的 MPD 连接目标编辑与输出操作。
 - [Task 6 分批实施计划](plans/2026-11-01-task-6-settings-and-mpd-status.md)：按设置/本地偏好与 MPD 状态读取拆为 B1、B2，包含文件边界、TDD 测试、共享 Runtime/origin 防迟到约束、覆盖安装保留数据和退出门；当前仅完成合同与计划，尚未开始代码实现。
+- [Task 7 系统媒体会话合同矩阵](specs/2026-11-01-task-7-contract-matrix.md)：确认无需额外人工产品决策，冻结 canonical playback 投影、MediaSession 元数据/动作、stale/Stop、通知权限、封面身份和进程恢复合同。
+- [Task 7 分批实施计划](plans/2026-11-01-task-7-system-media-session.md)：拆分为 B0 Runtime 命令入口与平台可行性、B1 MediaSession、B2 MediaStyle 通知/权限/封面、B3 后台服务与恢复、B4 实机回归验收；B0 Runtime 实现、origin transition 原子性和 API 33 探针已完成；API 26/36 runtime 覆盖仍未关闭，暂不启动 B1。
+- [Task 7 Batch 0 验证报告](reports/2026-11-01-task-7-batch0-verification.md)：记录 Runtime command gateway、TDD/回归测试、API 33 原生 MediaSession/MediaStyle 实测，以及 API 26/36 尚未覆盖的运行时限制。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
 - [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。
 - [Task 3 Batch 7 集成验证报告](reports/2026-10-26-task-3-batch7-verification.md)：记录 clean 构建、105 项单测、10 项真机 instrumentation、边界审查及尚未关闭的人工验收门。机器验证通过不代表 Task 3 整体退出门或 Task 2 真实联调门已通过。

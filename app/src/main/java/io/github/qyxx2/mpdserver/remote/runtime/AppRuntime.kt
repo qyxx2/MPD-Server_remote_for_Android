@@ -12,6 +12,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import okhttp3.OkHttpClient
 import java.io.Closeable
@@ -25,6 +27,10 @@ class AppRuntime private constructor(
     private val scope: CoroutineScope,
     stateReader: suspend (ServerOrigin) -> io.github.qyxx2.mpdserver.remote.protocol.ApiResult<io.github.qyxx2.mpdserver.remote.protocol.dto.StateSnapshotDto>,
 ) : Closeable {
+    private val originChangeMutex = Mutex()
+    private val playerCommandLock = Any()
+    @Volatile private var originChangeInProgress = false
+
     val snapshots = SnapshotStore()
     val realtimeController = RealtimeController(
         initialOrigin = initialOrigin,
@@ -121,14 +127,39 @@ class AppRuntime private constructor(
         retryScopeProvider = { QueueMutationScope.fingerprint(snapshots.state.value) },
     ) }
 
+    /** One shared playback command gate for Compose controls and future system media callbacks. */
+    val playerCommands: PlayerCommandGateway by lazy {
+        PlayerCommandGateway(
+            stateProvider = { snapshots.state.value },
+            activitiesProvider = { mutations.activities.value },
+            submitter = { intent -> mutations.submit(intent) },
+            retryUnknownSubmitter = { intentId -> mutations.retryUnknown(intentId) },
+            commandEligibilityProvider = { !originChangeInProgress },
+            commandLock = playerCommandLock,
+        )
+    }
+
     fun start() = realtimeController.start()
 
     /** Foreground refresh delegated to the existing coalescing StateReadCoordinator. */
     suspend fun refreshSnapshot(): StateReadResult = realtimeController.refreshSnapshot()
 
-    suspend fun changeOrigin(origin: ServerOrigin) {
-        mutations.changeOrigin(origin)
-        realtimeController.changeOrigin(origin)
+    suspend fun changeOrigin(origin: ServerOrigin) = originChangeMutex.withLock {
+        // The gateway and this critical section share one JVM monitor. A command either submits
+        // completely against the old origin before the switch begins, or observes the closed gate;
+        // it can never pass an eligibility check and then be submitted to the new origin with an
+        // old canonical snapshot.
+        synchronized(playerCommandLock) {
+            originChangeInProgress = true
+            mutations.changeOrigin(origin)
+        }
+        try {
+            realtimeController.changeOrigin(origin)
+        } finally {
+            synchronized(playerCommandLock) {
+                originChangeInProgress = false
+            }
+        }
     }
 
     override fun close() {
