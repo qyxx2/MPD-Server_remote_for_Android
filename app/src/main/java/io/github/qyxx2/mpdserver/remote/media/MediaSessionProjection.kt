@@ -37,10 +37,13 @@ data class MediaSessionCommandAvailability(
 
 data class ConfirmedMediaSessionIdentity(
     val originAddress: String,
+    val connectionGeneration: Long,
     val epoch: String,
+    val libraryRevision: Long,
     val explicitStopGeneration: Long,
     val queueItemId: String,
     val songId: String,
+    val artworkId: String?,
     val metadata: MediaSessionMetadata,
 )
 
@@ -125,10 +128,13 @@ object MediaSessionProjection {
         val metadata = MediaMetadataMapper.map(occurrence.queueItemId, song)
         val identity = ConfirmedMediaSessionIdentity(
             originAddress = originAddress,
+            connectionGeneration = state.connectionGeneration,
             epoch = requireNotNull(snapshot).epoch,
+            libraryRevision = snapshot.libraryRevision,
             explicitStopGeneration = snapshot.explicitStopGeneration,
             queueItemId = occurrence.queueItemId,
             songId = occurrence.songId,
+            artworkId = facts.currentSong?.artwork?.artworkId?.trim()?.takeIf(String::isNotEmpty),
             metadata = metadata,
         )
         val playbackState = when (presentation.playbackStatus) {

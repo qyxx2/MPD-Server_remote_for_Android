@@ -114,26 +114,29 @@
 
 ### Task 7.2.1 — Test notification channel and metadata publication
 
-- [ ] 验证 API 26+ NotificationChannel 创建、稳定 ID、低重要性、无声音/振动和重复创建幂等。
-- [ ] 验证 MediaStyle 与同一 MediaSession token 绑定，动作列表只显示当前可用动作。
-- [ ] 验证 notification tap 沿用现有 MainActivity 启动入口；不增加播放器 deeplink 或新导航 route。
-- [ ] 验证通知首先发布文本 metadata，封面未到达时显示应用图标/稳定占位。
-- [ ] 验证 artwork 通过 `runtime.reads.getArtwork(songId)`，并覆盖请求 identity 被切歌、origin、generation、epoch、library revision 改变后拒绝迟到回写。
-- [ ] 验证封面读失败、非法 mime/bytes、无 artwork reference 不阻塞会话，且绝不沿用前一首封面。
-- [ ] 在 API 33 验证 POST_NOTIFICATIONS granted/denied；确认系统 MediaSession 卡片和普通媒体通知可见性分别是什么。
-- [ ] 验证 notification channel 被用户关闭时不反复创建新 ID 或绕过用户设置。
+- [x] 在 API 33 真机验证 NotificationChannel 创建、稳定 ID、低重要性、无声音/振动和重复创建幂等；不将 API 33 结果冒称 API 26 runtime 覆盖。
+- [x] 验证 MediaStyle 与同一原生 MediaSession token 绑定；系统动作能力沿用该 Session 的 PlaybackState action flags，不额外创建第二套 Notification.Action。
+- [x] 验证 notification tap 使用 PackageManager.getLaunchIntentForPackage() 的现有应用入口；不增加播放器 deeplink 或新导航 route。
+- [x] 验证文本 metadata 先发布；封面异步补齐，未取得封面时使用应用图标资源。
+- [x] 使用 runtime.reads.getArtwork(songId)；迟到回写校验 origin、connection/snapshot generation、epoch、library revision、explicit Stop generation、song、queue occurrence 与 artwork ID。
+- [x] 复用 RuntimeReadApi / ResourceMemoryCache 对缺图、HTTP 错误、无效 MIME/bytes 和签名校验；identity 变化先清空旧 Bitmap，封面失败不阻塞文本 metadata。
+- [x] 在 API 33 真机分别验证 POST_NOTIFICATIONS denied 与 granted 的平台状态读取；denied 时仍观测到 active MediaSession/SystemUI controller 和 NotificationManager active MediaStyle record。
+- [x] 覆盖 channel importance=NONE 的状态投影；ensureChannel() 对已有 channel 原样返回、不会更换 ID 或重建绕过用户设置；设备测试验证 channel 重复初始化幂等。
 
 ### Task 7.2.2 — Implement MediaStyle notification and degradation
 
-- [ ] 按 Batch 0 冻结结果加入最少依赖与 manifest 权限；不要擅自新增前台服务声明。
-- [ ] 创建媒体通知渠道，使用低重要性且无声音/振动配置。
-- [ ] 使用当前 MediaSession token 和精确 action flags 创建 MediaStyle 通知。
-- [ ] artwork 异步加载/解码并以完整身份复验后更新通知；文本 metadata 更新不等待封面。
-- [ ] 处理通知权限/渠道不可用状态：不崩溃、不循环请求、不冒称通知已显示；更新 `MediaControlAvailability`。
-- [ ] 在「设置 → 状态」提供精确降级说明和 Android 通知设置 intent；跳转失败时仍保留说明。
-- [ ] 保持 MediaSession 与 Notification 生命周期同步：session 不可用时撤下通知；notification 权限受限不伪造 session/action 成功。
+- [x] 仅增加 POST_NOTIFICATIONS 声明，不增加依赖、不声明 Service/FGS 权限或类型。
+- [x] 创建稳定媒体通知渠道，低重要性、无声音/振动；已有用户 channel 配置不被覆盖。
+- [x] MediaStyle 绑定当前原生 Session token；三类 action flags 继续由 B1 的 canonical Session PlaybackState 投影。
+- [x] artwork 异步读取/解码，并在 Session/通知更新前重新验证完整媒体身份；文本 metadata 不等待封面。
+- [x] 区分运行时通知权限、应用通知开关和 channel importance；限制状态不崩溃、不请求权限、不循环重试，并输出 MediaControlAvailability。
+- [x] 在「设置 → 状态」增加系统通知权限/渠道状态及 Android channel/app notification settings 入口；页面说明不依赖跳转成功。
+- [x] MediaSession projection 被撤销或 token 不可用时撤下媒体通知；通知受限时不伪造 Session/action 能力。
 
 **Batch 2 退出条件：** 通知与 Session 使用同一个 metadata/action source；权限允许/拒绝/渠道关闭均有测试；封面迟到不会串曲；设置状态提示不新增导航入口。
+
+**Batch 2 实际结果（2026-11-02）：** Application 级 MediaNotificationController 复用唯一 RemoteMediaSessionController、现有原生 Session token 与 AppRuntime.reads.getArtwork()；创建单一低重要性静音媒体 channel；以完整服务端媒体身份校验封面迟到结果；通知权限/渠道状态集中映射到 MediaControlAvailability，在现有「设置 → 状态」提供系统设置入口。未添加 Player、第二套网络/状态 owner、Service/FGS 或系统权限弹窗。
+验证：clean unit/Lint/Debug APK/Android-test compile+assemble 全部成功；83 suites / 472 tests / 0 failures / 0 errors / 0 skipped；Lint 0 errors / 16 warnings / 4 hints。SM-G986N / API 33 覆盖安装与 5 项 connected instrumentation 通过；权限 denied 时仍观测到 active MediaSession、SystemUI controller 和 NotificationManager 中的 MediaStyle record，封面 largeIcon 为实际 Bitmap。firstInstallTime、DataStore SHA-256、签名证书保持。API 36 V2307A 的覆盖安装被系统安装器以 INSTALL_FAILED_ABORTED: User rejected permissions 中止，未更新其已安装版本/数据；因此 API 36 runtime 未覆盖。用户关闭 channel 的 IMPORTANCE_NONE 分支由状态单测覆盖，未在真机上改动用户的通知设置。详细记录见 [Batch 2 verification report](../reports/2026-11-02-task-7-batch2-verification.md)。B3 的回调/后台服务生命周期和 B4 的完整锁屏手工验收仍未实施。
 
 **提交建议：** `feat(media): add media notification and permission fallback`
 
@@ -150,27 +153,29 @@
 
 ### Task 7.3.1 — Prove lifecycle and callback behavior
 
-- [ ] 测试 `onCreate/onStartCommand/onTaskRemoved/onDestroy` 等生命周期重复触发时的幂等性。
-- [ ] 测试 Activity finish/recreate 不关闭后台 MediaSession；重复启动 Service 不产生第二个 Session/通知。
-- [ ] 测试 media action callback 使用 app-scoped gateway，重复 callback 只发起一次 intent；callback 到达时 snapshot stale/unknown 则拒绝执行。
-- [ ] 测试 Service 启动早于 DataStore origin 恢复时等待，不使用 DEFAULT placeholder 连接真实服务。
-- [ ] 测试进程重建后 Runtime 先恢复存储 origin，再取完整 fresh snapshot；无 fresh snapshot 前不发布 metadata/actions。
-- [ ] 测试新 epoch、origin 切换和 explicit Stop 对 service/session/notification 的收敛。
-- [ ] 测试 Service 未获所需权限、启动时被系统拒绝、或后台限制时降级状态与资源释放。
+- [x] 测试 onCreate/onStartCommand/onTaskRemoved/onDestroy 等生命周期重复触发时的幂等性；重复启动、Task 移除、显式停止与重新启动均有 API 33 instrumentation 覆盖。
+- [x] 测试 Activity finish/recreate 不关闭后台 MediaSession；重复启动 Service 不产生第二个 Session，token 与 Runtime owner 保持一致。
+- [x] 测试 media action callback 只映射四种合同动作；实际 dispatch 使用 app-scoped gateway。重复/锁定/过期语义继续由 B0 Gateway focused tests 负责。
+- [x] Service 在 origin 恢复后才继续；未配置 origin 时停止，不把 DEFAULT placeholder 当成已配置服务器地址。
+- [x] 测试进程重建路径：新进程不恢复持久化曲目事实；Session 由新鲜 Runtime projection 重建；callback 尚未附着时动作保持为零，前台重入后重试附着。
+- [x] 新 epoch、origin/current 撤销沿用 canonical projection 的 WITHDRAWN/RETAINED/CONFIRMED 迁移，Application 根据投影幂等管理 Service；相关 projection 单测由 B1 覆盖。
+- [x] 测试 Service 启动失败与通知权限状态分别记录；不增加不必要权限或 FGS。
 
 ### Task 7.3.2 — Implement lifecycle integration
 
-- [ ] 按 Batch 0 策略实现 Service。若无 FGS 也能满足行为，不要为了常驻而添加 FGS；若必须使用，添加最窄且正确的 service type 与权限。
-- [ ] Service 通过 Application 获取唯一 Runtime/controller；绝不调用 `AppRuntime.create()`。
-- [ ] 提供 origin readiness 等待能力；确认配置 origin 加载完成后才开始恢复媒体状态。
-- [ ] 由 Runtime snapshot flow 驱动 session/notification，而不是额外启动轮询或新的 WebSocket。
-- [ ] service start/stop 逻辑幂等；current 无效/显式 Stop 时撤销通知和 session，并按冻结策略停止不再需要的 Service。
-- [ ] 处理 OS 重新创建 Service：不读取持久化曲目作为当前事实，不自动提交历史 mutation；fresh snapshot 通过 T7-03 后恢复会话。
-- [ ] 明确 force-stop 限制；不得声称应用能绕过 force-stop 或厂商后台管控。
+- [x] 按 Batch 0 策略实现普通 started Service。API 33 已验证远程控制 MediaSession 不需要 FGS；未添加 FGS type 或权限。
+- [x] Service 通过 Application 获取唯一 Runtime/controller；绝不调用 AppRuntime.create()。
+- [x] 提供 origin readiness 等待能力；确认配置 origin 加载完成后才开始恢复媒体状态。
+- [x] 由 Runtime snapshot flow 驱动 session/notification，而不是额外启动轮询或新的 WebSocket。
+- [x] service start/stop 逻辑幂等；current 无效/显式 Stop 时撤销 notification/session，并按冻结策略停止不再需要的 Service。
+- [x] 处理 OS 重新创建 Service：不读取持久化曲目作为当前事实，不自动提交历史 mutation；fresh snapshot 满足 T7-03 后恢复会话。
+- [x] 明确 force-stop 与厂商后台管控限制；后台启动被拒绝时记录降级原因，并在 Activity 回到前台时重试。
 
-**Batch 3 退出条件：** Service 生命周期 instrumentation 通过；系统回调始终复用同一 Runtime/gateway/coordinator；进程恢复先取完整 snapshot；没有多 Session、重复通知或第二条 WS。
+**Batch 3 实际结果（2026-11-02）：** 新增内部 RemotePlaybackService、标准 transport callback adapter、origin/snapshot readiness gate、同一 MediaSession callback attach/detach 和 Application 级 Service 生命周期协调。普通 Service 返回 START_STICKY，不创建 Runtime/WS/Session，不添加 FGS 权限或 type。未附着 callback 时 Session actions 清零；attach 后重新使用 Gateway 能力投影。服务启动失败诊断与通知权限状态相互独立。
 
-**提交建议：** `feat(media): manage background session lifecycle`
+**验证：** 84 suites / 474 tests / 0 failures / 0 errors / 0 skipped；Android test 编译及 Debug APK/Android-test APK/Lint 均通过；Lint 0 errors / 16 warnings / 4 hints。SM-G986N / API 33 新增 3 项 Service/callback/Manifest connected instrumentation 3/3 通过；覆盖安装 firstInstallTime 与 DataStore SHA-256 不变。额外进程回收观察中，新进程先由 fresh Runtime projection 恢复 Session metadata，动作保持为 0，前台重入后 callback 成功附着并恢复 action flags。V2307A / API 36 的 adb 覆盖安装被系统以 INSTALL_FAILED_ABORTED: User rejected permissions 中止，未影响原安装与数据，故不报告 API 36 runtime 通过。完整 evidence 见 [Batch 3 verification report](../reports/2026-11-02-task-7-batch3-verification.md)。B4 锁屏手工验收尚未实施。
+
+**提交建议：** feat(media): manage background session lifecycle
 
 ## Batch 4 — 集成回归、实机锁屏与覆盖安装验收
 
@@ -220,3 +225,10 @@
 ## Task 7 最终退出门
 
 Task 7 仅在 Batch 0–4 的独立退出条件全部通过、Task 7 合同矩阵 T7-01..T7-14 全部有证据、Task 4/5/6 回归通过且真实设备验收完成后才算完成。Task 7 不负责 Task 8 的全项目交付验收，不得顺带开始 Task 8。
+
+
+## OriginOS 6 / Android 16 媒体通知控件后续修正（2026-11-02）
+
+Batch 3 完成后续 API 36 真机检查时发现：MediaSession active、metadata/token/action flags 均正常，但 OriginOS 6 的 NotificationRecord 没有显式 Notification.Action（numWithActions=0），故通知中心仅显示普通媒体通知。已在 `MediaNotificationFactory` 中将 canonical projection.actions 显式映射为 Previous / Play-or-Pause / Next notification actions，并设置 MediaStyle compact action indices；按钮通过内部 `RemoteMediaButtonReceiver` 将 KeyEvent 转发到同一个原生 MediaSession callback，仍复用唯一 PlayerCommandGateway。没有新增播放状态、网络、命令路径或 FGS 权限。
+
+V2307A / OriginOS 6 / API 36 验证：新增设备测试 3/3 通过；系统 NotificationRecord 实际含 3 actions、MediaStyle token 和 compactActions=[0,1,2]；通知中心截图确认三个控件可见。Debug + Android-test APK 安装成功，DataStore 与 firstInstallTime 保持。未通过真实播放按钮执行 NAS 写操作，Task 7 Batch 4 其余锁屏和端到端回归仍未完成。详见 [OriginOS 6 media controls fix report](../reports/2026-11-02-originos6-media-controls-fix.md)。

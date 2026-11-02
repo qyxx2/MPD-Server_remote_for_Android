@@ -30,6 +30,11 @@ import io.github.qyxx2.mpdserver.remote.ui.theme.resolveDarkTheme
 class MainActivity : ComponentActivity() {
     private var statusRingWindowGeometry by mutableStateOf(StatusRingWindowGeometry())
 
+    override fun onStart() {
+        super.onStart()
+        (application as? MpdServerRemoteApplication)?.retryMediaServiceStartFromForeground()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 

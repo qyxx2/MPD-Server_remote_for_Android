@@ -1,6 +1,6 @@
 # Task 7：Android 系统媒体会话、通知与锁屏控制 — 合同矩阵
 
-> 状态：Batch 0 与 Batch 1 已实施并完成当前批次验证；Batch 2–4 尚未实施。系统媒体功能验收范围按用户确认设为 Android 13（API 33）及以上；API 26–32 不属于 Task 7 媒体功能保证范围，API 34+ 专项限制在后续接入相应能力时验证。
+> 状态：Batch 0–3 已实施并完成各自可执行的机器验证；Batch 4 实机锁屏/整体验收尚未实施。已在 API 33 真机验证 B3 lifecycle instrumentation；API 36 覆盖安装被系统安装器中止，未完成 runtime 验证。系统媒体功能保证范围按用户确认设为 Android 13（API 33）及以上；API 26–32 不属于 Task 7 媒体功能保证范围。
 > Android 基线：`task7` 分支，起点 `main` / `1b01447`。本矩阵不改变 MPD-Server 上游基线。
 
 ## 1. 合同冻结判断
@@ -42,12 +42,12 @@
 | T7-05 | 系统动作沿用统一命令入口与 MutationCoordinator。任何 player action 在 PENDING/SYNCING/UNKNOWN 锁定期间不得再次创建新 intent；重复系统回调不得导致重复 POST。不得使用新 key 自动重放 unknown。 | Web 行为合同 §4；架构规格 §6；`PlayerActions.isLocked()`、`MutationCoordinator.submit()` | 并发/重复 callback 测试；同一动作被连续触发只允许一个 intent；UNKNOWN 不能自动换 key 重发 | 快速连续点击系统控件只产生一次操作；操作未知时不误报成功 |
 | T7-06 | 已发布会话在同 origin 断线或 snapshot stale/unknown 时，可保留最后一次确认的曲目元数据；明确进入不可操作状态，动作 flags 清零。不得将最后已知播放状态包装成新的确认状态。新安装/新进程在获得 fresh snapshot 前不得从持久化元数据恢复为当前曲目。 | 产品规格 §11.2；Web 行为合同 §§2–3 | fresh→stale、disconnect、unknown、重连等状态迁移测试；新进程 stale 初态不发布会话 | 断网期间元数据可以保留，控制不能触发写请求；恢复后以新 snapshot 更新 |
 | T7-07 | 当前无唯一 current occurrence，或 canonical snapshot 的 `explicit_stop_generation` 前进并确认 Stop 后，撤下会话与媒体通知。不能仅因 `playback.state=STOPPED`、actual STOPPED 或清空 pending Queue 就推断用户执行了 Stop。 | 产品规格 §11.2、§12；Web 行为合同 §5；`FullStateSnapshot.explicitStopGeneration` | current 缺失、explicit stop generation 增长、仅 STOPPED、仅清空 pending Queue 四类对照测试 | Stop/无 current 后媒体卡片撤下；清空待播不错误撤下仍在播放的 current |
-| T7-08 | 后台服务只承载系统媒体会话、媒体通知和命令回调。服务生命周期必须与 AppRuntime 协调；不因 Activity 销毁而失效，不启动第二个 Runtime。只有平台确实要求时才使用前台服务，并声明经 targetSdk 验证的最窄正确 service type/权限。 | 产品规格 §§4.1、11.1、13.2；Android targetSdk 36 | Manifest 合同检查、Service lifecycle instrumentation、API 26/33/36 覆盖；验证 start/stop 幂等及权限错误 | Home/锁屏/后台切换、屏幕关闭、Service 重建与系统回收行为 |
+| T7-08 | 后台服务只承载系统媒体会话、媒体通知和命令回调。服务生命周期必须与 AppRuntime 协调；不因 Activity 销毁而失效，不启动第二个 Runtime。只有平台确实要求时才使用前台服务，并声明经 targetSdk 验证的最窄正确 service type/权限。 | 产品规格 §§4.1、11.1、13.2；Android targetSdk 36 | Manifest 合同检查及 API 33 Service lifecycle instrumentation（3/3）；API 36 runtime 未覆盖，安装器中止记录见 Batch 3 report | Home/锁屏/后台切换、屏幕关闭、Service 重建与系统回收行为 |
 | T7-09 | 通知渠道与权限遵守 API 26+、API 33+ 的系统规则。拒绝/关闭通知或后台能力受限时，不能伪称完整可用；应用内解释降级原因。不要在应用启动时无上下文弹出权限请求。 | 产品规格 §11.2、§13.2 | 通知许可 granted/denied、渠道关闭、平台不允许前台服务等状态测试 | 真机分别测试允许、拒绝、系统设置关闭后的系统控件和 App 内状态 |
 | T7-10 | 封面使用 `RuntimeReadApi.getArtwork()` 和 `ResourceMemoryCache`，以 origin/generation/epoch/library revision/song/artwork 身份保护迟到结果。文本元数据先发布，封面可异步补齐；缺图/失败使用应用图标，不沿用上一首封面。 | Web 行为合同 §§3、7；架构规格 §6.1；`RuntimeReadApi`、`ResourceMemoryCache` | 切歌、origin 变化、epoch/revision 变化、请求迟到、缺图及非法图片测试 | 快速切歌时锁屏图片不闪回前一首；无封面时显示稳定占位 |
-| T7-11 | 进程死亡/Service 重建后，先恢复已配置 origin，再启动/复用唯一 Runtime 并取得新完整权威 snapshot；只在新 snapshot 满足 T7-03 后恢复会话。不得恢复持久化播放快照或自动重放上次未确认操作。 | 产品规格 §11.1、§12；Web 行为合同 §2；Application DataStore origin 恢复 | 进程/Service 重建测试；无快照/旧 epoch/旧 origin 下不恢复 action；fresh snapshot 到达后更新 session | 系统回收后重入、应用重新启动、网络恢复后的会话恢复；不清数据、不卸载 |
+| T7-11 | 进程死亡/Service 重建后，先恢复已配置 origin，再启动/复用唯一 Runtime 并取得新完整权威 snapshot；只在新 snapshot 满足 T7-03 后恢复会话。不得恢复持久化播放快照或自动重放上次未确认操作。 | 产品规格 §11.1、§12；Web 行为合同 §2；Application DataStore origin 恢复 | API 33 进程回收观察与 Service readiness gate；未附着 callback 时 actions=0，fresh projection 与前台 retry 后恢复；API 36 runtime 待补 | 系统回收后重入、应用重新启动、网络恢复后的会话恢复；不清数据、不卸载 |
 | T7-12 | 系统媒体卡片不增加 seek、Stop、Queue、Shuffle、Repeat、音量、DAC 或本地播放功能。耳机/硬件按键不是独立验收目标；系统通过 MediaSession 标准回调支持的行为仍须落到既有三类动作。 | 产品规格 §§4.3、11.1；主计划 Task 7 | 检查 published action flags 和 notification actions，不出现越界动作 | 检查系统界面不展示未经授权的控制 |
-| T7-13 | session、notification、service 均为单例且可幂等更新/撤销；Activity/Service 生命周期交错、重复 onStartCommand、重复 snapshot emission 不得堆积通知或创建多个 MediaSession。 | 产品规格 §§11–12；架构规格 §4 | 多次启动/停止、Activity 重建、重复 snapshot 的 instrumentation；检查 active session / notification 数量 | 多次进入退出 App、切后台和重开后仅保留一个系统媒体卡片 |
+| T7-13 | session、notification、service 均为单例且可幂等更新/撤销；Activity/Service 生命周期交错、重复 onStartCommand、重复 snapshot emission 不得堆积通知或创建多个 MediaSession。 | 产品规格 §§11–12；架构规格 §4 | API 33 instrumentation 覆盖重复 start/stop、Activity recreate/task removal 和相同 Session token；单例由 Application owner 保证 | 多次进入退出 App、切后台和重开后仅保留一个系统媒体卡片 |
 | T7-14 | 新增系统媒体能力不得改变现有播放、Queue、歌词、Home/Library/Search、设置、地址持久化、统一签名和覆盖安装行为。 | 主计划 Task 4/5/6；Task 0 签名合同；Task 7 整合回归 | 全量 unit/UI/instrumentation、Lint、clean build；APK 包名/签名；Task 4/5/6 回归 | `adb install -r` 覆盖安装，保留 MS origin、主题和状态环参数；再次验证服务连接 |
 
 ## 4. 关键语义细化
@@ -160,3 +160,17 @@ B0 已实现 Runtime command gateway；API 26/36 runtime matrix 是明确的未�
 
 
 Batch 1 验证记录见 [Task 7 Batch 1 verification report](../reports/2026-11-01-task-7-batch1-verification.md)。
+
+
+## 8. Batch 2 实施与验证证据（2026-11-02）
+
+- MpdServerRemoteApplication 仍只创建一个 AppRuntime、一个 RemoteMediaSessionController 和一个 MediaNotificationController。通知控制器只消费现有 Session projection，不持有播放器、业务播放状态、HTTP client、WebSocket、MutationCoordinator 或持久化。
+- 媒体通知使用固定 channel ID mpd_server_remote_media，importance LOW、无 sound/vibration。若 channel 已存在则原样复用，尊重用户设置；不会创建新 ID 绕开关闭状态。
+- Notification 使用 Notification.MediaStyle 和现有 Session token；标题、艺术家、专辑、点击 Intent 来自 Session metadata/既有 launcher 入口。系统操作能力继续由 B1 的 PlaybackState flags 驱动；本批不新增回调/Service，回调执行属于 B3。
+- 封面调用 runtime.reads.getArtwork(songId)，复用 ResourceMemoryCache 原图缓存和请求限制。Bitmap 解码限制最大边 512px；回写时复验 origin、connection/snapshot generation、epoch、library revision、explicit Stop generation、song ID、queue occurrence 和 artwork ID。曲目 identity 变化立即清空旧 Bitmap，封面失败不阻塞文字 metadata。
+- Manifest 仅声明 POST_NOTIFICATIONS；不主动请求权限，不添加 Service/FGS。权限、应用通知开关、channel importance 独立投影到 MediaControlAvailability。现有「设置 → 状态」显示降级原因和 Android channel/app notification settings 入口。
+- 自动化证据：83 suites / 472 unit tests / 0 failures / 0 errors / 0 skipped；lintDebug 0 errors / 16 warnings / 4 hints；clean Debug APK 与 Android-test APK 构建、instrumentation Kotlin compile/assemble 通过。API 33 新增 instrumentation 5/5 通过。RuntimeReadApiTest / ResourceMemoryCacheTest 覆盖 missing artwork、HTTP 错误、缓存身份、MIME 与图片签名拒绝。
+- SM-G986N / API 33 覆盖安装成功。安装后 firstInstallTime 仍为 2026-10-24 18:47:26，DataStore ui_preferences.preferences_pb SHA-256 仍为 9231e0497905a55fd74e239ce742734b6e470a6c0f05cf65a5b578d40805bf7b，签名证书 SHA-256 为 36c589d3e947dee7f36204d1d19f4e96275159a6a7ff9cd058e5cdd448a2c89f。denied (POST_NOTIFICATION=ignore) 下仍观测到 active Session、SystemUI controller、Notification ID 7317 / MediaStyle record 和 84×84 Bitmap largeIcon；无 FATAL EXCEPTION。pm grant 临时 granted 测试通过后，已恢复设备原先 denied 状态。
+- 限制：API 36 V2307A 上安装更新被系统安装器以 INSTALL_FAILED_ABORTED: User rejected permissions 中止，因此没有 API 36 runtime 证据；旧安装版本与数据未更新。channel IMPORTANCE_NONE 的降级状态由单测覆盖，真机未改动用户通知设置。未进行完整锁屏截图/系统按钮点击验收，也未实现 B3 的媒体动作回调。
+
+报告：[Task 7 Batch 2 verification](../reports/2026-11-02-task-7-batch2-verification.md)。

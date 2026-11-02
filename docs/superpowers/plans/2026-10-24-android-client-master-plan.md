@@ -208,7 +208,7 @@
 
 **目标：** 使用 Android 系统媒体控件远程控制服务端播放，使锁屏/通知栏的播放状态与 App 共享状态一致。
 
-**当前状态（2026-11-01）：Batch 0 与 Batch 1 已完成，并分别保留验证记录。** B0 实现 Runtime player command gateway 和 origin transition 原子锁；B1 实现 canonical MediaSession projection、Application 级唯一原生 Session owner。最终回归为 81 suites / 466 tests，0 failures/errors；Lint 16 warnings / 4 hints / 0 errors。SM-G986N / Android 13 真机覆盖安装后，SystemUI 已注册 App 的 active MediaSession，当前服务端曲目 metadata 与 PAUSED 状态已成功投影；签名、firstInstallTime 与 DataStore 偏好保持。用户接受 Android 13+ 作为 Task 7 系统媒体功能范围，API 26–32 不纳入媒体功能保证，应用 minSdk=26 保持不变；API 34+ 通知/后台限制在实际接入相应能力时验证。**Batch 2–4 尚未开始；Task 7 整体仍未完成。**
+**当前状态（2026-11-02）：Batch 0–3 已完成实现和各自机器验证；Batch 4 的真实锁屏/整体验收仍未完成，Task 7 整体不标记完成。** B0 实现 Runtime player command gateway 和 origin transition 原子锁；B1 实现 canonical MediaSession projection、Application 级唯一原生 Session owner；B2 实现绑定同一 Session token 的 MediaStyle 通知、共享 Runtime artwork、通知权限/渠道降级及「设置 → 状态」系统设置入口；B3 实现复用唯一 Runtime/Gateway 的普通 started Service、callback 生命周期及 fresh-snapshot 恢复门，不添加 FGS。B3 回归为 84 suites / 474 tests / 0 failures/errors/skipped；Lint 0 errors / 16 warnings / 4 hints；API 33 新增 lifecycle instrumentation 3/3 通过。API 33 覆盖安装保持 firstInstallTime 和 DataStore SHA-256；进程回收观察表明 callback 在后台重建受系统策略影响时 fail-closed，并在 Activity 前台重入时重试附着。API 36 V2307A 更新安装被系统以 INSTALL_FAILED_ABORTED: User rejected permissions 中止，旧版本/数据不变，因此 API 36 runtime 未覆盖。系统媒体功能仍按用户确认以 Android 13+ 为保证范围，应用 minSdk=26 保持不变。证据：[Batch 2 报告](../reports/2026-11-02-task-7-batch2-verification.md)、[Batch 3 报告](../reports/2026-11-02-task-7-batch3-verification.md)。
 
 **额外人工冻结判断：** 不需要新增产品选择。媒体元数据、三类系统动作、服务端状态唯一权威、stale/unknown、Stop/no-current 撤销、权限受限降级和进程恢复已由现行权威规格定义。剩余 Android API / 通知权限 / Service type 是平台实现验证，不要求用户先选择技术实现。
 
