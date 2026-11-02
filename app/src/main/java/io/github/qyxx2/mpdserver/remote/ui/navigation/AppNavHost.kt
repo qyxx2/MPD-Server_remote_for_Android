@@ -877,32 +877,48 @@ fun AppNavHost(
 
             // The root backdrop remains aligned to the actual safe-content bounds, while its
             // fullscreen layer keeps the physical window geometry and the existing blur handoff.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(safeContentPadding),
-            ) {
-                RootBackdropShell(
-                    rootRoute = rootBeforeFullScreen,
-                    runtime = runtime,
-                    homeState = homeState,
-                    homeScrollStateHolder = homeScrollStateHolder,
-                    homeArtworkIdentity = homeArtworkIdentity,
-                    miniPlayerPresentation = miniPlayerPresentation,
-                    miniPlayerArtwork = miniPlayerArtwork,
-                    miniPlayerArtworkAlpha = if (miniPlayerArtworkTransitionActive) 0f else 1f,
-                    miniPlayerChromeAlpha = miniPlayerChromeAlpha,
-                    searchController = searchController,
-                    navController = navController,
-                    uiPreferences = uiPreferences,
-                    preferenceWriteScope = preferenceWriteScope,
-                    windowGeometry = windowGeometry,
-                    onApplyServerOrigin = applyServerOrigin,
-                    blurRadiusDp = backdropBlurDp,
-                    hideNavigationBar = (enterPlayerFromMini && entryProgress < 0.999f) ||
-                        isPlayerDismissTransitionActive,
-                    modifier = Modifier.fillMaxSize(),
-                )
+            Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(safeContentPadding),
+                ) {
+                    RootBackdropShell(
+                        rootRoute = rootBeforeFullScreen,
+                        runtime = runtime,
+                        homeState = homeState,
+                        homeScrollStateHolder = homeScrollStateHolder,
+                        homeArtworkIdentity = homeArtworkIdentity,
+                        miniPlayerPresentation = miniPlayerPresentation,
+                        miniPlayerArtwork = miniPlayerArtwork,
+                        miniPlayerArtworkAlpha = if (miniPlayerArtworkTransitionActive) 0f else 1f,
+                        miniPlayerChromeAlpha = miniPlayerChromeAlpha,
+                        searchController = searchController,
+                        navController = navController,
+                        uiPreferences = uiPreferences,
+                        preferenceWriteScope = preferenceWriteScope,
+                        windowGeometry = windowGeometry,
+                        onApplyServerOrigin = applyServerOrigin,
+                        blurRadiusDp = backdropBlurDp,
+                        hideNavigationBar = (enterPlayerFromMini && entryProgress < 0.999f) ||
+                            isPlayerDismissTransitionActive,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // Keep the root input shield within safe content so it does not consume
+                    // status-bar or navigation-bar system gestures.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                            )
+                            .testTag("full-screen-root-backdrop-input-shield"),
+                    )
+                }
+                // The root artwork/navigation may respect safe insets, but the scrim is a
+                // window-level layer and must also cover the status and navigation bar regions.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -918,16 +934,6 @@ fun AppNavHost(
                             ),
                         )
                         .testTag("full-screen-root-backdrop-scrim"),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {},
-                        )
-                        .testTag("full-screen-root-backdrop-input-shield"),
                 )
             }
 

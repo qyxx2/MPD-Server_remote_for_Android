@@ -24,6 +24,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
 import io.github.qyxx2.mpdserver.remote.ui.navigation.AppDestination
 import io.github.qyxx2.mpdserver.remote.ui.navigation.AppNavHost
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingInsets
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -38,7 +40,7 @@ class FullScreenPlayerNavigationUiTest {
 
     private lateinit var navController: NavHostController
 
-    private fun launchNavigation() {
+    private fun launchNavigation(windowGeometry: StatusRingWindowGeometry = StatusRingWindowGeometry()) {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         composeRule.setContent {
             val controller = rememberNavController()
@@ -48,6 +50,7 @@ class FullScreenPlayerNavigationUiTest {
                 navController = controller,
                 uiPreferences = application.uiPreferences,
                 preferenceWriteScope = application.uiPreferencesWriteScope,
+                windowGeometry = windowGeometry,
             )
         }
         composeRule.waitForIdle()
@@ -266,6 +269,25 @@ class FullScreenPlayerNavigationUiTest {
         val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
             .fetchSemanticsNode().boundsInRoot
         assertEquals("the shared dismissal motion must settle back to its origin", 0f, motionBounds.top, 1.5f)
+    }
+
+    @Test
+    fun dismissalScrimCoversFullWindowIncludingSystemBarInsets() {
+        launchNavigation(
+            StatusRingWindowGeometry(
+                safeInsets = StatusRingInsets(top = 72, bottom = 96),
+            ),
+        )
+        openPlayerAndWaitForArtwork()
+
+        val windowBounds = composeRule.onNodeWithTag("full-screen-motion-container")
+            .fetchSemanticsNode().boundsInRoot
+        val scrimBounds = composeRule.onNodeWithTag("full-screen-root-backdrop-scrim")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("scrim must start at the physical window top, above the status-bar inset", windowBounds.top, scrimBounds.top, 1.5f)
+        assertEquals("scrim must extend to the physical window bottom, including navigation inset", windowBounds.bottom, scrimBounds.bottom, 1.5f)
+        assertEquals(windowBounds.left, scrimBounds.left, 1.5f)
+        assertEquals(windowBounds.right, scrimBounds.right, 1.5f)
     }
 
     @Test

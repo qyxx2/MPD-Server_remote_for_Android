@@ -1,6 +1,7 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -12,13 +13,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -51,6 +55,36 @@ class MiniPlayerArtworkTransitionUiTest {
         connectionGeneration = 4L,
     )
     private val otherKey = key.copy(songId = "song-b", fileUri = "music/song-b.flac")
+
+    @Test
+    fun hiddenArtworkStageDoesNotDrawSurfaceVariantPlaceholder() {
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Red)
+                        .testTag("hidden-artwork-stage-root"),
+                ) {
+                    ArtworkStage(
+                        bitmap = artworkBitmap(),
+                        placeholderLabel = "隐藏封面",
+                        modifier = Modifier.size(260.dp).align(Alignment.Center),
+                        artworkVisible = false,
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        val pixels = composeRule.onNodeWithTag("hidden-artwork-stage-root")
+            .captureToImage().toPixelMap()
+        assertEquals(
+            "a hidden ArtworkStage must reveal its parent backdrop rather than its fixed surface color",
+            Color.Red,
+            pixels[pixels.width / 2, pixels.height / 2],
+        )
+    }
 
     @Test
     fun miniArtworkReportsItsOwnBounds() {

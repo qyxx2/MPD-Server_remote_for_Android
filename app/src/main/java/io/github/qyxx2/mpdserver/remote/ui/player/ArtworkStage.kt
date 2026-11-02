@@ -67,9 +67,10 @@ fun ArtworkStage(
                 .size(artworkSide)
                 .align(Alignment.Center)
                 .then(dismissGestureModifier)
+                // The visibility layer must enclose the background as well as the artwork image.
+                .graphicsLayer { alpha = if (artworkVisible) 1f else 0f }
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .graphicsLayer { alpha = if (artworkVisible) 1f else 0f }
                 .onGloballyPositioned { artworkCoordinates = it }
                 .clickable(enabled = onTap != null) { onTap?.invoke() }
                 .testTag("player-artwork-stage"),
