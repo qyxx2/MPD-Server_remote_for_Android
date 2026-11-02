@@ -1,9 +1,18 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 
 /** Interpolates an artwork rectangle in a shared coordinate space. */
 internal object ArtworkTransitionGeometry {
+    fun removeParentTranslation(bounds: Rect, translation: Offset): Rect {
+        require(bounds.isFiniteNonEmpty()) { "Artwork bounds must be finite and non-empty." }
+        require(translation.x.isFinite() && translation.y.isFinite()) {
+            "Parent translation must be finite."
+        }
+        return bounds.translate(-translation)
+    }
+
     fun interpolate(source: Rect, target: Rect, progress: Float): Rect {
         require(source.isFiniteNonEmpty()) { "Source artwork bounds must be finite and non-empty." }
         require(target.isFiniteNonEmpty()) { "Target artwork bounds must be finite and non-empty." }

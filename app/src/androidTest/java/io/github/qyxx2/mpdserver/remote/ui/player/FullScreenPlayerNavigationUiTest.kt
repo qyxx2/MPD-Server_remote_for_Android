@@ -82,6 +82,7 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-backdrop-theme-mask").assertIsDisplayed()
+        composeRule.onNodeWithTag("full-screen-root-backdrop-scrim").assertIsDisplayed()
         val backdropBounds = composeRule.onNodeWithTag("full-screen-root-backdrop").fetchSemanticsNode().boundsInRoot
         assertTrue("root backdrop should remain laid out beneath the player", backdropBounds.width > 0f && backdropBounds.height > 0f)
         composeRule.onNodeWithTag("full-screen-exit-gesture-band").assertIsDisplayed()
@@ -285,6 +286,13 @@ class FullScreenPlayerNavigationUiTest {
         val preview = composeRule.onAllNodesWithTag("mini-player-expansion-preview")
             .fetchSemanticsNodes(atLeastOneRootRequired = false)
         assertTrue("a full-player surface must be pulled out while the finger is held", preview.isNotEmpty())
+        composeRule.onNodeWithTag("mini-player-expansion-backdrop-scrim").assertIsDisplayed()
+        val previewBounds = preview.single().boundsInRoot
+        val scrimBounds = composeRule.onNodeWithTag("mini-player-expansion-backdrop-scrim")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("the drag scrim must cover the full preview content width", previewBounds.left, scrimBounds.left, 1.5f)
+        assertEquals("the drag scrim must cover the full preview content width", previewBounds.width, scrimBounds.width, 1.5f)
+        assertEquals("the drag scrim must cover the full preview content height", previewBounds.height, scrimBounds.height, 1.5f)
         val playerBounds = composeRule.onNodeWithTag("mini-player-expansion-motion-layer")
             .fetchSemanticsNode().boundsInRoot
         assertTrue(

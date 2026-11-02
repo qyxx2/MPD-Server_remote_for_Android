@@ -64,6 +64,16 @@ class FullScreenPlayerGestureTest {
     }
 
     @Test
+    fun rootBackdropScrimFollowsTheSameSheetExpansionProgress() {
+        assertEquals(0f, MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(0f), 0.001f)
+        assertEquals(0.5f, MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(0.5f), 0.001f)
+        assertEquals(1f, MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(1f), 0.001f)
+        assertEquals(0f, MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(Float.NaN), 0.001f)
+        assertEquals(0.5f, MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(1f, dismissProgress = 0.5f), 0.001f)
+        assertEquals(0.3f, MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(1f, maximumAlpha = 0.3f), 0.001f)
+    }
+
+    @Test
     fun playerDismissProgressDrivesBackdropBlurAndTopCornerRadius() {
         assertEquals(0f, FullScreenPlayerDismissPolicy.dragProgress(0f, 1000f), 0.001f)
         assertEquals(0.5f, FullScreenPlayerDismissPolicy.dragProgress(500f, 1000f), 0.001f)
@@ -71,7 +81,9 @@ class FullScreenPlayerGestureTest {
         assertEquals(20f, FullScreenPlayerDismissPolicy.backdropBlurDp(1f, 0f, 1000f, 20f), 0.001f)
         assertEquals(10f, FullScreenPlayerDismissPolicy.backdropBlurDp(1f, 500f, 1000f, 20f), 0.001f)
         assertEquals(0f, FullScreenPlayerDismissPolicy.backdropBlurDp(1f, 1000f, 1000f, 20f), 0.001f)
-        assertEquals(0f, FullScreenPlayerDismissPolicy.topCornerRadiusDp(1f, 0f, 1000f), 0.001f)
+        assertEquals(16f, FullScreenPlayerDismissPolicy.topCornerRadiusDp(0f, 0f, 1000f), 0.001f)
+        assertEquals(16f, FullScreenPlayerDismissPolicy.topCornerRadiusDp(0.5f, 0f, 1000f), 0.001f)
+        assertEquals(16f, FullScreenPlayerDismissPolicy.topCornerRadiusDp(1f, 0f, 1000f), 0.001f)
         assertEquals(16f, FullScreenPlayerDismissPolicy.topCornerRadiusDp(1f, 60f, 1000f), 0.001f)
         assertEquals(32f, FullScreenPlayerDismissPolicy.topCornerRadiusDp(1f, 120f, 1000f), 0.001f)
         assertEquals(0.08f, FullScreenPlayerDismissPolicy.entryVerticalScale(0f, 80f, 1000f), 0.001f)

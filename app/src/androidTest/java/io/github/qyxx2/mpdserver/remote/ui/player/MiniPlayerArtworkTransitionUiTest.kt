@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
@@ -113,6 +114,45 @@ class MiniPlayerArtworkTransitionUiTest {
         assertRectEquals(
             expected,
             reported!!.translate(Offset(-rootOrigin.x, -rootOrigin.y)),
+        )
+    }
+
+    @Test
+    fun translatedSheetMeasurementResolvesToItsUntranslatedArtworkTarget() {
+        val translationY = 240f
+        var rootOrigin = Offset.Zero
+        var reportedOnScreen: Rect? = null
+        val bitmap = artworkBitmap()
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                Box(
+                    Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionOnScreen() },
+                ) {
+                    Box(
+                        Modifier.fillMaxSize().graphicsLayer { this.translationY = translationY },
+                    ) {
+                        ArtworkStage(
+                            bitmap = bitmap,
+                            placeholderLabel = "无封面",
+                            modifier = Modifier.size(260.dp).align(Alignment.Center),
+                            onArtworkBoundsChanged = { reportedOnScreen = it },
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        val reported = reportedOnScreen
+        assertNotNull("Moving sheet must report the transformed artwork bounds", reported)
+        val movedBoundsInRoot = composeRule.onNodeWithTag("player-artwork-stage")
+            .fetchSemanticsNode().boundsInRoot
+        val expectedFinalBounds = movedBoundsInRoot.translate(Offset(0f, -translationY))
+        val measuredBoundsInRoot = reported!!.translate(Offset(-rootOrigin.x, -rootOrigin.y))
+        assertRectEquals(
+            expectedFinalBounds,
+            ArtworkTransitionGeometry.removeParentTranslation(measuredBoundsInRoot, Offset(0f, translationY)),
         )
     }
 

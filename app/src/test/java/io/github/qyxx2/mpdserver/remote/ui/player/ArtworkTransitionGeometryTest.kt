@@ -43,6 +43,17 @@ class ArtworkTransitionGeometryTest {
     }
 
     @Test
+    fun translatedDestinationBoundsReturnToStablePlayerCoordinates() {
+        val measuredWhileSheetIsMoving = Rect(120f, 680f, 520f, 1080f)
+        val parentTranslation = androidx.compose.ui.geometry.Offset(0f, 340f)
+
+        assertRectEquals(
+            Rect(120f, 340f, 520f, 740f),
+            ArtworkTransitionGeometry.removeParentTranslation(measuredWhileSheetIsMoving, parentTranslation),
+        )
+    }
+
+    @Test
     fun invalidOrEmptyBoundsAreRejected() {
         val valid = Rect(0f, 0f, 10f, 10f)
         val empty = Rect(0f, 0f, 0f, 10f)

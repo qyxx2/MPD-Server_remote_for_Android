@@ -42,6 +42,7 @@ internal fun ArtworkTransitionOverlay(
     val density = LocalDensity.current
     val width = with(density) { bounds.width.toDp() }
     val height = with(density) { bounds.height.toDp() }
+    val cornerRadius = (8f + 10f * progress.coerceIn(0f, 1f)).dp
 
     Box(modifier = modifier.fillMaxSize()) {
         Image(
@@ -51,7 +52,7 @@ internal fun ArtworkTransitionOverlay(
             modifier = Modifier
                 .offset { IntOffset(bounds.left.roundToInt(), bounds.top.roundToInt()) }
                 .size(width, height)
-                .clip(RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(cornerRadius))
                 .testTag("mini-player-artwork-transition-overlay"),
         )
     }

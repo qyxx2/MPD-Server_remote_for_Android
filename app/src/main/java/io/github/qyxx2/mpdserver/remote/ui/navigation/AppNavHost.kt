@@ -90,6 +90,7 @@ import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingVisibilityContro
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerScreen
 import io.github.qyxx2.mpdserver.remote.ui.player.ArtworkTransitionOverlay
+import io.github.qyxx2.mpdserver.remote.ui.player.ArtworkTransitionGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
@@ -587,10 +588,24 @@ fun AppNavHost(
         miniPlayerArtworkBoundsOnScreen,
         miniPlayerArtworkBoundsKey,
     )
+    val playerSheetTranslationY = if (enterPlayerFromMini || isMiniPlayerExpansionPreview) {
+        // Remove both the sheet translation and the simultaneously animated top safe-inset
+        // padding; both affect ArtworkStage.positionOnScreen before the sheet reaches rest.
+        (miniPlayerTopPx - safeInsets.top.coerceAtLeast(0)) * (1f - entryProgress)
+    } else {
+        0f
+    }
     val targetArtworkBoundsInRoot = screenBoundsInRoot(
         fullScreenArtworkBoundsOnScreen,
         fullScreenArtworkBoundsKey,
-    )
+    )?.let { measuredBounds ->
+        // positionOnScreen includes the moving sheet's graphicsLayer translation. Remove it so
+        // interpolation always targets the final artwork location, not a target that moves too.
+        ArtworkTransitionGeometry.removeParentTranslation(
+            measuredBounds,
+            Offset(0f, playerSheetTranslationY),
+        )
+    }
     val miniPlayerArtworkTransitionActive =
         (enterPlayerFromMini || isMiniPlayerExpansionPreview) &&
             currentMiniPlayerArtworkKey != null &&
@@ -897,6 +912,22 @@ fun AppNavHost(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(
+                            Color.Black.copy(
+                                alpha = MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(
+                                    entryProgress = entryProgress,
+                                    dismissProgress = FullScreenPlayerDismissPolicy.dragProgress(
+                                        offsetPx = playerDragOffsetPx,
+                                        screenHeightPx = playerLayerHeightPx,
+                                    ),
+                                ),
+                            ),
+                        )
+                        .testTag("full-screen-root-backdrop-scrim"),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -924,7 +955,8 @@ fun AppNavHost(
                             )
                             translationY = miniPlayerTopPx * (1f - entry) + playerDragOffsetPx
                             shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
-                            clip = entry < 1f || playerDragOffsetPx > 0f
+                            // Keep the rounded sheet silhouette after the entry animation settles.
+                            clip = true
                         }
                         .testTag("full-screen-player-motion-layer"),
                 ) {
@@ -1124,6 +1156,16 @@ fun AppNavHost(
                         .fillMaxSize()
                         .testTag("mini-player-expansion-preview"),
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Color.Black.copy(
+                                    alpha = MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(entryProgress),
+                                ),
+                            )
+                            .testTag("mini-player-expansion-backdrop-scrim"),
+                    )
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
