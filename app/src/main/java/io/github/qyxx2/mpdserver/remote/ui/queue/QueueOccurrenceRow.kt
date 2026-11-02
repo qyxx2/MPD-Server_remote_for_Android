@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,9 +34,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Dp
 import androidx.core.graphics.ColorUtils
@@ -43,11 +48,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSourceDto
 /** Keep the selected row's existing hue/lightness and opacity; strengthen only its saturation. */
 internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color): Color {
     if (!isCurrent) return Color.Transparent
@@ -210,6 +218,14 @@ internal fun QueueOccurrenceRow(
 
             )
         }
+        if (occurrence.source == QueueSourceDto.AUTOPLAY) {
+            QueueAutoplayIndicator(
+                modifier = Modifier.size(36.dp)
+                    .offset(x = 16.dp)
+                    .semantics { contentDescription = "自动播放" }
+                    .testTag("queue-row-autoplay-indicator-${occurrence.queueItemId}"),
+            )
+        }
         Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
             IconButton(
                 enabled = menuEnabled,
@@ -311,6 +327,9 @@ internal fun QueueOccurrenceDragGhost(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            if (occurrence.source == QueueSourceDto.AUTOPLAY) {
+                QueueAutoplayIndicator(modifier = Modifier.size(36.dp).offset(x = 16.dp))
+            }
             Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                 QueueMoreGlyph()
             }
@@ -369,6 +388,30 @@ private fun QueueDragHandle(
                     center = Offset(centerX + (column - 0.5f) * gapX, startY + row * 7.dp.toPx()),
                 )
             }
+        }
+    }
+}
+
+/** A quiet, single-stroke infinity mark identifies server-generated AutoPlay occurrences. */
+@Composable
+private fun QueueAutoplayIndicator(modifier: Modifier = Modifier) {
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.size(width = 18.dp, height = 9.dp)) {
+            val w = size.width
+            val h = size.height
+            val path = Path().apply {
+                moveTo(w * 0.03f, h * 0.5f)
+                cubicTo(w * 0.10f, h * 0.08f, w * 0.30f, h * 0.08f, w * 0.5f, h * 0.5f)
+                cubicTo(w * 0.70f, h * 0.92f, w * 0.90f, h * 0.92f, w * 0.97f, h * 0.5f)
+                cubicTo(w * 0.90f, h * 0.08f, w * 0.70f, h * 0.08f, w * 0.5f, h * 0.5f)
+                cubicTo(w * 0.30f, h * 0.92f, w * 0.10f, h * 0.92f, w * 0.03f, h * 0.5f)
+            }
+            drawPath(
+                path = path,
+                color = tint,
+                style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
         }
     }
 }

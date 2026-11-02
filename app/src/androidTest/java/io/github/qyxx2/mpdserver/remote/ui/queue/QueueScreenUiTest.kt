@@ -143,6 +143,8 @@ class QueueScreenUiTest {
         composeRule.onNodeWithTag("queue-row-title-occ-current", useUnmergedTree = true).assertTextEquals("Title song-duplicate")
         composeRule.onNodeWithTag("queue-row-occ-manual-first").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-occ-manual-late").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("queue-row-autoplay-indicator-occ-current").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("queue-row-autoplay-indicator-occ-manual-first").assertCountEquals(0)
         composeRule.onNodeWithTag("queue-row-current-label-occ-current", useUnmergedTree = true).assertTextEquals("正在播放")
         composeRule.onNodeWithTag("queue-row-divider-occ-current").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-divider-occ-manual-first").assertIsDisplayed()
@@ -176,6 +178,8 @@ class QueueScreenUiTest {
 
         composeRule.onNodeWithTag("queue-row-occ-current-auto").assertIsDisplayed()
         composeRule.onNodeWithTag("queue-row-occ-next-auto").assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-row-autoplay-indicator-occ-current-auto", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("queue-row-autoplay-indicator-occ-next-auto", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onAllNodesWithTag("queue-row-occ-later-auto").assertCountEquals(0)
         assertEquals("fresh canonical Played must not trigger a fallback read", 0, playedReads.get())
     }

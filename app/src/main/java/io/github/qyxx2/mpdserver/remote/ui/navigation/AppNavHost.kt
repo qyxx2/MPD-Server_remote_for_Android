@@ -1,6 +1,8 @@
 package io.github.qyxx2.mpdserver.remote.ui.navigation
 
 import android.os.SystemClock
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -58,6 +60,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
+import io.github.qyxx2.mpdserver.remote.media.MediaControlAvailability
 import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
@@ -155,6 +159,18 @@ fun AppNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val application = LocalContext.current.applicationContext as MpdServerRemoteApplication
+    val mediaControlAvailability by application.mediaNotificationController.availability.collectAsStateWithLifecycle()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, application) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                application.mediaNotificationController.refreshAvailability()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val snapshotState by runtime.snapshots.state.collectAsStateWithLifecycle()
     val homeController = remember(runtime) { HomeDataController(runtime) }
     val homeState by homeController.state.collectAsStateWithLifecycle()
@@ -990,6 +1006,7 @@ fun AppNavHost(
                         },
                         snapshotState = snapshotState,
                         statusPresentation = statusPresentation,
+                        mediaControlAvailability = mediaControlAvailability,
                         onRetryUnknownActivity = retryUnknownActivity,
                         playerPresentation = playerPresentation,
                         playerMediaPresentation = mediaProjection.mediaPresentation,
@@ -1243,6 +1260,7 @@ private fun AppNavigationGraph(
     onRefreshAutoplay: () -> Unit,
     snapshotState: SnapshotStoreState,
     statusPresentation: ActivityPresentation,
+    mediaControlAvailability: MediaControlAvailability,
     onRetryUnknownActivity: (String) -> Unit,
     playerPresentation: PlayerPresentation,
     playerMediaPresentation: PlayerPresentation,
@@ -1375,6 +1393,7 @@ private fun AppNavigationGraph(
                 when (section) {
                     SettingsSection.STATUS -> StatusSettingsScreen(
                         presentation = statusPresentation,
+                        mediaControlAvailability = mediaControlAvailability,
                         onRetryUnknown = onRetryUnknownActivity,
                     )
                     SettingsSection.SERVER -> ServerSettingsScreen(
