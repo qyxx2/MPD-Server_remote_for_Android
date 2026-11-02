@@ -31,16 +31,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -229,14 +233,19 @@ internal fun QueueScreen(
     }
     val reorderBaseline = remember(queueProjectionKey) { QueueReorderBaseline.from(snapshotState) }
     val visiblePendingIds = remember(visibleRows) { visibleRows.filter { it.position > 0 }.map { it.queueItemId } }
+    val visiblePendingIdSet = remember(visiblePendingIds) { visiblePendingIds.toHashSet() }
     var reorderDraft by remember(runtime) { mutableStateOf<QueueReorderDraft?>(null) }
-    // The ordered draft drives only the insertion marker. As in Web, the canonical rows stay in
-    // place until release; a separate masked proxy follows the pointer above the list.
-    var dragPointerY by remember(runtime) { mutableStateOf<Float?>(null) }
-    var dragSourceTop by remember(runtime) { mutableStateOf<Float?>(null) }
-    var dragSourceHeight by remember(runtime) { mutableStateOf<Float?>(null) }
-    var dragOffsetX by remember(runtime) { mutableStateOf(0f) }
-    var dragOffsetY by remember(runtime) { mutableStateOf(0f) }
+    // Bounds are captured from the actual row node and normalized against the overlay viewport.
+    // Only rows currently measured in the LazyColumn may participate as insertion targets.
+    // Coordinates are read only from pointer callbacks; they are not UI state and must not
+    // trigger Queue recomposition while LazyColumn rows move during ordinary scrolling.
+    val measuredRowBoundsInRoot = remember { mutableMapOf<String, Rect>() }
+    var queueViewportBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    // The canonical rows stay in place until server readback; only this measured proxy follows
+    // the pointer. Its dimensions are copied from the source row, not inferred from item wrappers.
+    var draggedBoundsInViewport by remember(runtime) { mutableStateOf<Rect?>(null) }
+    var dropTargetQueueItemId by remember(runtime) { mutableStateOf<String?>(null) }
+    var dropTargetAtEnd by remember(runtime) { mutableStateOf(false) }
     val activeReorderDraft = reorderDraft?.takeIf {
         it.isCompatible(reorderBaseline, actions.isEnabled, visiblePendingIds)
     }
@@ -254,31 +263,43 @@ internal fun QueueScreen(
         initialValue = activeDraggedSongId?.let { cache.currentEntry(it, resourceIdentity) },
     )
 
+    fun viewportBounds(queueItemId: String): Rect? {
+        val row = measuredRowBoundsInRoot[queueItemId] ?: return null
+        val viewport = queueViewportBoundsInRoot ?: return null
+        return Rect(
+            left = row.left - viewport.left,
+            top = row.top - viewport.top,
+            right = row.right - viewport.left,
+            bottom = row.bottom - viewport.top,
+        )
+    }
+
     fun resetReorderDrag() {
         reorderDraft = null
-        dragPointerY = null
-        dragSourceTop = null
-        dragSourceHeight = null
-        dragOffsetX = 0f
-        dragOffsetY = 0f
+        draggedBoundsInViewport = null
+        dropTargetQueueItemId = null
+        dropTargetAtEnd = false
     }
 
     LaunchedEffect(reorderDraft, reorderBaseline, actions.isEnabled, visiblePendingIds) {
         if (reorderDraft != null && activeReorderDraft == null) resetReorderDrag()
     }
 
-    fun startReorder(queueItemId: String) {
+    fun startReorder(queueItemId: String, initialPointerDelta: Offset) {
         if (!actions.isEnabled || reorderBaseline == null || visiblePendingIds.size < 2) return
         val latestState = snapshotProvider()
         val latestBaseline = QueueReorderBaseline.from(latestState) ?: return
         if (latestBaseline != reorderBaseline) return
-        val itemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == queueItemId } ?: return
+        val sourceBounds = viewportBounds(queueItemId) ?: return
         val draft = QueueReorderDraft.begin(latestBaseline, queueItemId, visiblePendingIds) ?: return
-        dragSourceTop = itemInfo.offset.toFloat()
-        dragSourceHeight = itemInfo.size.toFloat()
-        dragPointerY = itemInfo.offset + itemInfo.size / 2f
-        dragOffsetX = 0f
-        dragOffsetY = 0f
+        draggedBoundsInViewport = Rect(
+            left = sourceBounds.left + initialPointerDelta.x,
+            top = sourceBounds.top + initialPointerDelta.y,
+            right = sourceBounds.right + initialPointerDelta.x,
+            bottom = sourceBounds.bottom + initialPointerDelta.y,
+        )
+        dropTargetQueueItemId = null
+        dropTargetAtEnd = false
         reorderDraft = draft
     }
 
@@ -288,20 +309,61 @@ internal fun QueueScreen(
             resetReorderDrag()
             return
         }
-        val previousPointerY = dragPointerY ?: return
-        val pointerY = previousPointerY + delta.y
-        dragPointerY = pointerY
-        dragOffsetX += delta.x
-        dragOffsetY += delta.y
-        val remaining = draft.orderedVisiblePendingIds.filterNot { it == draft.draggedQueueItemId }.toSet()
-        val rowCenters = listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
-            val id = info.key.toString()
-            id.takeIf { it in remaining }?.let { it to (info.offset + info.size / 2f) }
-        }.toMap()
-        if (rowCenters.isEmpty()) return
-        val targetBefore = draft.targetBefore(pointerY, rowCenters)
-        val updated = draft.moveBefore(targetBefore)
-        if (updated != null) reorderDraft = updated
+        val previousBounds = draggedBoundsInViewport ?: return
+        val movedBounds = Rect(
+            left = previousBounds.left + delta.x,
+            top = previousBounds.top + delta.y,
+            right = previousBounds.right + delta.x,
+            bottom = previousBounds.bottom + delta.y,
+        )
+        draggedBoundsInViewport = movedBounds
+        // Iterate the viewport, not the entire Queue: drag callbacks may run every frame and
+        // the pending-id set is already memoized for this canonical projection.
+        val candidates = listState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+            val queueItemId = info.key.toString()
+            if (queueItemId !in visiblePendingIdSet || queueItemId == draft.draggedQueueItemId) {
+                null
+            } else {
+                viewportBounds(queueItemId)?.let { QueueDragTarget(queueItemId, it) }
+            }
+        }
+        val selected = QueueDragTargetPolicy.select(
+            draggedBounds = movedBounds,
+            candidates = candidates,
+            draggedQueueItemId = draft.draggedQueueItemId,
+        )
+        when {
+            selected != null -> {
+                reorderDraft = QueueReorderDraft.begin(
+                    reorderBaseline ?: return,
+                    draft.draggedQueueItemId,
+                    visiblePendingIds,
+                )?.moveBefore(selected.queueItemId)
+                dropTargetQueueItemId = selected.queueItemId
+                dropTargetAtEnd = false
+            }
+            else -> {
+                val lastPendingId = visiblePendingIds.lastOrNull { it != draft.draggedQueueItemId }
+                val lastPending = candidates.firstOrNull { it.queueItemId == lastPendingId }
+                if (lastPending != null && movedBounds.top >= lastPending.bounds.bottom) {
+                    reorderDraft = QueueReorderDraft.begin(
+                        reorderBaseline ?: return,
+                        draft.draggedQueueItemId,
+                        visiblePendingIds,
+                    )?.moveBefore(null)
+                    dropTargetQueueItemId = lastPending.queueItemId
+                    dropTargetAtEnd = true
+                } else {
+                    reorderDraft = QueueReorderDraft.begin(
+                        reorderBaseline ?: return,
+                        draft.draggedQueueItemId,
+                        visiblePendingIds,
+                    )
+                    dropTargetQueueItemId = null
+                    dropTargetAtEnd = false
+                }
+            }
+        }
     }
 
     fun finishReorder() {
@@ -683,7 +745,10 @@ internal fun QueueScreen(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     } else {
-                        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().weight(1f)
+                                .onGloballyPositioned { queueViewportBoundsInRoot = it.boundsInRoot() },
+                        ) {
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize().testTag("queue-list"),
@@ -786,22 +851,15 @@ internal fun QueueScreen(
                                         reorderEnabled = occurrence.position > 0 && actions.isEnabled &&
                                             reorderBaseline != null && visiblePendingIds.size > 1,
                                         isDragSource = activeReorderDraft?.draggedQueueItemId == occurrence.queueItemId,
-                                        isDropTarget = activeReorderDraft?.changed == true && (
-                                            activeReorderDraft.orderedVisiblePendingIds.getOrNull(
-                                                activeReorderDraft.orderedVisiblePendingIds.indexOf(activeReorderDraft.draggedQueueItemId) + 1,
-                                            ) == occurrence.queueItemId ||
-                                                (activeReorderDraft.orderedVisiblePendingIds.lastOrNull() == occurrence.queueItemId &&
-                                                    activeReorderDraft.orderedVisiblePendingIds.indexOf(activeReorderDraft.draggedQueueItemId) ==
-                                                    activeReorderDraft.orderedVisiblePendingIds.lastIndex)
-                                            ),
-                                        dropAtEnd = activeReorderDraft?.changed == true &&
-                                            activeReorderDraft.orderedVisiblePendingIds.lastOrNull() == occurrence.queueItemId &&
-                                            activeReorderDraft.orderedVisiblePendingIds.indexOf(activeReorderDraft.draggedQueueItemId) ==
-                                            activeReorderDraft.orderedVisiblePendingIds.lastIndex,
-                                        onReorderStart = { startReorder(occurrence.queueItemId) },
+                                        isDropTarget = dropTargetQueueItemId == occurrence.queueItemId,
+                                        dropAtEnd = dropTargetAtEnd && dropTargetQueueItemId == occurrence.queueItemId,
+                                        onReorderStart = { initialDelta ->
+                                            startReorder(occurrence.queueItemId, initialDelta)
+                                        },
                                         onReorderDelta = ::updateReorder,
                                         onReorderEnd = ::finishReorder,
                                         onReorderCancel = ::cancelReorder,
+                                        onRowBoundsChanged = { measuredRowBoundsInRoot[occurrence.queueItemId] = it },
                                     )
                                     if (rowIndex < visibleRows.lastIndex) {
                                         HorizontalDivider(
@@ -831,20 +889,17 @@ internal fun QueueScreen(
                             val draggedOccurrence = activeReorderDraft?.let { draft ->
                                 visibleRows.firstOrNull { it.queueItemId == draft.draggedQueueItemId }
                             }
-                            val ghostTop = dragSourceTop
-                            val ghostHeightPx = dragSourceHeight
-                            if (draggedOccurrence != null && ghostTop != null && ghostHeightPx != null) {
+                            val ghostBounds = draggedBoundsInViewport
+                            if (draggedOccurrence != null && ghostBounds != null) {
                                 val density = LocalDensity.current
                                 QueueOccurrenceDragGhost(
                                     occurrence = draggedOccurrence,
                                     cacheEntry = draggedEntry,
-                                    rowHeight = with(density) { ghostHeightPx.toDp() },
+                                    rowHeight = with(density) { ghostBounds.height.toDp() },
+                                    rowWidth = with(density) { ghostBounds.width.toDp() },
                                     modifier = Modifier
                                         .offset {
-                                            IntOffset(
-                                                dragOffsetX.roundToInt(),
-                                                (ghostTop + dragOffsetY).roundToInt(),
-                                            )
+                                            IntOffset(ghostBounds.left.roundToInt(), ghostBounds.top.roundToInt())
                                         }
                                         .zIndex(4f),
                                 )
