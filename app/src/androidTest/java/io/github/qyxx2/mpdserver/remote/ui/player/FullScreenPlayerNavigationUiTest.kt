@@ -150,7 +150,7 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.waitForIdle()
         assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)
         val queueBounds = composeRule.onNodeWithTag("queue-screen").fetchSemanticsNode().boundsInRoot
-        assertEquals("Queue must not inherit the ordinary route slide offset", 0f, queueBounds.left, 1.5f)
+        assertEquals("Queue must not inherit ordinary route motion", 0f, queueBounds.left, 1.5f)
 
         composeRule.runOnIdle { assertTrue(navController.popBackStack()) }
         composeRule.mainClock.advanceTimeBy(40L)
@@ -158,7 +158,7 @@ class FullScreenPlayerNavigationUiTest {
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         val playerBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
             .fetchSemanticsNode().boundsInRoot
-        assertEquals("Full-screen Player must retain its independent motion layer", 0f, playerBounds.left, 1.5f)
+        assertEquals("Full-screen Player keeps its dedicated motion layer", 0f, playerBounds.left, 1.5f)
     }
 
     @Test

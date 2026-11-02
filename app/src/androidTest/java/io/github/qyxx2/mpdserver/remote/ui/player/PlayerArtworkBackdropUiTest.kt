@@ -5,12 +5,15 @@ import android.graphics.Color as AndroidColor
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.qyxx2.mpdserver.remote.ui.theme.MpdServerRemoteTheme
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -21,6 +24,25 @@ import org.junit.runner.RunWith
 class PlayerArtworkBackdropUiTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun backdropStaysOpaqueWhenArtworkContainsTransparentPixels() {
+        val transparentBitmap = Bitmap.createBitmap(128, 64, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(AndroidColor.TRANSPARENT)
+        }
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                PlayerArtworkBackdrop(blurredArtwork = transparentBitmap.asImageBitmap())
+            }
+        }
+        composeRule.waitForIdle()
+
+        val pixel = composeRule.onNodeWithTag("player-artwork-backdrop")
+            .captureToImage()
+            .toPixelMap()[10, 10]
+        assertEquals("the page backdrop must fully cover whatever page was previously visible", 1f, pixel.alpha, 0.001f)
+    }
 
     @Test
     fun softwareGaussianBlurSoftensTheArtAndTheBackdropRendersWithThemeVeil() {

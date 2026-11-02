@@ -35,7 +35,12 @@ internal fun PlayerArtworkBackdrop(
     val scheme = MaterialTheme.colorScheme
     val maskAlpha = PlayerArtworkBackdropPolicy.maskAlpha(scheme.background.luminance())
 
-    Box(modifier = modifier.fillMaxSize().testTag("player-artwork-backdrop")) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(scheme.background)
+            .testTag("player-artwork-backdrop"),
+    ) {
         if (blurredArtwork != null) {
             Image(
                 bitmap = blurredArtwork,

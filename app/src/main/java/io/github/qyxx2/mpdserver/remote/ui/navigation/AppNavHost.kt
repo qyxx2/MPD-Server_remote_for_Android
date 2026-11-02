@@ -56,7 +56,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -1241,6 +1240,16 @@ private fun PullUpRootNavigationOverlay(
 }
 
 @Composable
+private fun OpaqueRouteSurface(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxSize().testTag("opaque-route-surface"),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun AppNavigationGraph(
     navController: NavHostController,
     runtime: AppRuntime,
@@ -1299,105 +1308,79 @@ private fun AppNavigationGraph(
         navController = navController,
         startDestination = AppDestination.HOME.route,
         modifier = modifier,
-        enterTransition = {
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(
-                    durationMillis = NavigationMotionPolicy.durationMillis,
-                    easing = FastOutSlowInEasing,
-                ),
-                initialOffset = { offsetPx -> NavigationMotionPolicy.forwardEnterOffset(kotlin.math.abs(offsetPx)) },
-            )
-        },
-        exitTransition = {
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Left,
-                animationSpec = tween(
-                    durationMillis = NavigationMotionPolicy.durationMillis,
-                    easing = FastOutSlowInEasing,
-                ),
-                targetOffset = { offsetPx -> NavigationMotionPolicy.forwardExitOffset(-offsetPx) },
-            )
-        },
-        popEnterTransition = {
-            slideIntoContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(
-                    durationMillis = NavigationMotionPolicy.durationMillis,
-                    easing = FastOutSlowInEasing,
-                ),
-                initialOffset = { offsetPx -> NavigationMotionPolicy.popEnterOffset(-offsetPx) },
-            )
-        },
-        popExitTransition = {
-            slideOutOfContainer(
-                towards = AnimatedContentTransitionScope.SlideDirection.Right,
-                animationSpec = tween(
-                    durationMillis = NavigationMotionPolicy.durationMillis,
-                    easing = FastOutSlowInEasing,
-                ),
-                targetOffset = { offsetPx -> NavigationMotionPolicy.popExitOffset(offsetPx) },
-            )
-        },
+        // All ordinary routes switch immediately. The full-screen Player owns its
+        // Player/Queue pager motion internally and must not inherit NavHost motion.
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
     ) {
         composable(AppDestination.HOME.route) {
-            HomeScreen(
-                state = homeState,
-                scrollStateHolder = homeScrollStateHolder,
-                runtime = runtime,
-                artworkIdentity = homeArtworkIdentity,
-                enableArtworkPrefetch = snapshotState.controlsEligible,
-                onRefreshRecent = onRefreshRecent,
-                onRefreshHistory = onRefreshHistory,
-                onRefreshAutoplay = onRefreshAutoplay,
-                homeCollectionActions = homeCollectionActions,
-                songActions = songActions,
-                onOpenAlbum = { albumId ->
-                    navController.navigate(LibraryRoutes.album(albumId)) { launchSingleTop = true }
-                },
-                interactionEnabled = true,
-            )
+            OpaqueRouteSurface {
+                HomeScreen(
+                    state = homeState,
+                    scrollStateHolder = homeScrollStateHolder,
+                    runtime = runtime,
+                    artworkIdentity = homeArtworkIdentity,
+                    enableArtworkPrefetch = snapshotState.controlsEligible,
+                    onRefreshRecent = onRefreshRecent,
+                    onRefreshHistory = onRefreshHistory,
+                    onRefreshAutoplay = onRefreshAutoplay,
+                    homeCollectionActions = homeCollectionActions,
+                    songActions = songActions,
+                    onOpenAlbum = { albumId ->
+                        navController.navigate(LibraryRoutes.album(albumId)) { launchSingleTop = true }
+                    },
+                    interactionEnabled = true,
+                )
+            }
         }
         composable(AppDestination.SEARCH.route) {
-            SearchScreen(
-                controller = searchController,
-                onOpenCategory = { kind, sourceId, _ ->
-                    navController.navigate(SearchProjection.categoryRoute(kind, sourceId)) {
-                        launchSingleTop = true
-                    }
-                },
-                runtime = runtime,
-                artworkIdentity = homeArtworkIdentity,
-                searchHistory = uiPreferences.searchHistory,
-                onClearSearchHistory = uiPreferences::clearSearchHistory,
-                songActions = songActions,
-                collectionActions = collectionActions,
-            )
+            OpaqueRouteSurface {
+                SearchScreen(
+                    controller = searchController,
+                    onOpenCategory = { kind, sourceId, _ ->
+                        navController.navigate(SearchProjection.categoryRoute(kind, sourceId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    runtime = runtime,
+                    artworkIdentity = homeArtworkIdentity,
+                    searchHistory = uiPreferences.searchHistory,
+                    onClearSearchHistory = uiPreferences::clearSearchHistory,
+                    songActions = songActions,
+                    collectionActions = collectionActions,
+                )
+            }
         }
         composable(AppDestination.LIBRARY.route) {
-            LibraryScreen(
-                onOpenCategory = { category ->
-                    navController.navigate(LibraryRoutes.category(category)) { launchSingleTop = true }
-                },
-            )
+            OpaqueRouteSurface {
+                LibraryScreen(
+                    onOpenCategory = { category ->
+                        navController.navigate(LibraryRoutes.category(category)) { launchSingleTop = true }
+                    },
+                )
+            }
         }
         composable(
             route = LibraryRoutes.CATEGORY_PATTERN,
             arguments = listOf(navArgument(LibraryRoutes.KIND_ARGUMENT) { type = NavType.StringType }),
         ) { entry ->
-            val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
-            if (category == null) {
-                Text("不支持的音乐库分类")
-            } else {
-                LibraryCategoryScreen(
-                    runtime = runtime,
-                    category = category,
-                    onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
-                    onBack = { navController.popBackStack() },
-                    songActions = songActions,
-                    collectionActions = collectionActions,
-                    playlistActions = playlistActions,
-                )
+            OpaqueRouteSurface {
+                val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
+                if (category == null) {
+                    Text("不支持的音乐库分类")
+                } else {
+                    LibraryCategoryScreen(
+                        runtime = runtime,
+                        category = category,
+                        onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
+                        onBack = { navController.popBackStack() },
+                        songActions = songActions,
+                        collectionActions = collectionActions,
+                        playlistActions = playlistActions,
+                    )
+                }
             }
         }
         composable(
@@ -1407,54 +1390,62 @@ private fun AppNavigationGraph(
                 navArgument(LibraryRoutes.ID_ARGUMENT) { type = NavType.StringType },
             ),
         ) { entry ->
-            val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
-            val sourceId = entry.arguments?.getString(LibraryRoutes.ID_ARGUMENT)
-            if (category == null || sourceId.isNullOrBlank()) {
-                Text("无效的音乐库资源")
-            } else {
-                LibraryCollectionScreen(
-                    runtime = runtime,
-                    category = category,
-                    sourceId = sourceId,
-                    onBack = { navController.popBackStack() },
-                    artworkIdentity = homeArtworkIdentity,
-                    songActions = songActions,
-                    collectionActions = collectionActions,
-                    playlistActions = playlistActions,
-                )
+            OpaqueRouteSurface {
+                val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
+                val sourceId = entry.arguments?.getString(LibraryRoutes.ID_ARGUMENT)
+                if (category == null || sourceId.isNullOrBlank()) {
+                    Text("无效的音乐库资源")
+                } else {
+                    LibraryCollectionScreen(
+                        runtime = runtime,
+                        category = category,
+                        sourceId = sourceId,
+                        onBack = { navController.popBackStack() },
+                        artworkIdentity = homeArtworkIdentity,
+                        songActions = songActions,
+                        collectionActions = collectionActions,
+                        playlistActions = playlistActions,
+                    )
+                }
             }
         }
         composable(AppDestination.SETTINGS.route) {
-            SettingsHomeScreen(onOpenSection = { section ->
-                navController.navigate(section.route) { launchSingleTop = true }
-            })
+            OpaqueRouteSurface {
+                SettingsHomeScreen(
+                    onOpenSection = { section ->
+                        navController.navigate(section.route) { launchSingleTop = true }
+                    },
+                )
+            }
         }
         SettingsSection.entries.forEach { section ->
             composable(section.route) {
-                when (section) {
-                    SettingsSection.STATUS -> StatusSettingsScreen(
-                        presentation = statusPresentation,
-                        mediaControlAvailability = mediaControlAvailability,
-                        onRetryUnknown = onRetryUnknownActivity,
-                    )
-                    SettingsSection.SERVER -> ServerSettingsScreen(
-                        preferencesRepository = uiPreferences,
-                        onApplyServerOrigin = applyServerOrigin,
-                        readMpdStatus = { runtime.reads.getMpdStatus() },
-                    )
-                    SettingsSection.APPEARANCE -> AppearanceSettingsScreen(
-                        preferencesRepository = uiPreferences,
-                        preferenceWriteScope = preferenceWriteScope,
-                        ringDraft = ringDraft,
-                        onRingDraftChange = onRingDraftChange,
-                    )
-                    SettingsSection.ABOUT -> {
-                        val context = LocalContext.current
-                        AboutScreen(onOpenRepository = {
-                            runCatching {
-                                context.startActivity(createRepositoryLinkIntent())
-                            }
-                        })
+                OpaqueRouteSurface {
+                    when (section) {
+                        SettingsSection.STATUS -> StatusSettingsScreen(
+                            presentation = statusPresentation,
+                            mediaControlAvailability = mediaControlAvailability,
+                            onRetryUnknown = onRetryUnknownActivity,
+                        )
+                        SettingsSection.SERVER -> ServerSettingsScreen(
+                            preferencesRepository = uiPreferences,
+                            onApplyServerOrigin = applyServerOrigin,
+                            readMpdStatus = { runtime.reads.getMpdStatus() },
+                        )
+                        SettingsSection.APPEARANCE -> AppearanceSettingsScreen(
+                            preferencesRepository = uiPreferences,
+                            preferenceWriteScope = preferenceWriteScope,
+                            ringDraft = ringDraft,
+                            onRingDraftChange = onRingDraftChange,
+                        )
+                        SettingsSection.ABOUT -> {
+                            val context = LocalContext.current
+                            AboutScreen(onOpenRepository = {
+                                runCatching {
+                                    context.startActivity(createRepositoryLinkIntent())
+                                }
+                            })
+                        }
                     }
                 }
             }
@@ -1495,13 +1486,7 @@ private fun AppNavigationGraph(
                 )
             }
         }
-        composable(
-            route = AppDestination.QUEUE.route,
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
-        ) {
+        composable(AppDestination.QUEUE.route) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = Color.Transparent,

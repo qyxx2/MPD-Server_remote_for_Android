@@ -3,7 +3,9 @@ package io.github.qyxx2.mpdserver.remote.ui.navigation
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performSemanticsAction
@@ -146,70 +148,44 @@ class AppNavigationUiTest {
             ?.boundsInRoot
 
     @Test
-    fun forwardTransitionStartsFromRightAndSettlesAtZero() {
+    fun ordinaryRoutesNavigateImmediatelyWithoutSlideOrFade() {
         launchNavigation()
-        composeRule.mainClock.autoAdvance = false
+
         composeRule.runOnIdle { navController.navigate(AppDestination.SEARCH.route) }
-        composeRule.mainClock.advanceTimeBy(240L)
         composeRule.waitForIdle()
-        val searchStart = requireNotNull(routeBoundsOrNull("search-screen"))
-        assertEquals("the settled Search page establishes the origin", 0f, searchStart.left, 1.5f)
+        val searchBounds = requireNotNull(routeBoundsOrNull("search-screen"))
 
         composeRule.runOnIdle { navController.navigate(AppDestination.LIBRARY.route) }
-        composeRule.mainClock.advanceTimeBy(100L)
         composeRule.waitForIdle()
+        val libraryBounds = requireNotNull(routeBoundsOrNull("library-root-screen"))
+        assertEquals("the incoming page must occupy its final position immediately", searchBounds.left, libraryBounds.left, 1.5f)
+        assertTrue("the outgoing page must not remain during a transition", routeBoundsOrNull("search-screen") == null)
 
-        val searchMid = routeBoundsOrNull("search-screen")
-        val libraryMid = routeBoundsOrNull("library-root-screen")
-        assertTrue("the outgoing Search page must remain composed during the forward transition", searchMid != null)
-        assertTrue("the incoming Library page must be composed during the forward transition", libraryMid != null)
-        assertTrue(
-            "the incoming page must move in from the right: searchStart=$searchStart searchMid=$searchMid libraryMid=$libraryMid",
-            requireNotNull(libraryMid).left > searchStart.left + 1f,
-        )
-
-        composeRule.mainClock.advanceTimeBy(120L)
+        composeRule.runOnIdle { assertTrue(navController.popBackStack()) }
         composeRule.waitForIdle()
-        val libraryEnd = requireNotNull(routeBoundsOrNull("library-root-screen"))
-        assertEquals("the incoming page must settle at its destination bounds", searchStart.left, libraryEnd.left, 1.5f)
-        composeRule.mainClock.advanceTimeBy(200L)
-        composeRule.waitForIdle()
-        assertTrue("the previous page must be removed after the transition", routeBoundsOrNull("search-screen") == null)
+        val returnedSearchBounds = requireNotNull(routeBoundsOrNull("search-screen"))
+        assertEquals("pop navigation must also be immediate", libraryBounds.left, returnedSearchBounds.left, 1.5f)
+        assertTrue("the popped page must not remain during a transition", routeBoundsOrNull("library-root-screen") == null)
     }
 
     @Test
-    fun popTransitionStartsFromLeftAndSettlesAtZero() {
+    fun ordinaryDestinationsUseOpaquePageSurfaces() {
         launchNavigation()
-        composeRule.mainClock.autoAdvance = false
+        val homeSurface = composeRule.onNodeWithTag("opaque-route-surface").captureToImage().toPixelMap()
+        assertEquals("the Home destination must paint a fully opaque page background", 1f, homeSurface[0, 0].alpha, 0.001f)
+
         composeRule.runOnIdle { navController.navigate(AppDestination.SEARCH.route) }
-        composeRule.mainClock.advanceTimeBy(240L)
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("opaque-route-surface").assertIsDisplayed()
+        val searchSurface = composeRule.onNodeWithTag("opaque-route-surface").captureToImage().toPixelMap()
+        assertEquals("the Search destination must paint over the outgoing page", 1f, searchSurface[0, 0].alpha, 0.001f)
+        composeRule.onAllNodesWithTag("opaque-route-surface").assertCountEquals(1)
+
         composeRule.runOnIdle { navController.navigate(AppDestination.LIBRARY.route) }
-        composeRule.mainClock.advanceTimeBy(240L)
         composeRule.waitForIdle()
-        val libraryStart = requireNotNull(routeBoundsOrNull("library-root-screen"))
-        assertEquals(0f, libraryStart.left, 1.5f)
-
-        composeRule.runOnIdle { assertTrue(navController.popBackStack()) }
-        composeRule.mainClock.advanceTimeBy(100L)
-        composeRule.waitForIdle()
-
-        val libraryMid = routeBoundsOrNull("library-root-screen")
-        val searchMid = routeBoundsOrNull("search-screen")
-        assertTrue("the outgoing Library page must remain composed during pop", libraryMid != null)
-        assertTrue("the incoming Search page must be composed during pop", searchMid != null)
-        assertTrue(
-            "the outgoing page must move to the right during pop: libraryStart=$libraryStart libraryMid=$libraryMid searchMid=$searchMid",
-            requireNotNull(libraryMid).left > libraryStart.left + 1f,
-        )
-
-        composeRule.mainClock.advanceTimeBy(120L)
-        composeRule.waitForIdle()
-        val searchEnd = requireNotNull(routeBoundsOrNull("search-screen"))
-        assertEquals("the popped-to page must settle at its destination bounds", libraryStart.left, searchEnd.left, 1.5f)
-        composeRule.mainClock.advanceTimeBy(200L)
-        composeRule.waitForIdle()
-        assertTrue("the popped page must be removed after the transition", routeBoundsOrNull("library-root-screen") == null)
+        val librarySurface = composeRule.onNodeWithTag("opaque-route-surface").captureToImage().toPixelMap()
+        assertEquals("the Library destination must paint over the outgoing page", 1f, librarySurface[0, 0].alpha, 0.001f)
+        composeRule.onAllNodesWithTag("opaque-route-surface").assertCountEquals(1)
     }
 
     @Test
