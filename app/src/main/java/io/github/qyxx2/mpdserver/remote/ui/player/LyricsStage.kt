@@ -1,8 +1,6 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
 import android.os.SystemClock
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -55,6 +53,7 @@ import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsFollowReducer
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsClockPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.lyricsClockPresentationFlow
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsPresentation
+import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsTypographyPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.activeCueIndexes
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.presentLyrics
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.seekTargetSeconds
@@ -67,7 +66,6 @@ import kotlinx.coroutines.flow.first
 import kotlin.math.max
 
 /** Native lyrics view using the frozen Web parser and the same shared PlayerActions seek owner. */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LyricsStage(
     song: PlayerSongPresentation?,
@@ -284,17 +282,18 @@ fun LyricsStage(
                                         .then(if (current) Modifier.testTag("lyrics-cue-active") else Modifier)
                                         .testTag("lyrics-cue-" + index),
                                 ) {
-                                    val cueStyle = (if (current) {
-                                        MaterialTheme.typography.titleLarge.copy(
-                                            fontSize = 34.sp,
-                                            lineHeight = 40.sp,
-                                        )
+                                    val cueTypography = if (current) {
+                                        LyricsTypographyPolicy.activeCue
                                     } else {
-                                        MaterialTheme.typography.bodyLarge.copy(
-                                            fontSize = 28.sp,
-                                            lineHeight = 34.sp,
-                                        )
+                                        LyricsTypographyPolicy.inactiveCue
+                                    }
+                                    val cueStyle = (if (current) {
+                                        MaterialTheme.typography.titleLarge
+                                    } else {
+                                        MaterialTheme.typography.bodyLarge
                                     }).copy(
+                                        fontSize = cueTypography.fontSize,
+                                        lineHeight = cueTypography.lineHeight,
                                         color = if (current) accent else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                                     )
@@ -413,11 +412,13 @@ private fun LyricCueText(
                 )
                 Text(
                     text = scrollingSecondLine,
-                    modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("lyrics-cue-second-line"),
                     style = style,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
+                    maxLines = LyricsTypographyPolicy.secondLineMaxLines,
+                    softWrap = LyricsTypographyPolicy.secondLineSoftWrap,
+                    overflow = LyricsTypographyPolicy.secondLineOverflow,
                 )
             }
         }

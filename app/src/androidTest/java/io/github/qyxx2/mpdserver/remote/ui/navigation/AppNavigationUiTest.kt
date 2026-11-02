@@ -139,6 +139,79 @@ class AppNavigationUiTest {
         composeRule.waitForIdle()
     }
 
+    private fun routeBoundsOrNull(tag: String): androidx.compose.ui.geometry.Rect? =
+        composeRule.onAllNodesWithTag(tag)
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+            .firstOrNull()
+            ?.boundsInRoot
+
+    @Test
+    fun forwardTransitionStartsFromRightAndSettlesAtZero() {
+        launchNavigation()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle { navController.navigate(AppDestination.SEARCH.route) }
+        composeRule.mainClock.advanceTimeBy(240L)
+        composeRule.waitForIdle()
+        val searchStart = requireNotNull(routeBoundsOrNull("search-screen"))
+        assertEquals("the settled Search page establishes the origin", 0f, searchStart.left, 1.5f)
+
+        composeRule.runOnIdle { navController.navigate(AppDestination.LIBRARY.route) }
+        composeRule.mainClock.advanceTimeBy(100L)
+        composeRule.waitForIdle()
+
+        val searchMid = routeBoundsOrNull("search-screen")
+        val libraryMid = routeBoundsOrNull("library-root-screen")
+        assertTrue("the outgoing Search page must remain composed during the forward transition", searchMid != null)
+        assertTrue("the incoming Library page must be composed during the forward transition", libraryMid != null)
+        assertTrue(
+            "the incoming page must move in from the right: searchStart=$searchStart searchMid=$searchMid libraryMid=$libraryMid",
+            requireNotNull(libraryMid).left > searchStart.left + 1f,
+        )
+
+        composeRule.mainClock.advanceTimeBy(120L)
+        composeRule.waitForIdle()
+        val libraryEnd = requireNotNull(routeBoundsOrNull("library-root-screen"))
+        assertEquals("the incoming page must settle at its destination bounds", searchStart.left, libraryEnd.left, 1.5f)
+        composeRule.mainClock.advanceTimeBy(200L)
+        composeRule.waitForIdle()
+        assertTrue("the previous page must be removed after the transition", routeBoundsOrNull("search-screen") == null)
+    }
+
+    @Test
+    fun popTransitionStartsFromLeftAndSettlesAtZero() {
+        launchNavigation()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnIdle { navController.navigate(AppDestination.SEARCH.route) }
+        composeRule.mainClock.advanceTimeBy(240L)
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { navController.navigate(AppDestination.LIBRARY.route) }
+        composeRule.mainClock.advanceTimeBy(240L)
+        composeRule.waitForIdle()
+        val libraryStart = requireNotNull(routeBoundsOrNull("library-root-screen"))
+        assertEquals(0f, libraryStart.left, 1.5f)
+
+        composeRule.runOnIdle { assertTrue(navController.popBackStack()) }
+        composeRule.mainClock.advanceTimeBy(100L)
+        composeRule.waitForIdle()
+
+        val libraryMid = routeBoundsOrNull("library-root-screen")
+        val searchMid = routeBoundsOrNull("search-screen")
+        assertTrue("the outgoing Library page must remain composed during pop", libraryMid != null)
+        assertTrue("the incoming Search page must be composed during pop", searchMid != null)
+        assertTrue(
+            "the outgoing page must move to the right during pop: libraryStart=$libraryStart libraryMid=$libraryMid searchMid=$searchMid",
+            requireNotNull(libraryMid).left > libraryStart.left + 1f,
+        )
+
+        composeRule.mainClock.advanceTimeBy(120L)
+        composeRule.waitForIdle()
+        val searchEnd = requireNotNull(routeBoundsOrNull("search-screen"))
+        assertEquals("the popped-to page must settle at its destination bounds", libraryStart.left, searchEnd.left, 1.5f)
+        composeRule.mainClock.advanceTimeBy(200L)
+        composeRule.waitForIdle()
+        assertTrue("the popped page must be removed after the transition", routeBoundsOrNull("library-root-screen") == null)
+    }
+
     @Test
     fun rootDestinationsRenderInFrozenOrderAndTrackSelectedRoute() {
         launchNavigation()

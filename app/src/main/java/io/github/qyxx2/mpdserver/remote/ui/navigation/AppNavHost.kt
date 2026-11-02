@@ -56,6 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -1298,6 +1299,46 @@ private fun AppNavigationGraph(
         navController = navController,
         startDestination = AppDestination.HOME.route,
         modifier = modifier,
+        enterTransition = {
+            slideIntoContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(
+                    durationMillis = NavigationMotionPolicy.durationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+                initialOffset = { offsetPx -> NavigationMotionPolicy.forwardEnterOffset(kotlin.math.abs(offsetPx)) },
+            )
+        },
+        exitTransition = {
+            slideOutOfContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Left,
+                animationSpec = tween(
+                    durationMillis = NavigationMotionPolicy.durationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+                targetOffset = { offsetPx -> NavigationMotionPolicy.forwardExitOffset(-offsetPx) },
+            )
+        },
+        popEnterTransition = {
+            slideIntoContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(
+                    durationMillis = NavigationMotionPolicy.durationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+                initialOffset = { offsetPx -> NavigationMotionPolicy.popEnterOffset(-offsetPx) },
+            )
+        },
+        popExitTransition = {
+            slideOutOfContainer(
+                towards = AnimatedContentTransitionScope.SlideDirection.Right,
+                animationSpec = tween(
+                    durationMillis = NavigationMotionPolicy.durationMillis,
+                    easing = FastOutSlowInEasing,
+                ),
+                targetOffset = { offsetPx -> NavigationMotionPolicy.popExitOffset(offsetPx) },
+            )
+        },
     ) {
         composable(AppDestination.HOME.route) {
             HomeScreen(
@@ -1454,7 +1495,13 @@ private fun AppNavigationGraph(
                 )
             }
         }
-        composable(AppDestination.QUEUE.route) {
+        composable(
+            route = AppDestination.QUEUE.route,
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
+        ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = Color.Transparent,
