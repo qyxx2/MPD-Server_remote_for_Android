@@ -317,28 +317,41 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
-    fun fastUpwardFlickEntersFullScreenBeforeHalfWindowDistanceWhileFingerIsHeld() {
+    fun distanceThresholdKeepsFollowingFingerUntilPointerRelease() {
         launchNavigation()
         val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
-        val dragDistancePx = windowHeightPx * 0.28f
+        val dragDistancePx = windowHeightPx * 0.60f
 
         composeRule.onNodeWithTag("mini-player-body").performTouchInput {
             down(center)
-            moveTo(Offset(center.x, center.y - dragDistancePx * 0.45f), 40L)
-            moveTo(Offset(center.x, center.y - dragDistancePx), 40L)
+            moveTo(Offset(center.x, center.y - dragDistancePx * 0.45f), 300L)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 600L)
         }
+        composeRule.waitForIdle()
 
+        assertTrue("the held pointer has crossed the 50% commit threshold", dragDistancePx >= windowHeightPx * 0.5f)
+        assertEquals(
+            "crossing the distance threshold must not commit while the pointer is still pressed",
+            AppDestination.HOME.route,
+            navController.currentDestination?.route,
+        )
+        val preview = composeRule.onAllNodesWithTag("mini-player-expansion-preview")
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+        assertTrue("the finger-following Player preview must remain composed while pressed", preview.isNotEmpty())
+        val playerBounds = composeRule.onNodeWithTag("mini-player-expansion-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("the Player must not jump to its settled full-screen position while pressed", playerBounds.top > 0f)
+
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput { up() }
         composeRule.waitUntil(timeoutMillis = 10_000) {
             navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route
         }
-        assertTrue(
-            "the fast-flick path must trigger before the 50% distance and before finger release",
-            dragDistancePx < windowHeightPx * 0.5f,
-        )
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
-        composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
-
-        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            val bounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+                .fetchSemanticsNode().boundsInRoot
+            kotlin.math.abs(bounds.top) <= 1.5f
+        }
     }
 
     @Test

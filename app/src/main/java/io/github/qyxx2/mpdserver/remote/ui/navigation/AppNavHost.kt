@@ -629,7 +629,7 @@ fun AppNavHost(
         }
     }
 
-    fun updateMiniPlayerExpansion(distancePx: Float, upwardVelocityDpPerSecond: Float) {
+    fun updateMiniPlayerExpansion(distancePx: Float) {
         if (!distancePx.isFinite()) return
         val activeRoute = navController.currentDestination?.route ?: currentRoute
         if (!isMiniPlayerExpansionPreview) {
@@ -648,14 +648,8 @@ fun AppNavHost(
             upwardDistancePx = distancePx,
             miniPlayerTopPx = miniPlayerTopPx,
         )
-        val shouldExpandFromGesture = MiniPlayerExpansionPolicy.shouldExpand(
-            upwardDistancePx = distancePx,
-            windowHeightPx = appWindowHeightPx,
-            upwardVelocityDpPerSecond = upwardVelocityDpPerSecond,
-        )
-        if (shouldExpandFromGesture) {
-            navigateToExpandedPlayer()
-        }
+        // While the pointer is pressed, this callback owns only finger-following preview progress.
+        // Route commit and the 250ms settle are deliberately deferred to finishMiniPlayerExpansionGesture.
     }
 
     fun finishMiniPlayerExpansionGesture(
@@ -1076,7 +1070,7 @@ fun AppNavHost(
                                 onBoundsChanged = { topPx, _ ->
                                     if (!isMiniPlayerExpansionPreview) miniPlayerTopPx = topPx
                                 },
-                                onExpandDragDistanceChanged = ::updateMiniPlayerExpansion,
+                                onExpandDragDistanceChanged = { distance, _ -> updateMiniPlayerExpansion(distance) },
                                 onExpandDragEnd = ::finishMiniPlayerExpansionGesture,
                                 onExpandDragCancel = ::cancelMiniPlayerExpansionGesture,
                             )
