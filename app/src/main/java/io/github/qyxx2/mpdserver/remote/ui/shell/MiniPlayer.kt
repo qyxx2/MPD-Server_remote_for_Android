@@ -20,8 +20,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -31,6 +39,7 @@ import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -48,9 +57,12 @@ fun MiniPlayer(
     onOpen: () -> Unit,
     modifier: Modifier = Modifier,
     artwork: ImageBitmap? = null,
+    artworkAlpha: Float = 1f,
+    chromeAlpha: Float = 1f,
     playbackControlEnabled: Boolean = false,
     onTogglePlayback: () -> Unit = {},
     onBoundsChanged: (topPx: Float, heightPx: Float) -> Unit = { _, _ -> },
+    onArtworkBoundsChanged: (boundsOnScreen: Rect) -> Unit = {},
     onExpandDragDistanceChanged: (distancePx: Float, upwardVelocityDpPerSecond: Float) -> Unit = { _, _ -> },
     onExpandDragEnd: (distancePx: Float, upwardVelocityDpPerSecond: Float) -> Unit = { _, _ -> },
     onExpandDragCancel: () -> Unit = {},
@@ -64,6 +76,21 @@ fun MiniPlayer(
         ConfirmedPlaybackStatus.PLAYING -> "暂停播放"
         ConfirmedPlaybackStatus.PAUSED -> "继续播放"
         ConfirmedPlaybackStatus.UNKNOWN -> "播放状态未确认"
+    }
+    var artworkCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val currentArtworkCoordinates = artworkCoordinates
+    SideEffect {
+        currentArtworkCoordinates?.let { coordinates ->
+            val origin = coordinates.positionOnScreen()
+            onArtworkBoundsChanged(
+                Rect(
+                    left = origin.x,
+                    top = origin.y,
+                    right = origin.x + coordinates.size.width,
+                    bottom = origin.y + coordinates.size.height,
+                ),
+            )
+        }
     }
 
     Column(
@@ -157,7 +184,11 @@ fun MiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
-                    modifier = Modifier.size(48.dp).testTag("mini-player-artwork"),
+                    modifier = Modifier
+                        .size(48.dp)
+                        .graphicsLayer { alpha = artworkAlpha.coerceIn(0f, 1f) }
+                        .onGloballyPositioned { artworkCoordinates = it }
+                        .testTag("mini-player-artwork"),
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
@@ -175,7 +206,10 @@ fun MiniPlayer(
                     }
                 }
                 Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                Column(
+                    modifier = Modifier.weight(1f).graphicsLayer { alpha = chromeAlpha.coerceIn(0f, 1f) },
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Text(
                         text = presentation.title,
                         modifier = Modifier
@@ -204,6 +238,7 @@ fun MiniPlayer(
                 enabled = playbackControlEnabled,
                 modifier = Modifier
                     .size(48.dp)
+                    .graphicsLayer { alpha = chromeAlpha.coerceIn(0f, 1f) }
                     .testTag("mini-player-play-pause")
                     .semantics { contentDescription = playbackControlLabel },
             ) {

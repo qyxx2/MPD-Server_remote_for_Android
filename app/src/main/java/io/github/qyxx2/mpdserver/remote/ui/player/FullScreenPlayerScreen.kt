@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -87,6 +88,8 @@ fun FullScreenPlayerScreen(
     contentPadding: PaddingValues = PaddingValues(),
     artworkCacheKey: PlayerArtworkCacheKey? = null,
     artworkCache: PlayerArtworkMemoryCache? = null,
+    artworkVisibleForTransition: Boolean = true,
+    onArtworkBoundsChanged: (boundsOnScreen: Rect) -> Unit = {},
 ) {
     val currentOnDismissDragDelta = rememberUpdatedState(onDismissDragDelta)
     val currentOnDismissGestureEnd = rememberUpdatedState(onDismissGestureEnd)
@@ -314,6 +317,8 @@ fun FullScreenPlayerScreen(
                                     gestureCancel = currentOnDismissGestureCancel,
                                 ),
                                 onTap = { showLyrics = true },
+                                artworkVisible = artworkVisibleForTransition,
+                                onArtworkBoundsChanged = onArtworkBoundsChanged,
                             )
                         }
 

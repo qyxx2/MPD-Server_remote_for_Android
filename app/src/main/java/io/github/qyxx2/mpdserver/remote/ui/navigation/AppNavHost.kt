@@ -19,9 +19,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -84,6 +89,7 @@ import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingDraftPreviewOver
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingVisibilityController
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerScreen
+import io.github.qyxx2.mpdserver.remote.ui.player.ArtworkTransitionOverlay
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
@@ -412,7 +418,9 @@ fun AppNavHost(
     val currentMiniPlayerArtworkKey = artworkCacheKey?.takeIf {
         it.matches(mediaProjection.mediaPresentation)
     }
-    val miniPlayerArtwork = (artworkCacheState as? PlayerArtworkCacheState.Ready)
+    val miniPlayerArtworkReady = artworkCacheState as? PlayerArtworkCacheState.Ready
+    val miniPlayerArtworkKey = miniPlayerArtworkReady?.key
+    val miniPlayerArtwork = miniPlayerArtworkReady
         ?.takeIf { ready -> currentMiniPlayerArtworkKey != null && ready.key == currentMiniPlayerArtworkKey }
         ?.foreground
     val miniPlayerToggleAction = when (miniPlayerPresentation.playbackStatus) {
@@ -432,7 +440,39 @@ fun AppNavHost(
     var playerLayerHeightPx by remember { mutableFloatStateOf(1f) }
     var appWindowHeightPx by remember { mutableFloatStateOf(1f) }
     var miniPlayerTopPx by remember { mutableFloatStateOf(0f) }
+    var appRootPositionOnScreen by remember { mutableStateOf<Offset?>(null) }
+    var miniPlayerArtworkBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
+    var miniPlayerArtworkBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
+    var fullScreenArtworkBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
+    var fullScreenArtworkBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
     var rootNavigationBarHeightPx by remember { mutableFloatStateOf(0f) }
+
+    val reportMiniPlayerArtworkBounds: (Rect) -> Unit = { bounds ->
+        val key = currentMiniPlayerArtworkKey
+        if (key != null && (miniPlayerArtworkBoundsOnScreen != bounds || miniPlayerArtworkBoundsKey != key)) {
+            miniPlayerArtworkBoundsOnScreen = bounds
+            miniPlayerArtworkBoundsKey = key
+        }
+    }
+    val reportFullScreenArtworkBounds: (Rect) -> Unit = { bounds ->
+        val key = currentMiniPlayerArtworkKey
+        if (key != null && (fullScreenArtworkBoundsOnScreen != bounds || fullScreenArtworkBoundsKey != key)) {
+            fullScreenArtworkBoundsOnScreen = bounds
+            fullScreenArtworkBoundsKey = key
+        }
+    }
+
+    fun screenBoundsInRoot(bounds: Rect?, key: PlayerArtworkCacheKey?): Rect? {
+        val rootOrigin = appRootPositionOnScreen ?: return null
+        if (key == null || key != currentMiniPlayerArtworkKey) return null
+        val screen = bounds ?: return null
+        return Rect(
+            left = screen.left - rootOrigin.x,
+            top = screen.top - rootOrigin.y,
+            right = screen.right - rootOrigin.x,
+            bottom = screen.bottom - rootOrigin.y,
+        )
+    }
     var isMiniPlayerExpansionPreview by remember { mutableStateOf(false) }
     var enterPlayerFromMini by remember { mutableStateOf(false) }
     var isExitingFullScreen by remember { mutableStateOf(false) }
@@ -543,8 +583,30 @@ fun AppNavHost(
             bottom = safeInsets.bottom.coerceAtLeast(0).toDp(),
         )
     }
+    val sourceArtworkBoundsInRoot = screenBoundsInRoot(
+        miniPlayerArtworkBoundsOnScreen,
+        miniPlayerArtworkBoundsKey,
+    )
+    val targetArtworkBoundsInRoot = screenBoundsInRoot(
+        fullScreenArtworkBoundsOnScreen,
+        fullScreenArtworkBoundsKey,
+    )
+    val miniPlayerArtworkTransitionActive =
+        (enterPlayerFromMini || isMiniPlayerExpansionPreview) &&
+            currentMiniPlayerArtworkKey != null &&
+            miniPlayerArtwork != null &&
+            miniPlayerArtworkKey == currentMiniPlayerArtworkKey &&
+            sourceArtworkBoundsInRoot != null &&
+            targetArtworkBoundsInRoot != null
+    val miniPlayerChromeAlpha = if (miniPlayerArtworkTransitionActive) {
+        1f - (entryProgress / 0.20f).coerceIn(0f, 1f)
+    } else {
+        1f
+    }
 
     fun navigateToExpandedPlayer() {
+        fullScreenArtworkBoundsOnScreen = null
+        fullScreenArtworkBoundsKey = null
         isMiniPlayerExpansionPreview = false
         enterPlayerFromMini = true
         navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
@@ -558,6 +620,8 @@ fun AppNavHost(
         if (!isMiniPlayerExpansionPreview) {
             val rootRoute = AppDestination.rootRouteFor(activeRoute)
             if (distancePx <= 0f || rootRoute == null) return
+            fullScreenArtworkBoundsOnScreen = null
+            fullScreenArtworkBoundsKey = null
             rootBeforeFullScreen = rootRoute
             returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
@@ -625,6 +689,8 @@ fun AppNavHost(
         if (activeRoute == AppDestination.FULL_SCREEN_PLAYER.route) return
         val rootRoute = AppDestination.rootRouteFor(activeRoute)
         if (rootRoute != null) {
+            fullScreenArtworkBoundsOnScreen = null
+            fullScreenArtworkBoundsKey = null
             rootBeforeFullScreen = rootRoute
             returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
@@ -784,7 +850,11 @@ fun AppNavHost(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { size -> appWindowHeightPx = size.height.toFloat().coerceAtLeast(1f) },
+            .onSizeChanged { size -> appWindowHeightPx = size.height.toFloat().coerceAtLeast(1f) }
+            .onGloballyPositioned { coordinates ->
+                val origin = coordinates.positionOnScreen()
+                if (appRootPositionOnScreen != origin) appRootPositionOnScreen = origin
+            },
     ) {
         if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
             currentRoute == AppDestination.QUEUE.route
@@ -810,6 +880,9 @@ fun AppNavHost(
                     homeScrollStateHolder = homeScrollStateHolder,
                     homeArtworkIdentity = homeArtworkIdentity,
                     miniPlayerPresentation = miniPlayerPresentation,
+                    miniPlayerArtwork = miniPlayerArtwork,
+                    miniPlayerArtworkAlpha = if (miniPlayerArtworkTransitionActive) 0f else 1f,
+                    miniPlayerChromeAlpha = miniPlayerChromeAlpha,
                     searchController = searchController,
                     navController = navController,
                     uiPreferences = uiPreferences,
@@ -875,6 +948,8 @@ fun AppNavHost(
                                     actions = playerActions,
                                     artworkCacheKey = artworkCacheKey,
                                     artworkCache = artworkCache,
+                                    artworkVisibleForTransition = !miniPlayerArtworkTransitionActive,
+                                    onArtworkBoundsChanged = reportFullScreenArtworkBounds,
                                     onExit = ::exitFullScreenToRoot,
                                     onOpenQueue = {
                                         navigationScope.launch { fullScreenPagerState.animateScrollToPage(1) }
@@ -961,7 +1036,10 @@ fun AppNavHost(
                                 presentation = miniPlayerPresentation,
                                 onOpen = ::openFullScreenPlayer,
                                 artwork = miniPlayerArtwork,
+                                artworkAlpha = if (miniPlayerArtworkTransitionActive) 0f else 1f,
+                                chromeAlpha = miniPlayerChromeAlpha,
                                 playbackControlEnabled = miniPlayerControlEnabled,
+                                onArtworkBoundsChanged = reportMiniPlayerArtworkBounds,
                                 onTogglePlayback = { miniPlayerToggleAction?.let(playerActions::perform) },
                                 onBoundsChanged = { topPx, _ ->
                                     if (!isMiniPlayerExpansionPreview) miniPlayerTopPx = topPx
@@ -1074,6 +1152,8 @@ fun AppNavHost(
                             actions = null,
                             artworkCacheKey = artworkCacheKey,
                             artworkCache = artworkCache,
+                            artworkVisibleForTransition = !miniPlayerArtworkTransitionActive,
+                            onArtworkBoundsChanged = reportFullScreenArtworkBounds,
                             onExit = {},
                             onOpenQueue = {},
                             onOpenPlayer = {},
@@ -1097,6 +1177,17 @@ fun AppNavHost(
                     )
                 }
             }
+        }
+        if (miniPlayerArtworkTransitionActive) {
+            ArtworkTransitionOverlay(
+                bitmap = miniPlayerArtwork,
+                bitmapKey = miniPlayerArtworkKey,
+                currentKey = currentMiniPlayerArtworkKey,
+                sourceBounds = sourceArtworkBoundsInRoot,
+                targetBounds = targetArtworkBoundsInRoot,
+                progress = entryProgress,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         if (currentRoute == SettingsSection.APPEARANCE.route) {
             StatusRingDraftPreviewOverlay(
@@ -1142,6 +1233,9 @@ private fun RootBackdropShell(
     homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
     homeArtworkIdentity: QueueResourceIdentity,
     miniPlayerPresentation: MiniPlayerPresentation,
+    miniPlayerArtwork: ImageBitmap?,
+    miniPlayerArtworkAlpha: Float,
+    miniPlayerChromeAlpha: Float,
     searchController: SearchController,
     navController: NavHostController,
     uiPreferences: UiPreferencesRepository,
@@ -1167,7 +1261,13 @@ private fun RootBackdropShell(
                 title = rootTitle,
                 miniPlayer = {
                     if (resolvedRootRoute != AppDestination.SETTINGS.route) {
-                        MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
+                        MiniPlayer(
+                            presentation = miniPlayerPresentation,
+                            onOpen = {},
+                            artwork = miniPlayerArtwork,
+                            artworkAlpha = miniPlayerArtworkAlpha,
+                            chromeAlpha = miniPlayerChromeAlpha,
+                        )
                     }
                 },
                 bottomBar = {

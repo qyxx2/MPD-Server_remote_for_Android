@@ -342,22 +342,22 @@
 - ArtworkTransitionGeometry.interpolate(source: Rect, target: Rect, progress: Float): Rect.
 - Clamp finite progress to 0f..1f; interpolate left, top, right and bottom independently. Do not assume portrait screen dimensions or fixed dp/px coordinates.
 
-- [ ] **Step 1: Write geometry tests**
+- [x] **Step 1: Write geometry tests**
   Add tests:
   - progressZeroReturnsSourceBounds
   - progressOneReturnsTargetBounds
   - midpointInterpolatesAllFourEdges
   - progressOutsideRangeIsClamped
   - invalidOrEmptyBoundsAreRejected
-- [ ] **Step 2: Add a compiling neutral geometry stub**
+- [x] **Step 2: Add a compiling neutral geometry stub**
   Define ArtworkTransitionGeometry.interpolate with an identity/neutral result so the test compiles.
-- [ ] **Step 3: Run focused unit tests and verify RED**
+- [x] **Step 3: Run focused unit tests and verify RED**
   Run:
   ./gradlew --offline --no-daemon testDebugUnitTest --tests '*ArtworkTransitionGeometryTest'
   Expected: midpoint and endpoint assertions fail against the neutral stub.
-- [ ] **Step 4: Implement the pure interpolation helper**
+- [x] **Step 4: Implement the pure interpolation helper**
   Validate rectangles, clamp progress and interpolate each edge. Keep the helper independent of Compose state.
-- [ ] **Step 5: Run the geometry tests**
+- [x] **Step 5: Run the geometry tests**
   Run:
   ./gradlew --offline --no-daemon testDebugUnitTest --tests '*ArtworkTransitionGeometryTest'
   Expected: all geometry tests pass.
@@ -376,7 +376,7 @@
 - AppNavHost retains measured mini artwork bounds, full-screen artwork bounds and the same playerEntryProgress already used by the full-screen surface.
 - The overlay consumes only miniPlayerArtwork whose key equals currentMiniPlayerArtworkKey; it does not issue artwork requests.
 
-- [ ] **Step 1: Add failing measurement and transition tests**
+- [x] **Step 1: Add failing measurement and transition tests**
   Add tests:
   - miniArtworkReportsItsOwnBounds
   - fullScreenArtworkReportsItsOwnBounds
@@ -387,28 +387,28 @@
   - completedTransitionHandsOffWithoutAVisibleJump
   Capture source/target bounds and overlay bounds at progress 0, intermediate progress and 1.
 
-- [ ] **Step 2: Run the focused instrumentation tests and verify RED**
+- [x] **Step 2: Run the focused instrumentation tests and verify RED**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.player.MiniPlayerArtworkTransitionUiTest
   Expected: existing MiniPlayer/ArtworkStage expose no independent measured artwork transition.
 
-- [ ] **Step 3: Report measured image bounds**
+- [x] **Step 3: Report measured image bounds**
   Add onGloballyPositioned callbacks to the artwork image containers (not the entire mini-player row). Report bounds in a common window coordinate space. Keep current measured mini-player row top/height callbacks unchanged.
 
-- [ ] **Step 4: Add the artwork-only transition overlay**
+- [x] **Step 4: Add the artwork-only transition overlay**
   In AppNavHost, render the current identity-checked bitmap in a temporary overlay at ArtworkTransitionGeometry.interpolate(source, target, playerEntryProgress). The overlay occupies the interpolated rectangle; do not scale the full Player page. Hide/dim source and destination artwork only while the overlay is the visible owner, then hand off to the normal full-screen ArtworkStage at completion without a duplicate frame.
 
-- [ ] **Step 5: Coordinate title/control fade and readiness**
+- [x] **Step 5: Coordinate title/control fade and readiness**
   During expansion, fade mini-player title and playback controls over the first 20% of normalized entry progress (alpha = 1 - clamp(progress / 0.20, 0, 1)); keep the album-art overlay visible. Use existing 250ms settle and same progress for tap and drag. If either bound or bitmap is not ready, wait only for the measured/current identity state or use the existing normal transition fallback; never guess geometry or display another song's bitmap. Cancel/release below threshold must restore the mini-player's normal alpha and artwork.
 
-- [ ] **Step 6: Run focused and existing transition tests**
+- [x] **Step 6: Run focused and existing transition tests**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.player.MiniPlayerArtworkTransitionUiTest
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerNavigationUiTest
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayerUiTest
   Expected: drag/tap/cancel/handoff pass; current mini-player entry/dismiss and cache identity regressions remain green.
 
-- [ ] **Step 7: Commit Batch 4**
+- [x] **Step 7: Commit Batch 4**
   Commit message:
   feat(player): animate mini-player artwork into fullscreen
 

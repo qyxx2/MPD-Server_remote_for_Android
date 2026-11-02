@@ -13,7 +13,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -29,7 +39,24 @@ fun ArtworkStage(
     modifier: Modifier = Modifier,
     dismissGestureModifier: Modifier = Modifier,
     onTap: (() -> Unit)? = null,
+    artworkVisible: Boolean = true,
+    onArtworkBoundsChanged: (boundsOnScreen: Rect) -> Unit = {},
 ) {
+    var artworkCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val currentArtworkCoordinates = artworkCoordinates
+    SideEffect {
+        currentArtworkCoordinates?.let { coordinates ->
+            val origin = coordinates.positionOnScreen()
+            onArtworkBoundsChanged(
+                Rect(
+                    left = origin.x,
+                    top = origin.y,
+                    right = origin.x + coordinates.size.width,
+                    bottom = origin.y + coordinates.size.height,
+                ),
+            )
+        }
+    }
     BoxWithConstraints(modifier = modifier.fillMaxSize().testTag("player-artwork-bounds")) {
         val artworkSide = calculateArtworkSideDp(
             availableWidthDp = maxWidth.value,
@@ -42,6 +69,8 @@ fun ArtworkStage(
                 .then(dismissGestureModifier)
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                .graphicsLayer { alpha = if (artworkVisible) 1f else 0f }
+                .onGloballyPositioned { artworkCoordinates = it }
                 .clickable(enabled = onTap != null) { onTap?.invoke() }
                 .testTag("player-artwork-stage"),
             contentAlignment = Alignment.Center,
