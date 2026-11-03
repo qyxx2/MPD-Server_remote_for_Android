@@ -39,12 +39,10 @@ internal fun ArtworkTransitionOverlay(
     // This avoids revealing the stationary mini-player image during the one-frame layout gap.
     val target = targetBounds ?: source
     if (!progress.isFinite()) return
+    // Both directions share the same linear four-edge trajectory. Only artwork ownership
+    // and corner treatment differ during dismissal; no late piecewise curve is introduced.
     val bounds = runCatching {
-        if (dismissalTransition) {
-            ArtworkTransitionGeometry.interpolateDismissal(source, target, progress)
-        } else {
-            ArtworkTransitionGeometry.interpolate(source, target, progress)
-        }
+        ArtworkTransitionGeometry.interpolate(source, target, progress)
     }.getOrNull() ?: return
     val density = LocalDensity.current
     val width = with(density) { bounds.width.toDp() }

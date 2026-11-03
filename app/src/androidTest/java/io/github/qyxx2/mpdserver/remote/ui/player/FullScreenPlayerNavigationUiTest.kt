@@ -240,7 +240,7 @@ class FullScreenPlayerNavigationUiTest {
             offsetPx = motionBounds.top,
             screenHeightPx = fullscreenWindowBounds.height,
         )
-        val expectedOverlayBounds = ArtworkTransitionGeometry.interpolateDismissal(
+        val expectedOverlayBounds = ArtworkTransitionGeometry.interpolate(
             restingMotionArtworkBounds,
             miniArtworkBounds,
             dismissalProgress,

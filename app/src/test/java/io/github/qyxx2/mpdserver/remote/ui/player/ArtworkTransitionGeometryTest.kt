@@ -34,17 +34,37 @@ class ArtworkTransitionGeometryTest {
     }
 
     @Test
-    fun dismissalUsesIndependentCoverShrinkAndTravelTrajectory() {
+    fun dismissalAtTwentyThreePercentUsesTheSameLinearFourEdgeInterpolation() {
         val source = Rect(87f, 230f, 603f, 746f)
         val target = Rect(113f, 1088f, 285f, 1260f)
 
-        // At 23% sheet drag, the reference frame shows the cover already shrunk to ~391px,
-        // moved down to ~573px, while remaining near the horizontal center of the display.
         assertRectEquals(
-            Rect(124.628f, 570.153f, 518.862f, 964.388f),
-            ArtworkTransitionGeometry.interpolateDismissal(source, target, 0.23f),
+            Rect(92.98f, 427.34f, 529.86f, 864.22f),
+            ArtworkTransitionGeometry.interpolate(source, target, 0.23f),
             tolerance = 0.01f,
         )
+    }
+
+    @Test
+    fun dismissalHasOneConstantLinearSlopeAcrossTheEntireDrag() {
+        val source = Rect(87f, 230f, 603f, 746f)
+        val target = Rect(113f, 1088f, 285f, 1260f)
+        val atSixtyPercent = ArtworkTransitionGeometry.interpolate(source, target, 0.6f)
+        val atEightyPercent = ArtworkTransitionGeometry.interpolate(source, target, 0.8f)
+
+        val firstFinalSegmentDelta = Rect(
+            atEightyPercent.left - atSixtyPercent.left,
+            atEightyPercent.top - atSixtyPercent.top,
+            atEightyPercent.right - atSixtyPercent.right,
+            atEightyPercent.bottom - atSixtyPercent.bottom,
+        )
+        val secondFinalSegmentDelta = Rect(
+            target.left - atEightyPercent.left,
+            target.top - atEightyPercent.top,
+            target.right - atEightyPercent.right,
+            target.bottom - atEightyPercent.bottom,
+        )
+        assertRectEquals(firstFinalSegmentDelta, secondFinalSegmentDelta, tolerance = 0.01f)
     }
 
     @Test
@@ -52,10 +72,10 @@ class ArtworkTransitionGeometryTest {
         val source = Rect(10f, 20f, 110f, 120f)
         val target = Rect(210f, 320f, 260f, 370f)
 
-        assertRectEquals(source, ArtworkTransitionGeometry.interpolateDismissal(source, target, 0f))
-        assertRectEquals(target, ArtworkTransitionGeometry.interpolateDismissal(source, target, 1f))
-        assertRectEquals(source, ArtworkTransitionGeometry.interpolateDismissal(source, target, -0.5f))
-        assertRectEquals(target, ArtworkTransitionGeometry.interpolateDismissal(source, target, 1.5f))
+        assertRectEquals(source, ArtworkTransitionGeometry.interpolate(source, target, 0f))
+        assertRectEquals(target, ArtworkTransitionGeometry.interpolate(source, target, 1f))
+        assertRectEquals(source, ArtworkTransitionGeometry.interpolate(source, target, -0.5f))
+        assertRectEquals(target, ArtworkTransitionGeometry.interpolate(source, target, 1.5f))
     }
 
     @Test

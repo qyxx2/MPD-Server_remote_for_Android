@@ -99,7 +99,7 @@
 - [x] **Step 7: Commit Task 2**
   `fix(player): extend transition scrim edge to edge`
 
-### Task 3 — Keep artwork ownership stable and implement the dedicated dismissal trajectory
+### Task 3 — Keep artwork ownership stable and implement a continuous linear dismissal trajectory
 
 **Files:**
 - Modify: `app/src/main/java/io/github/qyxx2/mpdserver/remote/ui/navigation/AppNavHost.kt`
@@ -111,8 +111,8 @@
 **Interfaces:**
 - Add `onArtworkBoundsChanged: (Rect) -> Unit` to RootBackdropShell and pass it to the background MiniPlayer so mini-player artwork bounds remain measurable during full-screen dismissal.
 - `ArtworkTransitionOverlay` accepts a nullable destination rectangle and an explicit `dismissalTransition` direction. When destination is not yet measured, it draws the matching bitmap at the measured source rectangle.
-- Entry continues using linear four-edge interpolation. Dismissal uses `ArtworkTransitionGeometry.interpolateDismissal`: independent horizontal-center (`p^1.25`), vertical-center (`p * (2-p)`) and size (`p * (1.7-0.7p)`) curves derived from the three supplied reference frames. The sheet/scrim remain driven by raw finger progress.
-- AppNavHost owns separate entry and dismissal predicates/progress, but both consume the same current cache bitmap/key. The reverse motion is not a time-reversed copy of entry.
+- Both entry and dismissal use the same linear four-edge interpolation. Dismissal has no easing or piecewise trajectory switch; all four edges follow raw finger progress from the full-screen rectangle to the mini-player rectangle. The sheet/scrim remain driven by raw finger progress.
+- AppNavHost owns separate entry and dismissal ownership predicates, but both consume the same current cache bitmap/key.
 
 - [x] **Step 1: Add a failing target-readiness continuity test**
   Test name: `overlayStaysAtSourceUntilDestinationBoundsAreMeasured`.
@@ -130,7 +130,7 @@
   Use the same bitmap/key and the existing four-edge geometry. At dismissal progress 0, assert the overlay equals full-screen source bounds; at an intermediate dismissal progress, assert it interpolates toward mini-player bounds; at dismissal progress 1, assert it equals the measured mini-player artwork bounds. Add a null-target case that remains at the full-screen source until mini-player bounds arrive.
 
 - [x] **Step 5: Wire the measured reverse source and destination**
-  Pass the mini-player bounds callback into RootBackdropShell. During FULL_SCREEN_PLAYER dismissal, normalize the measured full-screen ArtworkStage bounds by removing the live Player drag translation; use measured mini-player bounds as the destination. Pass raw `FullScreenPlayerDismissPolicy.dragProgress(playerDragOffsetPx, playerLayerHeightPx)` to the overlay with `dismissalTransition = true`; the overlay must call `ArtworkTransitionGeometry.interpolateDismissal`, not entry's linear `interpolate`. Hide ArtworkStage and stationary RootBackdropShell mini artwork while the reverse overlay is the visible owner. Exclude the Queue route from Player artwork dismissal handoff. Keep the Player sheet/scrim on raw finger progress.
+  Pass the mini-player bounds callback into RootBackdropShell. During FULL_SCREEN_PLAYER dismissal, normalize the measured full-screen ArtworkStage bounds by removing the live Player drag translation; use measured mini-player bounds as the destination. Pass raw `FullScreenPlayerDismissPolicy.dragProgress(playerDragOffsetPx, playerLayerHeightPx)` to the overlay; it uses the same linear `ArtworkTransitionGeometry.interpolate` as entry. No easing or final-segment trajectory switch is allowed. Hide ArtworkStage and stationary RootBackdropShell mini artwork while the overlay is the visible owner. Exclude the Queue route from Player artwork dismissal handoff. Keep the Player sheet/scrim on raw finger progress.
 
 - [x] **Step 6: Run focused UI and unit regressions**
   Run MiniPlayerArtworkTransitionUiTest, FullScreenPlayerNavigationUiTest and the full `testDebugUnitTest` suite.

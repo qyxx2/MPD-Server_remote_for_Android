@@ -259,13 +259,15 @@ class MiniPlayerArtworkTransitionUiTest {
                 .fetchSemanticsNode().boundsInRoot,
         )
 
-        composeRule.runOnIdle { dismissalProgress = 0.23f }
-        composeRule.waitForIdle()
-        assertRectEquals(
-            Rect(173.206f, 161.267f, 345.243f, 333.304f),
-            composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
-                .fetchSemanticsNode().boundsInRoot,
-        )
+        listOf(0.23f, 0.6f, 0.8f, 0.99f).forEach { progress ->
+            composeRule.runOnIdle { dismissalProgress = progress }
+            composeRule.waitForIdle()
+            assertRectEquals(
+                ArtworkTransitionGeometry.interpolate(fullScreenBounds, miniPlayerBounds, progress),
+                composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+                    .fetchSemanticsNode().boundsInRoot,
+            )
+        }
 
         composeRule.runOnIdle { dismissalProgress = 1f }
         composeRule.waitForIdle()
