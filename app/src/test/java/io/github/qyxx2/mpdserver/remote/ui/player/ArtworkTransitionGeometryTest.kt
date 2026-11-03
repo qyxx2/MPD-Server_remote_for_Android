@@ -34,6 +34,31 @@ class ArtworkTransitionGeometryTest {
     }
 
     @Test
+    fun dismissalUsesIndependentCoverShrinkAndTravelTrajectory() {
+        val source = Rect(87f, 230f, 603f, 746f)
+        val target = Rect(113f, 1088f, 285f, 1260f)
+
+        // At 23% sheet drag, the reference frame shows the cover already shrunk to ~391px,
+        // moved down to ~573px, while remaining near the horizontal center of the display.
+        assertRectEquals(
+            Rect(124.628f, 570.153f, 518.862f, 964.388f),
+            ArtworkTransitionGeometry.interpolateDismissal(source, target, 0.23f),
+            tolerance = 0.01f,
+        )
+    }
+
+    @Test
+    fun dismissalStartsAtFullscreenArtworkAndEndsAtMiniPlayerArtwork() {
+        val source = Rect(10f, 20f, 110f, 120f)
+        val target = Rect(210f, 320f, 260f, 370f)
+
+        assertRectEquals(source, ArtworkTransitionGeometry.interpolateDismissal(source, target, 0f))
+        assertRectEquals(target, ArtworkTransitionGeometry.interpolateDismissal(source, target, 1f))
+        assertRectEquals(source, ArtworkTransitionGeometry.interpolateDismissal(source, target, -0.5f))
+        assertRectEquals(target, ArtworkTransitionGeometry.interpolateDismissal(source, target, 1.5f))
+    }
+
+    @Test
     fun progressOutsideRangeIsClamped() {
         val source = Rect(10f, 20f, 110f, 220f)
         val target = Rect(210f, 120f, 410f, 520f)
@@ -64,11 +89,11 @@ class ArtworkTransitionGeometryTest {
         assertIllegalArgument { ArtworkTransitionGeometry.interpolate(nonFinite, valid, 0.5f) }
     }
 
-    private fun assertRectEquals(expected: Rect, actual: Rect) {
-        assertEquals(expected.left, actual.left, 0.001f)
-        assertEquals(expected.top, actual.top, 0.001f)
-        assertEquals(expected.right, actual.right, 0.001f)
-        assertEquals(expected.bottom, actual.bottom, 0.001f)
+    private fun assertRectEquals(expected: Rect, actual: Rect, tolerance: Float = 0.001f) {
+        assertEquals(expected.left, actual.left, tolerance)
+        assertEquals(expected.top, actual.top, tolerance)
+        assertEquals(expected.right, actual.right, tolerance)
+        assertEquals(expected.bottom, actual.bottom, tolerance)
     }
 
     private fun assertIllegalArgument(block: () -> Unit) {

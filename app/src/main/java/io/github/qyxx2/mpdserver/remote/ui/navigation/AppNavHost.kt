@@ -611,8 +611,28 @@ fun AppNavHost(
             currentMiniPlayerArtworkKey != null &&
             miniPlayerArtwork != null &&
             miniPlayerArtworkKey == currentMiniPlayerArtworkKey &&
-            sourceArtworkBoundsInRoot != null &&
-            targetArtworkBoundsInRoot != null
+            sourceArtworkBoundsInRoot != null
+    val playerDismissArtworkSourceBoundsInRoot = screenBoundsInRoot(
+        fullScreenArtworkBoundsOnScreen,
+        fullScreenArtworkBoundsKey,
+    )?.let { measuredBounds ->
+        // The full-screen stage moves down with the Player sheet. Normalize its live measurement
+        // back to the resting full-screen artwork rectangle before reversing the shared element.
+        ArtworkTransitionGeometry.removeParentTranslation(
+            measuredBounds,
+            Offset(0f, playerDragOffsetPx),
+        )
+    }
+    val playerArtworkDismissTransitionActive =
+        currentRoute == AppDestination.FULL_SCREEN_PLAYER.route &&
+            fullScreenPagerState.currentPage == 0 &&
+            isPlayerDismissTransitionActive &&
+            currentMiniPlayerArtworkKey != null &&
+            miniPlayerArtwork != null &&
+            miniPlayerArtworkKey == currentMiniPlayerArtworkKey &&
+            playerDismissArtworkSourceBoundsInRoot != null
+    val artworkTransitionActive =
+        miniPlayerArtworkTransitionActive || playerArtworkDismissTransitionActive
     val miniPlayerChromeAlpha = if (miniPlayerArtworkTransitionActive) {
         1f - (entryProgress / 0.20f).coerceIn(0f, 1f)
     } else {
@@ -891,8 +911,9 @@ fun AppNavHost(
                         homeArtworkIdentity = homeArtworkIdentity,
                         miniPlayerPresentation = miniPlayerPresentation,
                         miniPlayerArtwork = miniPlayerArtwork,
-                        miniPlayerArtworkAlpha = if (miniPlayerArtworkTransitionActive) 0f else 1f,
+                        miniPlayerArtworkAlpha = if (artworkTransitionActive) 0f else 1f,
                         miniPlayerChromeAlpha = miniPlayerChromeAlpha,
+                        onArtworkBoundsChanged = reportMiniPlayerArtworkBounds,
                         searchController = searchController,
                         navController = navController,
                         uiPreferences = uiPreferences,
@@ -980,7 +1001,7 @@ fun AppNavHost(
                                     actions = playerActions,
                                     artworkCacheKey = artworkCacheKey,
                                     artworkCache = artworkCache,
-                                    artworkVisibleForTransition = !miniPlayerArtworkTransitionActive,
+                                    artworkVisibleForTransition = !artworkTransitionActive,
                                     onArtworkBoundsChanged = reportFullScreenArtworkBounds,
                                     onExit = ::exitFullScreenToRoot,
                                     onOpenQueue = {
@@ -1068,7 +1089,7 @@ fun AppNavHost(
                                 presentation = miniPlayerPresentation,
                                 onOpen = ::openFullScreenPlayer,
                                 artwork = miniPlayerArtwork,
-                                artworkAlpha = if (miniPlayerArtworkTransitionActive) 0f else 1f,
+                                artworkAlpha = if (artworkTransitionActive) 0f else 1f,
                                 chromeAlpha = miniPlayerChromeAlpha,
                                 playbackControlEnabled = miniPlayerControlEnabled,
                                 onArtworkBoundsChanged = reportMiniPlayerArtworkBounds,
@@ -1194,7 +1215,7 @@ fun AppNavHost(
                             actions = null,
                             artworkCacheKey = artworkCacheKey,
                             artworkCache = artworkCache,
-                            artworkVisibleForTransition = !miniPlayerArtworkTransitionActive,
+                            artworkVisibleForTransition = !artworkTransitionActive,
                             onArtworkBoundsChanged = reportFullScreenArtworkBounds,
                             onExit = {},
                             onOpenQueue = {},
@@ -1220,14 +1241,31 @@ fun AppNavHost(
                 }
             }
         }
-        if (miniPlayerArtworkTransitionActive) {
+        if (artworkTransitionActive) {
+            val isDismissingArtwork = playerArtworkDismissTransitionActive
             ArtworkTransitionOverlay(
                 bitmap = miniPlayerArtwork,
                 bitmapKey = miniPlayerArtworkKey,
                 currentKey = currentMiniPlayerArtworkKey,
-                sourceBounds = sourceArtworkBoundsInRoot,
-                targetBounds = targetArtworkBoundsInRoot,
-                progress = entryProgress,
+                sourceBounds = if (isDismissingArtwork) {
+                    playerDismissArtworkSourceBoundsInRoot
+                } else {
+                    sourceArtworkBoundsInRoot
+                },
+                targetBounds = if (isDismissingArtwork) {
+                    sourceArtworkBoundsInRoot
+                } else {
+                    targetArtworkBoundsInRoot
+                },
+                progress = if (isDismissingArtwork) {
+                    FullScreenPlayerDismissPolicy.dragProgress(
+                        offsetPx = playerDragOffsetPx,
+                        screenHeightPx = playerLayerHeightPx,
+                    )
+                } else {
+                    entryProgress
+                },
+                dismissalTransition = isDismissingArtwork,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -1278,6 +1316,7 @@ private fun RootBackdropShell(
     miniPlayerArtwork: ImageBitmap?,
     miniPlayerArtworkAlpha: Float,
     miniPlayerChromeAlpha: Float,
+    onArtworkBoundsChanged: (Rect) -> Unit,
     searchController: SearchController,
     navController: NavHostController,
     uiPreferences: UiPreferencesRepository,
@@ -1309,6 +1348,7 @@ private fun RootBackdropShell(
                             artwork = miniPlayerArtwork,
                             artworkAlpha = miniPlayerArtworkAlpha,
                             chromeAlpha = miniPlayerChromeAlpha,
+                            onArtworkBoundsChanged = onArtworkBoundsChanged,
                         )
                     }
                 },

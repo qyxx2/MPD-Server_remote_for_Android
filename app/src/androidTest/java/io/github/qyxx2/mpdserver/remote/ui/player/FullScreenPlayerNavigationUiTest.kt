@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
@@ -203,6 +204,61 @@ class FullScreenPlayerNavigationUiTest {
         }
         composeRule.waitForIdle()
         assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+    }
+
+    @Test
+    fun downwardDismissUsesSharedArtworkHandoffBackToMiniPlayer() {
+        launchNavigation()
+        // Capture the mini-player artwork's measured root-space rectangle before its route is
+        // replaced by the accessibility-collapsed root backdrop. The backdrop MiniPlayer reports
+        // its live bounds through the same AppNavHost callback after the route transition.
+        val miniArtworkBounds = composeRule.onNodeWithTag("mini-player-artwork")
+            .fetchSemanticsNode().boundsInRoot
+        openPlayerAndWaitForArtwork()
+
+        val fullscreenWindowBounds = composeRule.onNodeWithTag("full-screen-motion-container")
+            .fetchSemanticsNode().boundsInRoot
+        val restingMotionArtworkBounds = composeRule.onNodeWithTag("player-artwork-stage")
+            .fetchSemanticsNode().boundsInRoot
+        // The dismissal policy requires at least 18% of the Player layer height.
+        val dragDistancePx = with(composeRule.density) { 220.dp.toPx() }
+        val gesture = composeRule.onNodeWithTag("full-screen-exit-gesture-band")
+
+        gesture.performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + dragDistancePx), 180L)
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        // ArtworkStage reports layout coordinates in the unshifted motion-layer space. Its
+        // on-screen callback includes the live graphicsLayer translation, which AppNavHost
+        // removes before converting back to the same root-space rectangle.
+        val dismissalProgress = FullScreenPlayerDismissPolicy.dragProgress(
+            offsetPx = motionBounds.top,
+            screenHeightPx = fullscreenWindowBounds.height,
+        )
+        val expectedOverlayBounds = ArtworkTransitionGeometry.interpolateDismissal(
+            restingMotionArtworkBounds,
+            miniArtworkBounds,
+            dismissalProgress,
+        )
+        val actualOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+            .fetchSemanticsNode().boundsInRoot
+        assertRectEquals(
+            expectedOverlayBounds,
+            actualOverlayBounds,
+            "motion=$motionBounds window=$fullscreenWindowBounds mini=$miniArtworkBounds fullscreen=$restingMotionArtworkBounds progress=$dismissalProgress",
+        )
+
+        gesture.performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.HOME.route
+        }
+        composeRule.onNodeWithTag("mini-player-artwork-image").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("mini-player-artwork-transition-overlay").assertCountEquals(0)
     }
 
     @Test
@@ -500,6 +556,13 @@ class FullScreenPlayerNavigationUiTest {
         assertEquals("threshold handoff finishes at the real window top without a scale-open phase", 0f, motionBounds.top, 2f)
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
         composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
+    }
+
+    private fun assertRectEquals(expected: Rect, actual: Rect, context: String = "") {
+        assertEquals("left edge: $context expected=$expected actual=$actual", expected.left, actual.left, 2f)
+        assertEquals("top edge: $context expected=$expected actual=$actual", expected.top, actual.top, 2f)
+        assertEquals("right edge: $context expected=$expected actual=$actual", expected.right, actual.right, 2f)
+        assertEquals("bottom edge: $context expected=$expected actual=$actual", expected.bottom, actual.bottom, 2f)
     }
 
     @Test

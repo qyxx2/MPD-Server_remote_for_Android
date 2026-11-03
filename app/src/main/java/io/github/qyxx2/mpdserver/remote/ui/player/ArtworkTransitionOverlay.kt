@@ -30,19 +30,30 @@ internal fun ArtworkTransitionOverlay(
     sourceBounds: Rect?,
     targetBounds: Rect?,
     progress: Float,
+    dismissalTransition: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     if (bitmap == null || bitmapKey == null || bitmapKey != currentKey) return
     val source = sourceBounds ?: return
-    val target = targetBounds ?: return
+    // Keep ownership at the measured source rectangle until the destination is measured.
+    // This avoids revealing the stationary mini-player image during the one-frame layout gap.
+    val target = targetBounds ?: source
     if (!progress.isFinite()) return
     val bounds = runCatching {
-        ArtworkTransitionGeometry.interpolate(source, target, progress)
+        if (dismissalTransition) {
+            ArtworkTransitionGeometry.interpolateDismissal(source, target, progress)
+        } else {
+            ArtworkTransitionGeometry.interpolate(source, target, progress)
+        }
     }.getOrNull() ?: return
     val density = LocalDensity.current
     val width = with(density) { bounds.width.toDp() }
     val height = with(density) { bounds.height.toDp() }
-    val cornerRadius = (8f + 10f * progress.coerceIn(0f, 1f)).dp
+    val cornerRadius = if (dismissalTransition) {
+        (18f - 10f * progress.coerceIn(0f, 1f)).dp
+    } else {
+        (8f + 10f * progress.coerceIn(0f, 1f)).dp
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Image(

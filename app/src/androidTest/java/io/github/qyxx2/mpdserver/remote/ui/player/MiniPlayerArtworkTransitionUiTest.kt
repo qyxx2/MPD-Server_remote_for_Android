@@ -191,6 +191,92 @@ class MiniPlayerArtworkTransitionUiTest {
     }
 
     @Test
+    fun overlayStaysAtSourceUntilDestinationBoundsAreMeasured() {
+        val source = Rect(20f, 30f, 68f, 78f)
+        val target = Rect(180f, 260f, 420f, 500f)
+        var measuredTarget by mutableStateOf<Rect?>(null)
+        val bitmap = artworkBitmap()
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                Box(Modifier.fillMaxSize()) {
+                    ArtworkTransitionOverlay(
+                        bitmap = bitmap,
+                        bitmapKey = key,
+                        currentKey = key,
+                        sourceBounds = source,
+                        targetBounds = measuredTarget,
+                        progress = 0.5f,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        assertRectEquals(
+            source,
+            composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+                .fetchSemanticsNode().boundsInRoot,
+        )
+
+        composeRule.runOnIdle { measuredTarget = target }
+        composeRule.waitForIdle()
+        assertRectEquals(
+            Rect(100f, 145f, 244f, 289f),
+            composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+                .fetchSemanticsNode().boundsInRoot,
+        )
+    }
+
+    @Test
+    fun reverseOverlayInterpolatesFromFullScreenBackToMiniPlayerArtwork() {
+        val fullScreenBounds = Rect(180f, 260f, 420f, 500f)
+        val miniPlayerBounds = Rect(20f, 30f, 68f, 78f)
+        var dismissalProgress by mutableFloatStateOf(0f)
+        val bitmap = artworkBitmap()
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                Box(Modifier.fillMaxSize()) {
+                    ArtworkTransitionOverlay(
+                        bitmap = bitmap,
+                        bitmapKey = key,
+                        currentKey = key,
+                        sourceBounds = fullScreenBounds,
+                        targetBounds = miniPlayerBounds,
+                        progress = dismissalProgress,
+                        dismissalTransition = true,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        assertRectEquals(
+            fullScreenBounds,
+            composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+                .fetchSemanticsNode().boundsInRoot,
+        )
+
+        composeRule.runOnIdle { dismissalProgress = 0.23f }
+        composeRule.waitForIdle()
+        assertRectEquals(
+            Rect(173.206f, 161.267f, 345.243f, 333.304f),
+            composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+                .fetchSemanticsNode().boundsInRoot,
+        )
+
+        composeRule.runOnIdle { dismissalProgress = 1f }
+        composeRule.waitForIdle()
+        assertRectEquals(
+            miniPlayerBounds,
+            composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+                .fetchSemanticsNode().boundsInRoot,
+        )
+    }
+
+    @Test
     fun dragProgressMovesOverlayBetweenMeasuredBounds() {
         var progress by mutableFloatStateOf(0.5f)
         val source = Rect(20f, 30f, 68f, 78f)
