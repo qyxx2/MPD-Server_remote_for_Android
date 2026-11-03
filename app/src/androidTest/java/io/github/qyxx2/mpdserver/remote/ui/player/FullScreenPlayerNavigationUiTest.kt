@@ -220,37 +220,46 @@ class FullScreenPlayerNavigationUiTest {
             .fetchSemanticsNode().boundsInRoot
         val restingMotionArtworkBounds = composeRule.onNodeWithTag("player-artwork-stage")
             .fetchSemanticsNode().boundsInRoot
-        // The dismissal policy requires at least 18% of the Player layer height.
-        val dragDistancePx = with(composeRule.density) { 220.dp.toPx() }
+        // The artwork must remain vertically attached to the moving Player sheet. Its measured
+        // travel ends when its top edge reaches the mini-player artwork's top edge.
+        val artworkTravelPx = miniArtworkBounds.top - restingMotionArtworkBounds.top
+        assertTrue("Mini-player artwork must be below the full-screen artwork", artworkTravelPx > 0f)
+        val dragDistancePx = artworkTravelPx * 0.5f
         val gesture = composeRule.onNodeWithTag("full-screen-exit-gesture-band")
 
         gesture.performTouchInput {
             down(center)
-            moveTo(Offset(center.x, center.y + dragDistancePx), 180L)
+            // Repeated MOVE events are important here: graphicsLayer translation does not
+            // necessarily trigger a fresh onGloballyPositioned callback for ArtworkStage.
+            moveTo(Offset(center.x, center.y + artworkTravelPx * 0.15f), 180L)
+            moveTo(Offset(center.x, center.y + artworkTravelPx * 0.30f), 360L)
+            moveTo(Offset(center.x, center.y + dragDistancePx), 540L)
         }
         composeRule.waitForIdle()
 
         assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
         val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
             .fetchSemanticsNode().boundsInRoot
-        // ArtworkStage reports layout coordinates in the unshifted motion-layer space. Its
-        // on-screen callback includes the live graphicsLayer translation, which AppNavHost
-        // removes before converting back to the same root-space rectangle.
-        val dismissalProgress = FullScreenPlayerDismissPolicy.dragProgress(
-            offsetPx = motionBounds.top,
-            screenHeightPx = fullscreenWindowBounds.height,
-        )
+        val actualSheetTranslationPx = motionBounds.top - fullscreenWindowBounds.top
+        assertTrue("A held downward drag must move the Player sheet", actualSheetTranslationPx > 0f)
+        val handoffProgress = (actualSheetTranslationPx / artworkTravelPx).coerceIn(0f, 1f)
         val expectedOverlayBounds = ArtworkTransitionGeometry.interpolate(
             restingMotionArtworkBounds,
             miniArtworkBounds,
-            dismissalProgress,
+            handoffProgress,
         )
         val actualOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
             .fetchSemanticsNode().boundsInRoot
         assertRectEquals(
             expectedOverlayBounds,
             actualOverlayBounds,
-            "motion=$motionBounds window=$fullscreenWindowBounds mini=$miniArtworkBounds fullscreen=$restingMotionArtworkBounds progress=$dismissalProgress",
+            "motion=$motionBounds window=$fullscreenWindowBounds mini=$miniArtworkBounds fullscreen=$restingMotionArtworkBounds progress=$handoffProgress",
+        )
+        assertEquals(
+            "Artwork top must track the Player sheet one-for-one until it reaches the mini-player",
+            actualSheetTranslationPx,
+            actualOverlayBounds.top - restingMotionArtworkBounds.top,
+            1.5f,
         )
 
         gesture.performTouchInput { up() }
@@ -527,6 +536,63 @@ class FullScreenPlayerNavigationUiTest {
         val navigationAfter = composeRule.onNodeWithTag("root-navigation-bar")
             .fetchSemanticsNode().boundsInRoot
         assertEquals("the completed transition must end at the root navigation resting position", navigationBefore.top, navigationAfter.top, 2f)
+    }
+
+    @Test
+    fun miniPlayerArtworkDoesNotJumpBackToSourceWhenPullUpCommits() {
+        launchNavigation()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("mini-player-artwork-image")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+
+        val miniArtworkBounds = composeRule.onNodeWithTag("mini-player-artwork")
+            .fetchSemanticsNode().boundsInRoot
+        val dragDistancePx = composeRule.activity.window.decorView.height * 0.60f
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 900L)
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+        val previewOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "the held expansion preview must move the artwork away from its mini-player source: mini=$miniArtworkBounds preview=$previewOverlayBounds",
+            previewOverlayBounds.top < miniArtworkBounds.top - 100f,
+        )
+
+        // Freeze the Compose clock at the route handoff so the assertion sees the first committed
+        // frame, before the 250ms settle animation can hide a one-frame jump.
+        composeRule.mainClock.autoAdvance = false
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                composeRule.onAllNodesWithTag("mini-player-artwork-transition-overlay")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+
+        val committedOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "committing the preview must not reset the artwork overlay to the mini-player source: mini=$miniArtworkBounds preview=$previewOverlayBounds committed=$committedOverlayBounds",
+            kotlin.math.abs(committedOverlayBounds.top - miniArtworkBounds.top) > 100f,
+        )
+        assertTrue(
+            "the first committed frame must continue from the preview position without a coordinate jump: preview=$previewOverlayBounds committed=$committedOverlayBounds",
+            kotlin.math.abs(committedOverlayBounds.top - previewOverlayBounds.top) < 80f,
+        )
+
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                composeRule.onAllNodesWithTag("mini-player-artwork-transition-overlay")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isEmpty() &&
+                composeRule.onAllNodesWithTag("full-screen-player-root")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
     }
 
     @Test

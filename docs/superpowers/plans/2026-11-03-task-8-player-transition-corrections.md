@@ -27,6 +27,7 @@
 3. The edge-to-edge scrim must cover the root window even when foreground content applies top and bottom system insets.
 4. A missing destination measurement must not reveal the stationary mini-player image or leave an empty/white transition frame.
 5. A cache identity change or absent bitmap must suppress the overlay rather than animate stale artwork.
+6. Committing a finger-following pull-up preview to FULL_SCREEN_PLAYER must preserve its already-measured full-screen artwork destination across the route switch; the overlay must not fall back to the mini-player source for a frame.
 
 ---
 
@@ -110,8 +111,8 @@
 
 **Interfaces:**
 - Add `onArtworkBoundsChanged: (Rect) -> Unit` to RootBackdropShell and pass it to the background MiniPlayer so mini-player artwork bounds remain measurable during full-screen dismissal.
-- `ArtworkTransitionOverlay` accepts a nullable destination rectangle and an explicit `dismissalTransition` direction. When destination is not yet measured, it draws the matching bitmap at the measured source rectangle.
-- Both entry and dismissal use the same linear four-edge interpolation. Dismissal has no easing or piecewise trajectory switch; all four edges follow raw finger progress from the full-screen rectangle to the mini-player rectangle. The sheet/scrim remain driven by raw finger progress.
+- `ArtworkTransitionOverlay` accepts a nullable destination rectangle and an explicit `dismissalTransition` direction. When destination is not yet measured, it draws the matching bitmap at the measured source rectangle. Once pull-up preview has measured the destination, retain that measurement across the preview-to-FULL_SCREEN_PLAYER route commit; only clear it when a new preview/direct-tap expansion begins.
+- Both entry and dismissal use the same linear four-edge interpolation. For dismissal, derive artwork progress from measured vertical anchor travel: `clamp(playerDragOffsetPx / (target.top - source.top), 0, 1)`. This keeps the artwork top attached to the Player sheet's raw translation until it reaches the mini-player target; do not normalize artwork progress by full window height, which makes it lag when the artwork anchor travel is shorter than the Player layer. The sheet/scrim remain driven by their existing raw window-height drag progress. No easing or piecewise trajectory switch is allowed.
 - AppNavHost owns separate entry and dismissal ownership predicates, but both consume the same current cache bitmap/key.
 
 - [x] **Step 1: Add a failing target-readiness continuity test**
@@ -126,11 +127,11 @@
   In AppNavHost, the entry-transition active predicate requires matching bitmap identity and measured mini-player source bounds, not a measured full-screen target. Pass the nullable target to ArtworkTransitionOverlay, which falls back to source bounds. Hide the stationary mini-player image only while this overlay is active. Do not guess the destination or display stale artwork.
 
 - [x] **Step 4: Add a failing reverse-geometry handoff test**
-  Test name: `overlayInterpolatesFromFullScreenArtworkBackToMiniPlayerArtwork`.
+  Test name: `reverseOverlayInterpolatesFromFullScreenBackToMiniPlayerArtwork`.
   Use the same bitmap/key and the existing four-edge geometry. At dismissal progress 0, assert the overlay equals full-screen source bounds; at an intermediate dismissal progress, assert it interpolates toward mini-player bounds; at dismissal progress 1, assert it equals the measured mini-player artwork bounds. Add a null-target case that remains at the full-screen source until mini-player bounds arrive.
 
 - [x] **Step 5: Wire the measured reverse source and destination**
-  Pass the mini-player bounds callback into RootBackdropShell. During FULL_SCREEN_PLAYER dismissal, normalize the measured full-screen ArtworkStage bounds by removing the live Player drag translation; use measured mini-player bounds as the destination. Pass raw `FullScreenPlayerDismissPolicy.dragProgress(playerDragOffsetPx, playerLayerHeightPx)` to the overlay; it uses the same linear `ArtworkTransitionGeometry.interpolate` as entry. No easing or final-segment trajectory switch is allowed. Hide ArtworkStage and stationary RootBackdropShell mini artwork while the overlay is the visible owner. Exclude the Queue route from Player artwork dismissal handoff. Keep the Player sheet/scrim on raw finger progress.
+  Pass the mini-player bounds callback into RootBackdropShell. During FULL_SCREEN_PLAYER dismissal, normalize the measured full-screen ArtworkStage bounds by removing the live Player drag translation; use measured mini-player bounds as the destination. Derive artwork progress from `playerDragOffsetPx / (miniPlayerArtworkBounds.top - stableFullScreenArtworkBounds.top)`, clamped to 0..1, using only those measured rectangles. Pass this artwork-specific progress to the overlay; it uses the same linear `ArtworkTransitionGeometry.interpolate` as entry. This keeps the cover top synchronized with the sheet's pixel translation until the measured mini-player top is reached. Do not normalize artwork progress by `playerLayerHeightPx`, because that made the cover lag. Hide ArtworkStage and stationary RootBackdropShell mini artwork while the reverse overlay is the visible owner. Exclude the Queue route from Player artwork dismissal handoff. Keep the Player sheet/scrim on their existing raw window-height drag progress.
 
 - [x] **Step 6: Run focused UI and unit regressions**
   Run MiniPlayerArtworkTransitionUiTest, FullScreenPlayerNavigationUiTest and the full `testDebugUnitTest` suite.

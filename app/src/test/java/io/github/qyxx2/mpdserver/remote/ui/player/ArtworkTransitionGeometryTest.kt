@@ -34,6 +34,25 @@ class ArtworkTransitionGeometryTest {
     }
 
     @Test
+    fun dismissalProgressTracksMeasuredArtworkTravelRatherThanWindowHeight() {
+        val source = Rect(63f, 280f, 1017f, 1234f)
+        val target = Rect(21f, 2014f, 147f, 2140f)
+        val sheetOffset = 846f
+        val artworkTravel = target.top - source.top
+
+        assertEquals(
+            sheetOffset,
+            ArtworkTransitionGeometry.interpolate(source, target,
+                ArtworkTransitionGeometry.dismissalProgress(source, target, sheetOffset)
+            ).top - source.top,
+            0.001f,
+        )
+        assertEquals(0f, ArtworkTransitionGeometry.dismissalProgress(source, target, 0f), 0f)
+        assertEquals(1f, ArtworkTransitionGeometry.dismissalProgress(source, target, artworkTravel), 0f)
+        assertEquals(1f, ArtworkTransitionGeometry.dismissalProgress(source, target, artworkTravel + 500f), 0f)
+    }
+
+    @Test
     fun dismissalAtTwentyThreePercentUsesTheSameLinearFourEdgeInterpolation() {
         val source = Rect(87f, 230f, 603f, 746f)
         val target = Rect(113f, 1088f, 285f, 1260f)

@@ -87,6 +87,28 @@ class MiniPlayerArtworkTransitionUiTest {
     }
 
     @Test
+    fun artworkStageDoesNotReportEmptyBoundsBeforeItHasVisibleSize() {
+        var reportedBounds: Rect? = null
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.size(0.dp)) {
+                        ArtworkStage(
+                            bitmap = artworkBitmap(),
+                            placeholderLabel = "等待测量",
+                            modifier = Modifier.fillMaxSize(),
+                            onArtworkBoundsChanged = { reportedBounds = it },
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        assertEquals("Empty layout coordinates must not be published as artwork bounds", null, reportedBounds)
+    }
+
+    @Test
     fun miniArtworkReportsItsOwnBounds() {
         var rootOrigin = Offset.Zero
         var reportedOnScreen: Rect? = null

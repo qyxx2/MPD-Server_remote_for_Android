@@ -446,6 +446,14 @@ fun AppNavHost(
     var miniPlayerArtworkBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
     var fullScreenArtworkBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
     var fullScreenArtworkBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
+    // Keep the resting artwork rectangle fixed for the whole downward gesture. The child
+    // ArtworkStage is inside a graphicsLayer-translated Player sheet; positionOnScreen() is a
+    // layout-coordinate callback and is not guaranteed to be re-reported for every layer-only
+    // translation frame. Subtracting the live drag offset from that stale measurement made the
+    // overlay source move upward while the destination progress advanced, pinning the cover's
+    // top edge and leaving only its scale visibly changing.
+    var playerDismissArtworkSourceBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
+    var playerDismissArtworkSourceBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
     var rootNavigationBarHeightPx by remember { mutableFloatStateOf(0f) }
 
     val reportMiniPlayerArtworkBounds: (Rect) -> Unit = { bounds ->
@@ -613,15 +621,19 @@ fun AppNavHost(
             miniPlayerArtworkKey == currentMiniPlayerArtworkKey &&
             sourceArtworkBoundsInRoot != null
     val playerDismissArtworkSourceBoundsInRoot = screenBoundsInRoot(
-        fullScreenArtworkBoundsOnScreen,
-        fullScreenArtworkBoundsKey,
-    )?.let { measuredBounds ->
-        // The full-screen stage moves down with the Player sheet. Normalize its live measurement
-        // back to the resting full-screen artwork rectangle before reversing the shared element.
-        ArtworkTransitionGeometry.removeParentTranslation(
-            measuredBounds,
-            Offset(0f, playerDragOffsetPx),
+        playerDismissArtworkSourceBoundsOnScreen,
+        playerDismissArtworkSourceBoundsKey,
+    )
+    val playerArtworkDismissProgress = if (
+        playerDismissArtworkSourceBoundsInRoot != null && sourceArtworkBoundsInRoot != null
+    ) {
+        ArtworkTransitionGeometry.dismissalProgress(
+            source = playerDismissArtworkSourceBoundsInRoot,
+            target = sourceArtworkBoundsInRoot,
+            offsetPx = playerDragOffsetPx,
         )
+    } else {
+        0f
     }
     val playerArtworkDismissTransitionActive =
         currentRoute == AppDestination.FULL_SCREEN_PLAYER.route &&
@@ -640,8 +652,12 @@ fun AppNavHost(
     }
 
     fun navigateToExpandedPlayer() {
-        fullScreenArtworkBoundsOnScreen = null
-        fullScreenArtworkBoundsKey = null
+        // The finger-following preview has already measured the fullscreen artwork destination.
+        // Preserve that rectangle across the route switch: clearing it here makes the shared
+        // overlay fall back to its mini-player source for a frame while both real images are
+        // hidden, producing a visible flash at the mini-player and fullscreen artwork positions.
+        playerDismissArtworkSourceBoundsOnScreen = null
+        playerDismissArtworkSourceBoundsKey = null
         isMiniPlayerExpansionPreview = false
         enterPlayerFromMini = true
         navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
@@ -709,6 +725,22 @@ fun AppNavHost(
 
     fun updatePlayerDismissDrag(deltaPx: Float) {
         if (!deltaPx.isFinite()) return
+        if (playerDragOffsetPx <= 0f && deltaPx > 0f &&
+            currentRoute == AppDestination.FULL_SCREEN_PLAYER.route &&
+            fullScreenPagerState.currentPage == 0
+        ) {
+            // Snapshot the resting source before the first layer translation. Never normalize a
+            // potentially stale positionOnScreen() measurement by the changing drag offset.
+            val key = currentMiniPlayerArtworkKey
+            val measuredSource = fullScreenArtworkBoundsOnScreen
+            if (key != null && fullScreenArtworkBoundsKey == key && measuredSource != null) {
+                playerDismissArtworkSourceBoundsOnScreen = measuredSource
+                playerDismissArtworkSourceBoundsKey = key
+            } else {
+                playerDismissArtworkSourceBoundsOnScreen = null
+                playerDismissArtworkSourceBoundsKey = null
+            }
+        }
         playerDragOffsetPx = (playerDragOffsetPx + deltaPx).coerceIn(0f, playerLayerHeightPx)
         isPlayerDismissTransitionActive = playerDragOffsetPx > 0f
     }
@@ -723,6 +755,8 @@ fun AppNavHost(
             rootBeforeFullScreen = rootRoute
             returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
+            playerDismissArtworkSourceBoundsOnScreen = null
+            playerDismissArtworkSourceBoundsKey = null
             playerEntryProgress = 0f
             isMiniPlayerExpansionPreview = false
             enterPlayerFromMini = true
@@ -745,6 +779,8 @@ fun AppNavHost(
             ) { value, _ -> playerDragOffsetPx = value }
             playerDragOffsetPx = 0f
             isPlayerDismissTransitionActive = false
+            playerDismissArtworkSourceBoundsOnScreen = null
+            playerDismissArtworkSourceBoundsKey = null
         }
     }
 
@@ -775,9 +811,13 @@ fun AppNavHost(
                     navController.popBackStack()
                 }
                 isPlayerDismissTransitionActive = false
+                playerDismissArtworkSourceBoundsOnScreen = null
+                playerDismissArtworkSourceBoundsKey = null
             } else {
                 playerDragOffsetPx = 0f
                 isPlayerDismissTransitionActive = false
+                playerDismissArtworkSourceBoundsOnScreen = null
+                playerDismissArtworkSourceBoundsKey = null
             }
         }
     }
@@ -1258,10 +1298,7 @@ fun AppNavHost(
                     targetArtworkBoundsInRoot
                 },
                 progress = if (isDismissingArtwork) {
-                    FullScreenPlayerDismissPolicy.dragProgress(
-                        offsetPx = playerDragOffsetPx,
-                        screenHeightPx = playerLayerHeightPx,
-                    )
+                    playerArtworkDismissProgress
                 } else {
                     entryProgress
                 },

@@ -46,7 +46,11 @@ fun ArtworkStage(
     val currentArtworkCoordinates = artworkCoordinates
     SideEffect {
         currentArtworkCoordinates?.let { coordinates ->
+            // BoxWithConstraints may report an initial zero-sized layout before real window
+            // constraints arrive. Such a rectangle is not a usable transition anchor.
+            if (coordinates.size.width <= 0 || coordinates.size.height <= 0) return@SideEffect
             val origin = coordinates.positionOnScreen()
+            if (!origin.x.isFinite() || !origin.y.isFinite()) return@SideEffect
             onArtworkBoundsChanged(
                 Rect(
                     left = origin.x,
