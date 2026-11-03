@@ -1,7 +1,8 @@
 # Task 8：播放器交互与视觉打磨 — 合同矩阵
 
-> 状态：设计已由用户确认；本矩阵和实施计划已建立，产品代码尚未开始修改。
+> 状态：设计已由用户确认；B0–B5 实现批次已交付。T8-17 最终集成验收与 Task 8 总退出门仍未完成。
 > 基线：feature/task-8-player-interaction-polish，从 main / 4d185f9a9928852f169d3e127e0e7cf25183c731 创建。
+> 当前进度：B0 根因诊断、B1 Queue 菜单、B2 拖拽/重复交互、B3 导航/歌词、B4 封面 shared-element、B5 Popup/Dialog 动效批次均已完成。T8-17 全量 clean/connected/目标设备验收与证据对账仍待执行。
 > 范围说明：本工作流是 Task 8 的一个明确授权 UI-polish 子范围，不替代 Task 7 Batch 4 的实机锁屏验收，也不提前关闭 Task 7 或 Task 8 总退出门。
 
 ## 1. 权威来源与冻结判断

@@ -52,7 +52,7 @@
 - [Task 7 Batch 3 验证报告](reports/2026-11-02-task-7-batch3-verification.md)：记录后台 Service/callback 生命周期、fresh-snapshot 恢复门、84 suites / 474 tests、API 33 connected instrumentation 3/3 及进程回收观察；API 36 覆盖安装仍被系统安装器中止。
 - [Task 8 Player/Queue 交互与视觉打磨设计规格](specs/2026-11-02-task-8-player-interaction-polish-design.md)：已于 2026-11-02 获用户批准，冻结 Queue 菜单/拖拽、普通导航转场、歌词字号、mini-player 封面 shared-element 与应用自有 Popup/Dialog 动效；不改变播放/服务端权威边界。
 - [Task 8 合同矩阵](specs/2026-11-02-task-8-contract-matrix.md)：T8-01 至 T8-17，定义六批交付、自动/实机验收和 Task 7/Task 8 总退出门边界。
-- [Task 8 Player Interaction Polish Implementation Plan](plans/2026-11-02-task-8-player-interaction-polish.md)：拆分 B0–B5 与最终集成门，列出精确文件、接口、TDD/验证命令及批次退出条件；计划待用户审阅，尚未开始产品代码实现。
+- [Task 8 Player Interaction Polish Implementation Plan](plans/2026-11-02-task-8-player-interaction-polish.md)：B0–B5 实现批次已完成；B5 共享 Popup/Dialog 动效报告已提交。T8-17 全量 clean/connected/实机验收及 Task 8 总退出门仍待关闭。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
 - [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。
 - [Task 3 Batch 7 集成验证报告](reports/2026-10-26-task-3-batch7-verification.md)：记录 clean 构建、105 项单测、10 项真机 instrumentation、边界审查及尚未关闭的人工验收门。机器验证通过不代表 Task 3 整体退出门或 Task 2 真实联调门已通过。

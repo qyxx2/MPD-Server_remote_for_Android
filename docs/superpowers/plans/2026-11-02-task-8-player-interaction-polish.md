@@ -12,6 +12,8 @@
 
 **Contract Matrix:** docs/superpowers/specs/2026-11-02-task-8-contract-matrix.md
 
+> **Execution status (2026-11-03):** B0–B5 implementation batches are complete on `feature/task-8-player-interaction-polish`. B0 diagnosis is recorded in the Batch 0 report; B3 navigation/lyrics verification is preserved in the B3 logs and commits; B5 shared popup/dialog motion is reported and committed as `9e5c436`. The final integration gate remains open pending a clean whole-project verification, the full connected instrumentation suite, target-device acceptance across T8-01..T8-17, and final evidence reconciliation. Task 7 Batch 4 lock-screen acceptance also remains an upstream dependency; neither the Task 8 overall gate nor Task 7 is marked complete.
+
 ## Global Constraints
 
 - Base branch is main at 4d185f9a9928852f169d3e127e0e7cf25183c731; implementation branch is feature/task-8-player-interaction-polish.
@@ -54,7 +56,7 @@
 - The test fixture must acknowledge each submitted reorder with a matching canonical readback before the next gesture; otherwise a mutation lock can be mistaken for a pointer-input failure.
 - Do not change production code in this batch.
 
-- [ ] **Step 1: Add named instrumentation reproductions**
+- [x] **Step 1: Add named instrumentation reproductions**
   Add tests:
   - sameQueueHandleCanDragTwiceInOneComposition
   - differentQueueHandlesRemainDraggableAfterFirstDrag
@@ -64,19 +66,19 @@
   - repeatedDragAndMenuCyclesRemainAvailable
   Each test asserts both the expected gesture callback/mutation and the continued existence/enabled semantics of the next handle/menu.
 
-- [ ] **Step 2: Run each reproduction independently**
+- [x] **Step 2: Run each reproduction independently**
   Run each method independently using the instrumentation runner class argument with the method suffix, for example QueueInteractionLifecycleUiTest#sameQueueHandleCanDragTwiceInOneComposition; then run the full class once. Expected: each test either reproduces the reported failure consistently or passes; record the exact test, cycle number and observable failure. Do not classify a failure caused by the fake mutation remaining locked as a pointer bug.
 
-- [ ] **Step 3: Trace the first failing boundary**
+- [x] **Step 3: Trace the first failing boundary**
   Inspect the failing sequence in this order: pointerInput key/node identity; gesture detector cancellation and change consumption; callback freshness; resetReorderDrag/LaunchedEffect ordering; LazyColumn item key/content reuse; selectedMenuItem and Popup composition; QueueActions action lock and canonical readback. Use focused temporary diagnostics only if needed and remove them before the batch ends.
   Expected: report names the earliest failing boundary and cites reproduction output or relevant state transitions. If no stable reproduction exists, record that the root cause remains unlocated and do not invent a fix.
 
-- [ ] **Step 4: Save the diagnosis and verify the batch diff**
+- [x] **Step 4: Save the diagnosis and verify the batch diff**
   Update docs/superpowers/reports/2026-11-02-task-8-batch0-root-cause.md with exact device/API, commands, reproduction steps, evidence, excluded hypotheses and root-cause confidence.
   Run git diff --check and inspect git diff.
   Expected: only the test/report files changed; no production fix is bundled into B0.
 
-- [ ] **Step 5: Commit the diagnostic baseline**
+- [x] **Step 5: Commit the diagnostic baseline**
   Commit message:
   test(queue): reproduce repeated row interaction lifecycle
 
@@ -266,7 +268,7 @@
 - NavigationMotionPolicy exposes durationMillis = 200, travelFraction = 0.25f, forwardEnterOffset(widthPx) = +widthPx/4, forwardExitOffset(widthPx) = -widthPx/4, popEnterOffset(widthPx) = -widthPx/4 and popExitOffset(widthPx) = +widthPx/4 (integer rounding is deterministic).
 - NavHost forward enter/exit use opposite horizontal offsets; pop enter/exit use the reverse offsets. Use slideIntoContainer/slideOutOfContainer with 1/4-width offset lambdas and no page alpha animation. Keep FULL_SCREEN_PLAYER and QUEUE destination transitions explicitly set to EnterTransition.None / ExitTransition.None / pop None so their custom full-screen surface and horizontal Pager remain untouched.
 
-- [ ] **Step 1: Write policy and navigation UI tests**
+- [x] **Step 1: Write policy and navigation UI tests**
   Add tests:
   - forwardTransitionStartsFromRightAndSettlesAtZero
   - popTransitionStartsFromLeftAndSettlesAtZero
@@ -274,19 +276,19 @@
   - fullscreenPlayerAndQueueKeepTheirOwnPagerMotion
   Use the test clock to inspect an intermediate frame and settled bounds; assert no opacity fade is applied to page content.
 
-- [ ] **Step 2: Add a compiling neutral NavigationMotionPolicy signature**
+- [x] **Step 2: Add a compiling neutral NavigationMotionPolicy signature**
   Define durationMillis, travelFraction and all four named offset helper signatures with zero offsets so the tests compile.
 
-- [ ] **Step 3: Run the focused tests to verify RED**
+- [x] **Step 3: Run the focused tests to verify RED**
   Run:
   ./gradlew --offline --no-daemon testDebugUnitTest --tests '*NavigationMotionPolicyTest'
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.navigation.AppNavigationUiTest
   Expected: the zero-offset policy and current no-transition route behavior fail the new assertions, not because of missing symbols.
 
-- [ ] **Step 4: Implement policy and NavHost transitions**
+- [x] **Step 4: Implement policy and NavHost transitions**
   Use 200ms tween. Wire forward enter to a positive quarter-width slideInHorizontally offset and forward exit to a negative quarter-width slideOutHorizontally offset; wire pop enter/exit to the corresponding opposite signs. Use separate enter/exit and popEnter/popExit lambdas so the back-stack direction is unambiguous. Keep FULL_SCREEN_PLAYER and QUEUE routes explicitly excluded with None transitions (FULL_SCREEN_PLAYER already has this override; add the matching four overrides to QUEUE). Retain NavHost destination/back-stack semantics. Keep the separately composed full-screen Player/Queue layer, mini-player entry preview and dismiss layer outside this ordinary route motion.
 
-- [ ] **Step 5: Run focused navigation regressions**
+- [x] **Step 5: Run focused navigation regressions**
   Run:
   ./gradlew --offline --no-daemon testDebugUnitTest --tests '*NavigationMotionPolicyTest'
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.navigation.AppNavigationUiTest
@@ -300,7 +302,7 @@
 - Modify: app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/player/LyricsStageUiTest.kt
 - Optional test-only extraction if needed: app/src/test/java/io/github/qyxx2/mpdserver/remote/ui/player/lyrics/LyricsTypographyPolicyTest.kt
 
-- [ ] **Step 1: Add failing lyric UI assertions**
+- [x] **Step 1: Add failing lyric UI assertions**
   Add tests:
   - activeTimedCueUsesThirtyTwoSp
   - inactiveTimedCueUsesTwentySixSp
@@ -308,21 +310,21 @@
   - timedCueStillSeeksAndFollowsCurrentLine
   Assert 32sp/26sp text styles, retained 40sp/34sp line heights, one-line overflow ellipsis without marquee, and unchanged cue selection/seek/follow behavior.
 
-- [ ] **Step 2: Run LyricsStageUiTest and verify RED**
+- [x] **Step 2: Run LyricsStageUiTest and verify RED**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.player.LyricsStageUiTest
   Expected: the current 34sp/28sp values and basicMarquee behavior fail the new checks.
 
-- [ ] **Step 3: Implement the typography change**
+- [x] **Step 3: Implement the typography change**
   Set active cue to 32sp and inactive cue to 26sp; retain lineHeight 40sp and 34sp. Remove basicMarquee from the second line and use maxLines=1 with TextOverflow.Ellipsis. Do not alter untimed/plain lyrics scrolling or timed seek/follow state.
 
-- [ ] **Step 4: Run lyrics and full Player presentation tests**
+- [x] **Step 4: Run lyrics and full Player presentation tests**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.player.LyricsStageUiTest
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerPresentationUiTest
   Expected: new typography/overflow checks pass and existing lyric navigation/seek/presentation tests remain green.
 
-- [ ] **Step 5: Commit Batch 3**
+- [x] **Step 5: Commit Batch 3**
   Commit message:
   feat(ui): add directional page motion and refine lyrics
 
@@ -567,17 +569,17 @@
 - Update: docs/superpowers/README.md
 - Update: docs/superpowers/plans/2026-10-24-android-client-master-plan.md only to record this sub-scope and its current state; do not mark overall Task 8 complete.
 
-- [x] **Step 1: Run clean offline machine verification**
+- [ ] **Step 1: Run clean offline machine verification**
   Run:
   ./gradlew --offline --no-daemon clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin assembleDebugAndroidTest
   Expected: exit code 0. Record unit suite/test counts, Lint errors/warnings/hints, APK outputs and Android-test compile/assembly result.
 
-- [x] **Step 2: Run connected instrumentation regression**
+- [ ] **Step 2: Run connected instrumentation regression**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest
   Expected: all runnable connected tests pass on the attached API 33 device. Record device/API, test count and any test runner/environment limitation. Do not convert a skipped or unexecuted test into a pass.
 
-- [x] **Step 3: Audit architectural and code boundaries**
+- [ ] **Step 3: Audit architectural and code boundaries**
   Check:
   - No new networking, playback owner, DB, API/DTO or mutation path.
   - Queue uses queue_item_id and baseline checks; no canonical optimistic reorder.
@@ -586,7 +588,7 @@
   - All popup hosts are in the shared inventory and no Dialog is disposed before reverse motion completes.
   Run rg popup inventory, git diff --check, inspect full diff and git status.
 
-- [x] **Step 4: Install and inspect on the real device**
+- [ ] **Step 4: Install and inspect on the real device**
   Build APK first. Confirm package/applicationId and signing certificate match the already installed app, then use adb install -r only; never uninstall or clear app data. On the target device verify:
   - Queue menu light surface, exact alignment and width;
   - repeated drag/menu cycles without leaving Queue;
@@ -597,10 +599,10 @@
   - each menu/dialog opening and reverse closing, including editable dialogs with keyboard.
   Capture test device/API, APK identity and any vendor-specific behavior in the report.
 
-- [x] **Step 5: Reconcile all contracts and report remaining gates**
+- [ ] **Step 5: Reconcile all contracts and report remaining gates**
   Update T8-01..T8-17 with exact automated/manual evidence. If B0 was not reproducible, retain the explicit unlocated limitation; do not claim T8-07 fixed. Keep Task 7 Batch 4 lock-screen acceptance open unless it was independently completed and evidenced. Do not mark the main Task 8 total exit gate complete while its Task 0–7 dependencies remain open.
 
-- [x] **Step 6: Final local commit**
+- [ ] **Step 6: Final local commit**
   Commit only the final verification/report/index updates if they are not already included in the relevant batch commits.
   Do not push or merge unless the user explicitly requests it.
 
