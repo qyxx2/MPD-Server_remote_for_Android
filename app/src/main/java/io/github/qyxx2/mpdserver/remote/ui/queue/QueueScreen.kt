@@ -58,6 +58,9 @@ import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenBottomNavigation
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenExitGestureBand
 import io.github.qyxx2.mpdserver.remote.ui.player.OutputDetailsDialog
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkBackdrop
@@ -140,6 +143,8 @@ internal fun QueueScreen(
     }
     var selectedMenuItem by remember { mutableStateOf<QueueItemDto?>(null) }
     var toolDialog by remember { mutableStateOf<QueueToolDialog?>(null) }
+    val clearDialogAnchorState = rememberPopupMotionAnchorState()
+    val saveDialogAnchorState = rememberPopupMotionAnchorState()
     var pendingSaveIntentId by remember { mutableStateOf<String?>(null) }
     var saveReadbackError by remember { mutableStateOf<String?>(null) }
     var saveReadbackOnlyRetry by remember { mutableStateOf(false) }
@@ -621,6 +626,7 @@ internal fun QueueScreen(
     }
 
     var showOutputDetails by remember { mutableStateOf(false) }
+    val outputDialogAnchorState = rememberPopupMotionAnchorState()
     Box(modifier = Modifier.fillMaxSize().testTag("queue-screen-root")) {
         PlayerArtworkBackdrop(
             blurredArtwork = blurredArtworkBitmap,
@@ -649,13 +655,18 @@ internal fun QueueScreen(
                         maxLines = 1,
                     )
                     Row(
+                        modifier = Modifier
+                            .popupMotionAnchor(clearDialogAnchorState, PopupMotionAnchorKind.OWNER)
+                            .popupMotionAnchor(saveDialogAnchorState, PopupMotionAnchorKind.OWNER),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         TextButton(
                             enabled = actions.isEnabled,
                             onClick = { toolDialog = QueueToolDialog.CLEAR },
-                            modifier = Modifier.testTag("queue-clear-button"),
+                            modifier = Modifier
+                                .popupMotionAnchor(clearDialogAnchorState, PopupMotionAnchorKind.TRIGGER)
+                                .testTag("queue-clear-button"),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                         ) {
                             QueueToolbarActionIcon(kind = QueueToolbarActionKind.CLEAR, tag = "queue-clear-icon")
@@ -665,7 +676,9 @@ internal fun QueueScreen(
                         TextButton(
                             enabled = actions.isEnabled,
                             onClick = { toolDialog = QueueToolDialog.SAVE_PLAYLIST },
-                            modifier = Modifier.testTag("queue-save-button"),
+                            modifier = Modifier
+                                .popupMotionAnchor(saveDialogAnchorState, PopupMotionAnchorKind.TRIGGER)
+                                .testTag("queue-save-button"),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                         ) {
                             QueueToolbarActionIcon(kind = QueueToolbarActionKind.SAVE_PLAYLIST, tag = "queue-save-icon")
@@ -947,15 +960,22 @@ internal fun QueueScreen(
                 onOutputClick = { showOutputDetails = true },
                 onNowPlayingClick = onOpenPlayer,
                 onQueueClick = {},
+                outputAnchorModifier = Modifier.popupMotionAnchor(outputDialogAnchorState, PopupMotionAnchorKind.TRIGGER),
+                outputOwnerAnchorModifier = Modifier.popupMotionAnchor(outputDialogAnchorState, PopupMotionAnchorKind.OWNER),
             )
         }
     }
-    if (showOutputDetails) {
-        OutputDetailsDialog(presentation = presentation, onDismiss = { showOutputDetails = false })
-    }
+    OutputDetailsDialog(
+        presentation = presentation,
+        visible = showOutputDetails,
+        anchorState = outputDialogAnchorState,
+        onDismiss = { showOutputDetails = false },
+    )
     QueueToolsDialog(
         dialog = toolDialog,
         enabled = actions.isEnabled,
+        clearAnchorState = clearDialogAnchorState,
+        saveAnchorState = saveDialogAnchorState,
         onDismiss = { toolDialog = null },
         onClear = { actions.clear(); toolDialog = null },
         onSave = { name ->

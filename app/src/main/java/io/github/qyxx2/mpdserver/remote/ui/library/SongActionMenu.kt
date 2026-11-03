@@ -51,6 +51,10 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.ui.library.hasUnresolvedPlaybackMutation
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionHost
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
+import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
 
 /** AppNavHost reduces shared server-owned resource state once for every Song action surface. */
 val LocalPlaybackActionsEnabled = staticCompositionLocalOf { true }
@@ -118,17 +122,20 @@ internal fun AnchoredSongActionMenu(
 ) {
     var expanded by remember(menuKey) { mutableStateOf(false) }
     val density = LocalDensity.current
+    val anchorState = rememberPopupMotionAnchorState()
     val positionProvider = remember(density) {
         CenteredSongActionMenuPositionProvider(with(density) { 8.dp.roundToPx() })
     }
 
     Box(
         modifier = modifier
+            .popupMotionAnchor(anchorState, PopupMotionAnchorKind.OWNER)
+            .popupMotionAnchor(anchorState, PopupMotionAnchorKind.TRIGGER)
             .clickable(enabled = enabled) { expanded = true }
             .testTag("song-action-area-$menuKey"),
     ) {
         content()
-        if (expanded) {
+        PopupMotionHost(visible = expanded, anchorState = anchorState) { surfaceMotionModifier, _ ->
             Popup(
                 popupPositionProvider = positionProvider,
                 onDismissRequest = { expanded = false },
@@ -141,6 +148,7 @@ internal fun AnchoredSongActionMenu(
                 Surface(
                     modifier = Modifier
                         .width(IntrinsicSize.Max)
+                        .then(surfaceMotionModifier)
                         .testTag("song-action-menu-$menuKey"),
                     shape = RoundedCornerShape(18.dp),
                     color = Color.White.copy(alpha = 0.94f),

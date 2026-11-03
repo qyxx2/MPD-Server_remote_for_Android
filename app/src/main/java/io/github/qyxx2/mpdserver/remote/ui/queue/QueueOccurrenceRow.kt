@@ -31,6 +31,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,6 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSourceDto
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
 /** Keep the selected row's existing hue/lightness and opacity; strengthen only its saturation. */
 internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color): Color {
     if (!isCurrent) return Color.Transparent
@@ -106,6 +110,11 @@ internal fun QueueOccurrenceRow(
     onRowBoundsChanged: (Rect) -> Unit = {},
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }
+    val menuAnchorState = remember(occurrence.queueItemId) { PopupMotionAnchorState() }
+    var retainMenuForExit by remember(occurrence.queueItemId) { mutableStateOf(false) }
+    LaunchedEffect(menuExpanded) {
+        if (menuExpanded) retainMenuForExit = true
+    }
     val background = queueOccurrenceBackgroundColor(
         isCurrent = isCurrent,
         primary = MaterialTheme.colorScheme.primary,
@@ -142,6 +151,7 @@ internal fun QueueOccurrenceRow(
             // changing its appearance. Allocate one only for the actively dragged occurrence.
             .then(if (isDragSource) Modifier.graphicsLayer { alpha = 0.30f } else Modifier)
             .onGloballyPositioned { onRowBoundsChanged(it.boundsInRoot()) }
+            .popupMotionAnchor(menuAnchorState, PopupMotionAnchorKind.OWNER)
             .then(
                 when {
                     dropAtEnd -> Modifier.testTag("queue-row-drop-at-end-${occurrence.queueItemId}")
@@ -248,15 +258,19 @@ internal fun QueueOccurrenceRow(
             IconButton(
                 enabled = menuEnabled,
                 onClick = onMenu,
-                modifier = Modifier.size(48.dp).testTag("queue-row-menu-${occurrence.queueItemId}"),
+                modifier = Modifier.size(48.dp)
+                    .popupMotionAnchor(menuAnchorState, PopupMotionAnchorKind.TRIGGER)
+                    .testTag("queue-row-menu-${occurrence.queueItemId}"),
             ) {
                 QueueMoreGlyph()
             }
-            QueueRowMenu(
-                item = occurrence.takeIf { menuExpanded },
+            if (menuExpanded || retainMenuForExit) QueueRowMenu(
+                item = occurrence,
                 title = menuTitle,
                 enabled = menuEnabled,
                 expanded = menuExpanded,
+                anchorState = menuAnchorState,
+                onDismissComplete = { retainMenuForExit = false },
                 onDismiss = onDismissMenu,
                 onMoveNext = onMoveNext,
                 onMoveToEnd = onMoveToEnd,

@@ -26,10 +26,13 @@ internal fun FullScreenBottomNavigation(
     onNowPlayingClick: () -> Unit,
     onQueueClick: () -> Unit,
     modifier: Modifier = Modifier,
+    outputAnchorModifier: Modifier = Modifier,
+    outputOwnerAnchorModifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(outputOwnerAnchorModifier)
             .height(64.dp)
             .testTag("player-bottom-navigation"),
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -39,6 +42,7 @@ internal fun FullScreenBottomNavigation(
             onClick = onOutputClick,
             modifier = Modifier
                 .size(56.dp)
+                .then(outputAnchorModifier)
                 .semantics { contentDescription = "DAC 输出状态" }
                 .testTag("player-bottom-output"),
         ) {

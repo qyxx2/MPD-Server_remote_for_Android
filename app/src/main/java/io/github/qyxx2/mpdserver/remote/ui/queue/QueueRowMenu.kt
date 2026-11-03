@@ -14,13 +14,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,8 +53,14 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
+import io.github.qyxx2.mpdserver.remote.ui.components.AnchoredDropdownPositionProvider
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionHost
+import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
+import io.github.qyxx2.mpdserver.remote.ui.components.MotionAlertDialog
 
 private const val QUEUE_MENU_SURFACE_ALPHA = 0.94f
 private const val QUEUE_MENU_CORNER_RADIUS_DP = 18f
@@ -79,31 +85,44 @@ internal fun QueueRowMenu(
     onMoveToEnd: () -> Unit,
     onRemove: () -> Unit,
     expanded: Boolean = item != null,
+    anchorState: PopupMotionAnchorState = rememberPopupMotionAnchorState(),
+    onDismissComplete: () -> Unit = {},
 ) {
     if (item == null) return
     val presentation = QueueMenuPresentation.from(item, enabled)
     val menuSurface = Color.White.copy(alpha = QUEUE_MENU_SURFACE_ALPHA)
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        modifier = Modifier
-            .semantics {
-                this[QueueMenuSurfaceAlphaKey] = QUEUE_MENU_SURFACE_ALPHA
-                this[QueueMenuCornerRadiusKey] = QUEUE_MENU_CORNER_RADIUS_DP
-                this[QueueMenuShadowElevationKey] = QUEUE_MENU_SHADOW_ELEVATION_DP
-                this[QueueMenuTonalElevationKey] = QUEUE_MENU_TONAL_ELEVATION_DP
-            }
-            .testTag("queue-row-menu-dialog"),
-        shape = RoundedCornerShape(QUEUE_MENU_CORNER_RADIUS_DP.dp),
-        containerColor = menuSurface,
-        tonalElevation = QUEUE_MENU_TONAL_ELEVATION_DP.dp,
-        shadowElevation = QUEUE_MENU_SHADOW_ELEVATION_DP.dp,
-        properties = PopupProperties(
-            focusable = true,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-        ),
-    ) {
+    val density = LocalDensity.current
+    val positionProvider = remember(density) {
+        AnchoredDropdownPositionProvider(with(density) { 48.dp.roundToPx() })
+    }
+    PopupMotionHost(
+        visible = expanded,
+        anchorState = anchorState,
+        onDismissComplete = onDismissComplete,
+    ) { surfaceMotionModifier, _ ->
+        Popup(
+            popupPositionProvider = positionProvider,
+            onDismissRequest = onDismiss,
+            properties = PopupProperties(
+                focusable = true,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true,
+            ),
+        ) {
+            Surface(
+                modifier = surfaceMotionModifier
+                    .semantics {
+                        this[QueueMenuSurfaceAlphaKey] = QUEUE_MENU_SURFACE_ALPHA
+                        this[QueueMenuCornerRadiusKey] = QUEUE_MENU_CORNER_RADIUS_DP
+                        this[QueueMenuShadowElevationKey] = QUEUE_MENU_SHADOW_ELEVATION_DP
+                        this[QueueMenuTonalElevationKey] = QUEUE_MENU_TONAL_ELEVATION_DP
+                    }
+                    .testTag("queue-row-menu-dialog"),
+                shape = RoundedCornerShape(QUEUE_MENU_CORNER_RADIUS_DP.dp),
+                color = menuSurface,
+                tonalElevation = QUEUE_MENU_TONAL_ELEVATION_DP.dp,
+                shadowElevation = QUEUE_MENU_SHADOW_ELEVATION_DP.dp,
+            ) {
         val titleGapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
         Layout(
             modifier = Modifier
@@ -166,6 +185,8 @@ internal fun QueueRowMenu(
             },
             measurePolicy = QueueRowMenuMeasurePolicy(titleGapPx),
         )
+            }
+        }
     }
 }
 
@@ -344,32 +365,39 @@ internal fun QueueToolsDialog(
     saveAlreadyConfirmed: Boolean = false,
     saveReadbackOnlyRetry: Boolean = false,
     onRetrySaveReadback: () -> Unit = {},
+    clearAnchorState: PopupMotionAnchorState = rememberPopupMotionAnchorState(),
+    saveAnchorState: PopupMotionAnchorState = rememberPopupMotionAnchorState(),
 ) {
-    if (dialog == null) return
-    var name by remember(dialog) { mutableStateOf("") }
-    when (dialog) {
-        QueueToolDialog.CLEAR -> AlertDialog(
-            modifier = Modifier.testTag("queue-clear-dialog"),
-            onDismissRequest = onDismiss,
-            containerColor = dialogSurfaceColor(),
-            title = { Text("清空待播") },
-            text = { Text("清空服务器定义的待播项目，保留当前与已播放项目。AutoPlay 之后可能补充候选。此操作不会停止播放。") },
-            confirmButton = {
-                TextButton(
-                    enabled = enabled,
-                    onClick = onClear,
-                    modifier = Modifier.testTag("queue-clear-confirm"),
-                ) { Text("确认清空待播") }
-            },
-            dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("queue-clear-cancel")) { Text("取消") } },
-        )
-        QueueToolDialog.SAVE_PLAYLIST -> AlertDialog(
-            modifier = Modifier.testTag("queue-save-dialog"),
-            onDismissRequest = onDismiss,
-            containerColor = dialogSurfaceColor(),
-            title = { Text("保存为 Playlist") },
-            text = {
-                Column {
+    var name by remember { mutableStateOf("") }
+    var retainedDialog by remember { mutableStateOf<QueueToolDialog?>(null) }
+    LaunchedEffect(dialog) {
+        if (dialog != null) {
+            retainedDialog = dialog
+            if (dialog == QueueToolDialog.SAVE_PLAYLIST) name = ""
+        }
+    }
+    val renderedDialog = dialog ?: retainedDialog
+    val isClear = renderedDialog == QueueToolDialog.CLEAR
+    MotionAlertDialog(
+        visible = dialog != null,
+        onDismissRequest = onDismiss,
+        anchorState = if (isClear) clearAnchorState else saveAnchorState,
+        containerColor = dialogSurfaceColor(),
+        dialogTitle = if (isClear) "清空待播" else "保存为 Playlist",
+        modifier = Modifier.testTag(if (isClear) "queue-clear-dialog" else "queue-save-dialog"),
+        title = {
+            Text(
+                if (isClear) "清空待播" else "保存为 Playlist",
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            when (renderedDialog) {
+                QueueToolDialog.CLEAR -> Text(
+                    "清空服务器定义的待播项目，保留当前与已播放项目。AutoPlay 之后可能补充候选。此操作不会停止播放。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                QueueToolDialog.SAVE_PLAYLIST -> Column {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
@@ -380,6 +408,7 @@ internal fun QueueToolsDialog(
                     )
                     Text(
                         "保存时由服务器读取完整待播集合，包括未显示的候选；不包含当前与已播放项目。重复歌曲由服务器校验。",
+                        style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                     saveFeedback?.let { message ->
@@ -390,9 +419,17 @@ internal fun QueueToolsDialog(
                         )
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(
+                null -> Unit
+            }
+        },
+        confirmButton = {
+            when (renderedDialog) {
+                QueueToolDialog.CLEAR -> TextButton(
+                    enabled = enabled,
+                    onClick = onClear,
+                    modifier = Modifier.testTag("queue-clear-confirm"),
+                ) { Text("确认清空待播") }
+                QueueToolDialog.SAVE_PLAYLIST -> TextButton(
                     enabled = if (saveAlreadyConfirmed) saveReadbackOnlyRetry else enabled && name.isNotBlank(),
                     onClick = {
                         if (saveAlreadyConfirmed) {
@@ -409,8 +446,16 @@ internal fun QueueToolsDialog(
                         },
                     )
                 }
-            },
-            dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("queue-save-cancel")) { Text("取消") } },
-        )
-    }
+                null -> Unit
+            }
+        },
+        dismissButton = if (renderedDialog == null) null else {
+            {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag(if (isClear) "queue-clear-cancel" else "queue-save-cancel"),
+                ) { Text("取消") }
+            }
+        },
+    )
 }

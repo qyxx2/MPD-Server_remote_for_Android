@@ -2,6 +2,7 @@ package io.github.qyxx2.mpdserver.remote.ui.library
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,24 +10,33 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import io.github.qyxx2.mpdserver.remote.ui.components.AnchoredDropdownPositionProvider
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionHost
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
+import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 
@@ -162,6 +172,11 @@ private fun SongsLibraryScreen(
 ) {
     var selectedSort by remember { mutableStateOf(SongSortOption.all.first()) }
     var menuExpanded by remember { mutableStateOf(false) }
+    val sortAnchorState = rememberPopupMotionAnchorState()
+    val density = LocalDensity.current
+    val sortMenuPositionProvider = remember(density) {
+        AnchoredDropdownPositionProvider(with(density) { 48.dp.roundToPx() })
+    }
     var retryToken by remember { mutableStateOf(0) }
     val state = rememberLibraryLoadState(
         runtime = runtime,
@@ -173,7 +188,9 @@ private fun SongsLibraryScreen(
 
     LibraryPage(modifier = modifier, tag = "library-songs-screen", onBack = onBack) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth()
+                .popupMotionAnchor(sortAnchorState, PopupMotionAnchorKind.OWNER)
+                .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -182,23 +199,43 @@ private fun SongsLibraryScreen(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
             )
+            Box {
             TextButton(
                 onClick = { menuExpanded = true },
-                modifier = Modifier.testTag("library-song-sort-button"),
+                modifier = Modifier
+                    .popupMotionAnchor(sortAnchorState, PopupMotionAnchorKind.TRIGGER)
+                    .testTag("library-song-sort-button"),
             ) {
                 Text("排序：${selectedSort.label}  ⇅", fontSize = 13.sp)
             }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                SongSortOption.all.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.label) },
-                        onClick = {
-                            selectedSort = option
-                            menuExpanded = false
-                        },
-                        modifier = Modifier.testTag("library-sort-${option.sortBy}-${option.sortOrder}"),
-                    )
+            PopupMotionHost(visible = menuExpanded, anchorState = sortAnchorState) { surfaceMotionModifier, _ ->
+                Popup(
+                    popupPositionProvider = sortMenuPositionProvider,
+                    onDismissRequest = { menuExpanded = false },
+                    properties = PopupProperties(focusable = true, dismissOnBackPress = true, dismissOnClickOutside = true),
+                ) {
+                    Surface(
+                        modifier = surfaceMotionModifier,
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        tonalElevation = 3.dp,
+                        shadowElevation = 8.dp,
+                    ) {
+                        Column {
+                            SongSortOption.all.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label) },
+                                    onClick = {
+                                        selectedSort = option
+                                        menuExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("library-sort-${option.sortBy}-${option.sortOrder}"),
+                                )
+                            }
+                        }
+                    }
                 }
+            }
             }
         }
         if (collectionActions != null) {

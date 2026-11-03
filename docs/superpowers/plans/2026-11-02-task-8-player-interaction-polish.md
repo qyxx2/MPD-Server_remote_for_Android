@@ -431,7 +431,7 @@
 - Shared transition exposes alpha, scale, transformOrigin and a keepComposed state until reverse close completes. Popup/Dialog hosts supply their own measured final bounds and anchor bounds.
 - Anchor tracking is a reusable Modifier or small state holder based on onGloballyPositioned; derive screen-space Rects from LayoutCoordinates.positionOnScreen() plus size. Popup and Dialog may occupy separate Android windows, so do not compare unrelated window-local coordinates. If the trigger is not measurable, resolve to its measured owning control/container bounds, never a fabricated screen-center point.
 
-- [ ] **Step 1: Write failing pure geometry tests**
+- [x] **Step 1: Write failing pure geometry tests**
   Add tests:
   - triggerCenterMapsToPopupTransformOrigin
   - triggerAboveAndBelowPopupAreClampedToSurfaceEdges
@@ -439,7 +439,7 @@
   - missingTriggerUsesMeasuredOwnerBounds
   Assert normalized TransformOrigin values from resolved anchor center relative to popup screen bounds, clamped to 0f..1f; the missing-trigger case must use the supplied owner screen bounds rather than screen center.
 
-- [ ] **Step 2: Write failing shared motion lifecycle tests**
+- [x] **Step 2: Write failing shared motion lifecycle tests**
   Add tests:
   - openingMovesFromPointEightTwoScaleToOne
   - closingReversesScaleAndAlpha
@@ -447,19 +447,19 @@
   - dismissCallbackIsDeliveredOnce
   Assert 180ms transition and no immediate disposal on visible=false.
 
-- [ ] **Step 3: Add compiling neutral geometry/motion signatures**
+- [x] **Step 3: Add compiling neutral geometry/motion signatures**
   Add the specified PopupMotionSpec API and a transition shell that compiles but yields neutral values and immediate disposal.
 
-- [ ] **Step 4: Run focused tests and verify RED**
+- [x] **Step 4: Run focused tests and verify RED**
   Run:
   ./gradlew --offline --no-daemon testDebugUnitTest --tests '*PopupMotionGeometryTest'
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionUiTest
   Expected: origin, scale/alpha progression and delayed-disposal assertions fail (not a compilation error).
 
-- [ ] **Step 5: Implement shared policy and transition**
+- [x] **Step 5: Implement shared policy and transition**
   Implement exact constants, origin calculation, alpha/scale transition and delayed disposal. Keep content state and action callbacks outside the shared motion helper. The helper must not call actions or modify each surface's owner state.
 
-- [ ] **Step 6: Run shared tests**
+- [x] **Step 6: Run shared tests**
   Run the same focused unit/instrumentation commands.
   Expected: all geometry and open/close lifecycle tests pass.
 
@@ -473,20 +473,20 @@
 - Modify: app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/library/SongActionMenuUiTest.kt
 - Modify: app/src/androidTest/java/io/github/qyxx2/mpdserver/remote/ui/queue/QueueRowMenuUiTest.kt
 
-- [ ] **Step 1: Add failing anchor-origin and reverse-close tests**
+- [x] **Step 1: Add failing anchor-origin and reverse-close tests**
   Verify SongActionMenu, QueueRowMenu and Library sort menu each expand from their actual invoking row/button bounds, close in reverse, and preserve their existing popup position policy and width.
 
-- [ ] **Step 2: Run focused menu tests and verify RED**
+- [x] **Step 2: Run focused menu tests and verify RED**
   Run SongActionMenuUiTest and QueueRowMenuUiTest through connectedDebugAndroidTest.
   Expected: current Popup/DropdownMenu behavior has no shared measured trigger-origin reverse-close contract.
 
-- [ ] **Step 3: Add anchor bounds to the invoking controls**
+- [x] **Step 3: Add anchor bounds to the invoking controls**
   Capture measured trigger bounds in window coordinates. In Queue, capture the actual overflow control bounds, not the full row center. In Library, capture the sort button bounds. In SongActionMenu, capture the existing action-area bounds. Preserve each popup's old anchor-side preference and edge clamping when replacing DropdownMenu with raw Popup; only the shared reveal layer may own scale/alpha motion.
 
-- [ ] **Step 4: Apply the shared reveal values to each popup surface**
+- [x] **Step 4: Apply the shared reveal values to each popup surface**
   Keep each menu's current relative anchor placement, edge clamping, intrinsic sizing, width, action labels, action ordering and dismissal semantics. Do not stack the built-in Material3 DropdownMenu reveal with the shared reveal: QueueRowMenu and Library sort should use the shared low-level Popup host plus an explicit PopupPositionProvider that reproduces their existing anchor alignment/clamping; SongActionMenu keeps its existing centered position provider. Use shared transform origin, 0.82→1.0 scale and 0→1 alpha; on dismissal play the reverse transition before disposing the Popup host.
 
-- [ ] **Step 5: Run menu regressions**
+- [x] **Step 5: Run menu regressions**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.library.SongActionMenuUiTest
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.queue.QueueRowMenuUiTest
@@ -508,20 +508,20 @@
 - Each dialog receives the bounds of its invoking control. If the trigger has left composition, close safely from the last measured anchor; do not substitute screen center.
 - Dialog body/form/action state remains owned by QueueToolsDialog, PlaylistScreen or OutputDetailsDialog.
 
-- [ ] **Step 1: Write failing dialog animation and behavior tests**
+- [x] **Step 1: Write failing dialog animation and behavior tests**
   Cover Queue clear/save, Playlist create/rename/delete/add, and Output Details. For each class verify trigger-origin expansion, reverse close, Back and outside dismissal. For editable dialogs verify TextField input, keyboard shown/hidden, focus and selection still work.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
   Run the existing relevant QueueActionsUiTest, PlaylistFavoritesUiTest and FullScreenPlayerPresentationUiTest plus PopupMotionUiTest.
   Expected: current AlertDialog content does not use shared trigger-origin motion and reverse close.
 
-- [ ] **Step 3: Implement the shared Dialog host**
+- [x] **Step 3: Implement the shared Dialog host**
   Keep a real Android Compose Dialog window for IME/focus/accessibility. Render a transition-controlled scrim and surface inside that host; calculate the surface transform origin from measured trigger and final surface bounds. Keep the Dialog composed until close transition completes, then dispose once.
 
-- [ ] **Step 4: Migrate Queue, Playlist and Output dialogs**
+- [x] **Step 4: Migrate Queue, Playlist and Output dialogs**
   Preserve all existing title/text/form state, action enabling, save readback retry, playlist mutation guards, accessibility tags and callbacks. Do not postpone or repeat mutations for animation.
 
-- [ ] **Step 5: Run dialog regressions**
+- [x] **Step 5: Run dialog regressions**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.queue.QueueActionsUiTest
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.library.PlaylistFavoritesUiTest
@@ -534,22 +534,22 @@
 - Modify any remaining popup source found by a fresh rg scan.
 - Create: docs/superpowers/reports/2026-11-02-task-8-batch5-popup-motion.md
 
-- [ ] **Step 1: Scan all application-owned popup hosts**
+- [x] **Step 1: Scan all application-owned popup hosts**
   Run:
   rg -n 'AlertDialog\(|DropdownMenu\(|Popup\(' app/src/main/java
   Expected inventory includes SongActionMenu, QueueRowMenu, LibraryCategoryScreen sort menu, Queue clear/save, Playlist create/rename/delete/add, and Output Details. Any additional app-owned surface found must be migrated or explicitly justified as non-popup/system-owned.
 
-- [ ] **Step 2: Add one test per popup family for reverse close and trigger origin**
+- [x] **Step 2: Add one test per popup family for reverse close and trigger origin**
   Verify all existing popup test tags and action semantics still exist. No app-owned popup may remain on the old immediate-disposal path.
 
-- [ ] **Step 3: Run popup and affected screen regressions**
+- [x] **Step 3: Run popup and affected screen regressions**
   Run:
   ./gradlew --offline --no-daemon testDebugUnitTest
   ./gradlew --offline --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionUiTest
   Run the focused Song, Queue, Library, Playlist and Player UI test classes listed above.
   Expected: no test failure/error; all dialog text input and focus paths pass.
 
-- [ ] **Step 4: Save evidence and commit**
+- [x] **Step 4: Save evidence and commit**
   Record the popup inventory, test results, timing/origin measurements and any accessibility/IME limitations in the B5 report.
   Commit message:
   feat(ui): unify anchored popup and dialog motion
@@ -567,17 +567,17 @@
 - Update: docs/superpowers/README.md
 - Update: docs/superpowers/plans/2026-10-24-android-client-master-plan.md only to record this sub-scope and its current state; do not mark overall Task 8 complete.
 
-- [ ] **Step 1: Run clean offline machine verification**
+- [x] **Step 1: Run clean offline machine verification**
   Run:
   ./gradlew --offline --no-daemon clean testDebugUnitTest lintDebug assembleDebug compileDebugAndroidTestKotlin assembleDebugAndroidTest
   Expected: exit code 0. Record unit suite/test counts, Lint errors/warnings/hints, APK outputs and Android-test compile/assembly result.
 
-- [ ] **Step 2: Run connected instrumentation regression**
+- [x] **Step 2: Run connected instrumentation regression**
   Run:
   ./gradlew --offline --no-daemon connectedDebugAndroidTest
   Expected: all runnable connected tests pass on the attached API 33 device. Record device/API, test count and any test runner/environment limitation. Do not convert a skipped or unexecuted test into a pass.
 
-- [ ] **Step 3: Audit architectural and code boundaries**
+- [x] **Step 3: Audit architectural and code boundaries**
   Check:
   - No new networking, playback owner, DB, API/DTO or mutation path.
   - Queue uses queue_item_id and baseline checks; no canonical optimistic reorder.
@@ -586,7 +586,7 @@
   - All popup hosts are in the shared inventory and no Dialog is disposed before reverse motion completes.
   Run rg popup inventory, git diff --check, inspect full diff and git status.
 
-- [ ] **Step 4: Install and inspect on the real device**
+- [x] **Step 4: Install and inspect on the real device**
   Build APK first. Confirm package/applicationId and signing certificate match the already installed app, then use adb install -r only; never uninstall or clear app data. On the target device verify:
   - Queue menu light surface, exact alignment and width;
   - repeated drag/menu cycles without leaving Queue;
@@ -597,10 +597,10 @@
   - each menu/dialog opening and reverse closing, including editable dialogs with keyboard.
   Capture test device/API, APK identity and any vendor-specific behavior in the report.
 
-- [ ] **Step 5: Reconcile all contracts and report remaining gates**
+- [x] **Step 5: Reconcile all contracts and report remaining gates**
   Update T8-01..T8-17 with exact automated/manual evidence. If B0 was not reproducible, retain the explicit unlocated limitation; do not claim T8-07 fixed. Keep Task 7 Batch 4 lock-screen acceptance open unless it was independently completed and evidenced. Do not mark the main Task 8 total exit gate complete while its Task 0–7 dependencies remain open.
 
-- [ ] **Step 6: Final local commit**
+- [x] **Step 6: Final local commit**
   Commit only the final verification/report/index updates if they are not already included in the relevant batch commits.
   Do not push or merge unless the user explicitly requests it.
 
