@@ -7,12 +7,15 @@ import io.github.qyxx2.mpdserver.remote.network.ServerOrigin
 import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.dto.StateRevisionsDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.StateSnapshotDto
+import io.github.qyxx2.mpdserver.remote.protocol.dto.decodeHardwareVolumeResources
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,6 +156,141 @@ class RuntimeCompositionTest {
         }
     }
 
+    @Test fun hardwareVolumeInvalidationsUseAuthoritativeReadbackAndIgnoreCoveredNotices() = runBlocking {
+        val sockets = RecordingSocketFactory()
+        val reads = java.util.concurrent.atomic.AtomicInteger()
+        val firstReadStarted = CompletableDeferred<Unit>()
+        val releaseFirstRead = CompletableDeferred<Unit>()
+        val runtime = AppRuntime.createForTesting(
+            ServerOrigin.parse("http://music.example:18000"),
+            sockets,
+            stateReader = {
+                when (reads.incrementAndGet()) {
+                    1 -> {
+                        firstReadStarted.complete(Unit)
+                        releaseFirstRead.await()
+                        ApiResult.Success(snapshotDto("e1", 2, 42), 200)
+                    }
+                    else -> ApiResult.Success(snapshotDto("e1", 4, 44), 200)
+                }
+            },
+        )
+        try {
+            runtime.start()
+            val socket = sockets.awaitSocket(0)
+            socket.open()
+            socket.message(snapshot("e1", 1, 40))
+            runtime.snapshots.state.first { it.snapshot?.sequence == 1L && it.controlsEligible }
+
+            socket.message(hardwareVolumeInvalidate("e1", 2))
+            withTimeout(2_000) { firstReadStarted.await() }
+            socket.message(hardwareVolumeInvalidate("e1", 3))
+            socket.message(hardwareVolumeInvalidate("e1", 4))
+            // The realtime collector buffers later notices while the first GET is held.
+            delay(100)
+            releaseFirstRead.complete(Unit)
+
+            val accepted = withTimeout(2_000) {
+                runtime.snapshots.state.first { it.snapshot?.sequence == 4L && it.freshness == SnapshotFreshness.FRESH }
+            }
+            assertEquals(2, reads.get())
+            assertEquals(44, accepted.snapshot?.wire?.decodeHardwareVolumeResources()?.hardwareVolume?.state?.volumePercent)
+            assertEquals(44, HardwareVolumeCapabilityPolicy.evaluate(accepted).controllableVolumePercent)
+
+            socket.message(hardwareVolumeInvalidate("e1", 4))
+            socket.message(hardwareVolumeInvalidate("e1", 3))
+            delay(50)
+            assertEquals("duplicate and older watermarks must not start another full-state read", 2, reads.get())
+        } finally {
+            releaseFirstRead.complete(Unit)
+            runtime.close()
+        }
+    }
+
+    @Test fun failedHardwareVolumeRefreshDisablesWritesUntilReconnectSnapshot() = runBlocking {
+        val sockets = RecordingSocketFactory()
+        val runtime = AppRuntime.createForTesting(
+            ServerOrigin.parse("http://music.example:18000"),
+            sockets,
+            stateReader = { ApiResult.ProtocolError("snapshot unavailable") },
+        )
+        try {
+            runtime.start()
+            val firstSocket = sockets.awaitSocket(0)
+            firstSocket.open()
+            firstSocket.message(snapshot("e1", 1, 70))
+            runtime.snapshots.state.first { it.snapshot?.sequence == 1L && it.controlsEligible }
+
+            firstSocket.message(hardwareVolumeInvalidate("e1", 2))
+            val stale = withTimeout(2_000) {
+                runtime.snapshots.state.first { it.freshness == SnapshotFreshness.STALE && it.readError != null }
+            }
+            val staleVolume = HardwareVolumeCapabilityPolicy.evaluate(stale)
+            assertEquals(70, staleVolume.displayVolumePercent)
+            assertFalse(staleVolume.canWrite)
+            assertEquals(null, staleVolume.controllableVolumePercent)
+
+            firstSocket.disconnect()
+            val reconnectedSocket = sockets.awaitSocket(1)
+            reconnectedSocket.open()
+            reconnectedSocket.message(snapshot("e1", 3, 71))
+            val recovered = withTimeout(2_000) {
+                runtime.snapshots.state.first { it.snapshot?.sequence == 3L && it.controlsEligible }
+            }
+            assertEquals(71, HardwareVolumeCapabilityPolicy.evaluate(recovered).controllableVolumePercent)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test fun lateHardwareVolumeReadCannotReplaceSnapshotAfterOriginSwitch() = runBlocking {
+        val sockets = RecordingSocketFactory()
+        val firstOrigin = ServerOrigin.parse("http://first.example:18000")
+        val secondOrigin = ServerOrigin.parse("http://second.example:18001")
+        val oldReadStarted = CompletableDeferred<Unit>()
+        val releaseOldRead = CompletableDeferred<Unit>()
+        val secondOriginReads = java.util.concurrent.atomic.AtomicInteger()
+        val runtime = AppRuntime.createForTesting(
+            firstOrigin,
+            sockets,
+            stateReader = { origin ->
+                if (origin == firstOrigin) {
+                    oldReadStarted.complete(Unit)
+                    releaseOldRead.await()
+                    ApiResult.Success(snapshotDto("old-epoch", 99, 99), 200)
+                } else {
+                    secondOriginReads.incrementAndGet()
+                    ApiResult.Success(snapshotDto("new-epoch", 2, 31), 200)
+                }
+            },
+        )
+        try {
+            runtime.start()
+            val oldSocket = sockets.awaitSocket(0)
+            oldSocket.open()
+            oldSocket.message(snapshot("old-epoch", 1, 80))
+            runtime.snapshots.state.first { it.snapshot?.epoch == "old-epoch" && it.controlsEligible }
+
+            oldSocket.message(hardwareVolumeInvalidate("old-epoch", 2))
+            withTimeout(2_000) { oldReadStarted.await() }
+            runtime.changeOrigin(secondOrigin)
+            val newSocket = sockets.awaitSocket(1)
+            newSocket.open()
+            newSocket.message(snapshot("new-epoch", 1, 30))
+            runtime.snapshots.state.first { it.snapshot?.epoch == "new-epoch" && it.controlsEligible }
+
+            releaseOldRead.complete(Unit)
+            val canonical = withTimeout(2_000) {
+                runtime.snapshots.state.first { it.snapshot?.epoch == "new-epoch" && it.snapshot.sequence == 2L }
+            }
+            assertEquals(1, secondOriginReads.get())
+            assertEquals(31, HardwareVolumeCapabilityPolicy.evaluate(canonical).controllableVolumePercent)
+        } finally {
+            releaseOldRead.complete(Unit)
+            runtime.close()
+        }
+    }
+
     @Test fun sameOriginReconnectAcceptsNewServerEpochAfterDisconnect() = runBlocking {
         val sockets = RecordingSocketFactory()
         val runtime = AppRuntime.createForTesting(ServerOrigin.parse("http://music.example:18000"), sockets)
@@ -212,7 +350,21 @@ class RuntimeCompositionTest {
         }
     }
 
-    private fun snapshot(epoch: String, sequence: Long) = """{"type":"snapshot","protocol_version":1,"epoch":"$epoch","sequence":$sequence,"state":{"epoch":"$epoch","sequence":$sequence,"captured_at":"2026-10-24T12:00:00Z","explicit_stop_generation":0,"revisions":{"library":0,"playlist":0},"playback":{},"current_song":null,"queue":{"revision":0,"items":[]},"history":{},"playback_observation":{},"output":{},"output_observation":{},"library_sync":{"generation":0}}}"""
+    private fun snapshot(epoch: String, sequence: Long, volumePercent: Int? = null) =
+        """{"type":"snapshot","protocol_version":1,"epoch":"$epoch","sequence":$sequence,"state":${snapshotState(epoch, sequence, volumePercent)}}"""
+
+    private fun hardwareVolumeInvalidate(epoch: String, sequence: Long) =
+        """{"type":"invalidate","protocol_version":1,"epoch":"$epoch","sequence":$sequence,"domains":["hardware_volume"],"revisions":{"library":0,"playlist":0}}"""
+
+    private fun snapshotDto(epoch: String, sequence: Long, volumePercent: Int): StateSnapshotDto =
+        Json.decodeFromString(StateSnapshotDto.serializer(), snapshotState(epoch, sequence, volumePercent))
+
+    private fun snapshotState(epoch: String, sequence: Long, volumePercent: Int? = null): String {
+        val hardwareVolume = volumePercent?.let {
+            ",\"hardware_volume\":{\"state\":{\"status\":\"AVAILABLE\",\"volume_percent\":$it,\"output_name\":\"USB DAC\",\"output_plugin\":\"alsa\",\"output_enabled\":true,\"control_source\":\"MPD_HARDWARE_MIXER\",\"error_code\":null,\"error_message\":null,\"updated_at\":\"2026-11-04T12:00:00Z\",\"stale\":false},\"last_request\":null},\"hardware_volume_observation\":{\"observed_at\":\"2026-11-04T12:00:00Z\",\"freshness\":\"fresh\",\"error_code\":null,\"error_message\":null}"
+        } ?: ""
+        return """{"epoch":"$epoch","sequence":$sequence,"captured_at":"2026-10-24T12:00:00Z","explicit_stop_generation":0,"revisions":{"library":0,"playlist":0},"playback":{},"current_song":null,"queue":{"revision":0,"items":[]},"history":{},"playback_observation":{},"output":{},"output_observation":{},"library_sync":{"generation":0}$hardwareVolume}"""
+    }
 }
 
 private class RecordingSocketFactory : RealtimeSocketFactory {

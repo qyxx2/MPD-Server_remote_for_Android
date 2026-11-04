@@ -131,6 +131,33 @@ class StateReadCoordinatorTest {
         assertEquals(0, calls.get())
     }
 
+    @Test fun ignoresInvalidateFromDifferentEpochOrConnectionGeneration() = runBlocking {
+        val calls = AtomicInteger()
+        val store = SnapshotStore().apply {
+            onConnectionState(4, RuntimeConnectionStatus.CONNECTING)
+            accept(snapshot(3), 4)
+        }
+        val coordinator = StateReadCoordinator(
+            store, CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined),
+            connectionGeneration = { 4L },
+            readState = { calls.incrementAndGet(); ApiResult.Success(snapshot(5), 200) },
+        )
+
+        val wrongEpoch = coordinator.onInvalidate(
+            SnapshotWatermark("old-epoch", 4, StateRevisionsDto(4, 6)),
+            4,
+        )
+        val oldGeneration = coordinator.onInvalidate(
+            SnapshotWatermark("e1", 4, StateRevisionsDto(4, 6)),
+            3,
+        )
+
+        assertEquals(StateReadResult.IgnoredStaleConnection, wrongEpoch)
+        assertEquals(StateReadResult.IgnoredStaleConnection, oldGeneration)
+        assertEquals(0, calls.get())
+        assertEquals(3L, store.state.value.snapshot?.sequence)
+    }
+
     private fun <T : Any> assertNotNullAndGet(value: T?): T {
         assertNotNull(value)
         return requireNotNull(value)

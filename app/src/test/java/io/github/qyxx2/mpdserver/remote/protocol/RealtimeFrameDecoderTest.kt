@@ -2,6 +2,7 @@ package io.github.qyxx2.mpdserver.remote.protocol
 
 import io.github.qyxx2.mpdserver.remote.protocol.dto.RealtimeFrameDecoder
 import io.github.qyxx2.mpdserver.remote.protocol.dto.RealtimeWireEvent
+import io.github.qyxx2.mpdserver.remote.protocol.dto.StateRevisionsDto
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -31,6 +32,17 @@ class RealtimeFrameDecoderTest {
         assertTrue(decoded is RealtimeWireEvent.Invalidate)
         assertEquals(8L, (decoded as RealtimeWireEvent.Invalidate).sequence)
         assertEquals(listOf("playback"), decoded.domains)
+    }
+
+    @Test fun decodesHardwareVolumeInvalidateAsDomainOnlyNotice() {
+        val decoded = decoder.decode(
+            """{"type":"invalidate","protocol_version":1,"epoch":"e1","sequence":8,"domains":["hardware_volume"],"revisions":{"library":2,"playlist":3}}""",
+        ) as RealtimeWireEvent.Invalidate
+
+        assertEquals("e1", decoded.epoch)
+        assertEquals(8L, decoded.sequence)
+        assertEquals(listOf("hardware_volume"), decoded.domains)
+        assertEquals(StateRevisionsDto(2, 3), decoded.revisions)
     }
 
     @Test fun rejectsUnsupportedInvalidateVersion() {

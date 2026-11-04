@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** Batch 0 与 Batch 1 已完成；Batch 2–7 尚未执行。B1 实现 DTO、局部快照解码和硬件音量资格 policy，验证证据见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+**状态：** Batch 0–2 已完成；Batch 3–7 尚未执行。B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
@@ -80,6 +80,8 @@
 **退出门：** 所有 DTO/policy tests 通过；SnapshotStore 仍是唯一 volume canonical owner；无 DataStore/Room/SQLite 音量字段。
 
 ## Batch 2 — WebSocket hardware-volume invalidate 同步
+
+**状态：已完成。** 现有 protocol-v1 decoder 已允许任意非空 domain，RealtimeController 已将所有 invalidate 统一交给 StateReadCoordinator；无需增加领域白名单或生产代码分支。新增 decoder、Runtime 集成与 coordinator 水位/世代回归测试，证明 hardware_volume 通知只触发合并后的完整状态读取，并通过 SnapshotStore 更新。证据见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)。
 
 **目标：** 将硬件音量变更接入唯一实时链路，确保任何值变化都由完整快照确认。
 
