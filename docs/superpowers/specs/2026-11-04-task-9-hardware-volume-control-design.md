@@ -4,7 +4,7 @@
 **Android 基线：** `main` commit `c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef`
 **工作分支：** `feature/task-9-hardware-volume-control`
 **状态：** 规格、边界、合同矩阵与分批计划已冻结；尚未开始 Android 代码实现。
-**上游能力依据：** 2026-11-04 MPD-Server `feature/hardware-volume-control` 交接。Android B0 仍须记录上游实际 HEAD，并以服务端 schema、实现和测试核对本文列出的 wire contract；不得从客户端猜测未给出的字段结构。
+**上游能力依据：** B0 已核对 MPD-Server `feature/hardware-volume-control` HEAD `b2f318bc69e828d4b17ecbfa1acffa3381cf9dae`，NAS 部署代码为其祖先 `7194191b27ad117b593d1cd302cf78bb11792457`。wire DTO、错误语义和 realtime invalidate 已锁定，详见 [Task 9 Batch 0 核对报告](../reports/2026-11-04-task-9-batch0-verification.md) 与 Android 后端接口合同。
 
 ## 1. 目标与范围
 

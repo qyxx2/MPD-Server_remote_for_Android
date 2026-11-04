@@ -2,7 +2,7 @@
 
 > **状态：权威接口合同（基线快照）。** 本文约束 Android 客户端如何消费当前 MPD-Server 接口，不重新定义服务端领域规则、数据库、MPD 执行流程或业务状态。
 > 核对基线：`qyxx2/MPD-Server/main`，commit `2ad84454ceb70817bd996c92b590cfa2d9e9b128`（2026-10-18）。
-> **2026-11-04 硬件音量扩展：** 新增接口依据 MPD-Server feature/hardware-volume-control 的交接。交接未记录服务端精确 commit；Task 9 Batch 0 必须从上游代码、schema 和 tests 锁定 HEAD 与完整 DTO 后，才可将未给出的字段层级和错误结构视为确定合同。上方 2026-10-18 commit 仍是既有接口的历史核对基线，不代表当时已包含本扩展。
+> **2026-11-04 硬件音量扩展：** B0 已按 MPD-Server `feature/hardware-volume-control` 核对，当前上游 HEAD 为 `b2f318bc69e828d4b17ecbfa1acffa3381cf9dae`，NAS 部署代码为其祖先 `7194191b27ad117b593d1cd302cf78bb11792457`。硬件音量 wire DTO、HTTP 错误和 realtime invalidate 形状已在本文下方锁定，证据见 [Task 9 Batch 0 核对报告](../reports/2026-11-04-task-9-batch0-verification.md)。上方 2026-10-18 commit 仍是既有接口的历史核对基线，不代表当时已包含本扩展。
 
 ## 1. 权威与总原则
 
@@ -72,16 +72,77 @@
 | GET / PUT | `/api/system/mpd/connection` | 读取/保存连接目标；保存后需按现有部署要求重启才生效 |
 
 输出模式 schema 含 `NAS_DAC` 和 `CLIENT_STREAM`，输出状态含 `UNAVAILABLE`、`INACTIVE`、`ACTIVE`；schema 存在不保证当前服务实例支持某模式。`/api/system/output` 外层字段为 `states`、`last_request`，内部对象使用 camelCase；聚合的 `/api/state` 使用 snake_case。
-### 硬件音量（2026-11-04 上游扩展）
+### 硬件音量（2026-11-04 上游扩展，B0 已核对）
 
-- 查询：`GET /api/system/hardware-volume`；完整共享状态也包含 `hardware_volume` 与 `hardware_volume_observation`。
-- 设置：`PUT /api/system/hardware-volume`，请求目标字段为 `volumePercent`，整数范围 0–100，必须携带 `Idempotency-Key`。
-- 已知能力状态：AVAILABLE、UNSUPPORTED、UNAVAILABLE。音量值可为 null；null 表示未知，绝不是 0。
-- freshness 必须与数值一起解释。stale 值只能作为最后确认值展示，不可作为可写当前值；仅 AVAILABLE 且 fresh、值非 null 的状态可开放控制。
-- 写入由服务端执行 MPD 写入并重新读取确认，读回必须与目标值一致。Android 不重复进行 MPD 协议操作，也不得从请求 payload 乐观更新 canonical snapshot。
-- WebSocket 的 domains 含 hardware_volume 只表示状态失效，不携带新音量值；必须调用完整 GET /api/state，并通过现有 snapshot 水位规则接受结果。
-- 该音量是 MPD 实例级，不是每个 output ID 独立音量。ACTIVE 输出状态不证明实体 DAC 正在出声。
-- **待 B0 锁定：** 两个 GET 响应的完整 JSON 嵌套结构、observation/error DTO、未知枚举兼容细节和写入读回失败的具体 HTTP 错误形状，以当时上游代码/schema/tests 为准。
+核对基线：MPD-Server `feature/hardware-volume-control` HEAD `b2f318bc69e828d4b17ecbfa1acffa3381cf9dae`；NAS 当前部署代码 `7194191b27ad117b593d1cd302cf78bb11792457`。字段来源为 `server/app/models/hardware_volume.py`、`server/app/api/system_schemas.py`、`server/app/api/realtime_schemas.py` 与相应 API / realtime tests。完整现场证据见 [Task 9 Batch 0 核对报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+
+#### 完整快照字段
+
+`GET /api/state` 顶层包含两个彼此独立的 snake_case 字段：
+
+- `hardware_volume`：`{state, last_request}`。
+- `hardware_volume_observation`：`{observed_at, freshness, error_code, error_message}`。
+
+`hardware_volume.state` 的字段是 `status`、`volume_percent`、`output_name`、`output_plugin`、`output_enabled`、`control_source`、`error_code`、`error_message`、`updated_at`、`stale`。其中 `volume_percent` 为 nullable 严格整数 0–100；其余硬件/错误描述字段按 schema 可为 null。状态枚举为 `AVAILABLE`、`UNAVAILABLE`、`UNSUPPORTED`；当前 control source 枚举为 `MPD_HARDWARE_MIXER`。
+
+`last_request` 可为 null；非 null 时具有 `requested_percent`（严格整数 0–100）、`status`（`PREPARING`、`SUCCEEDED`、`FAILED`）、`error_code`、`error_message`、`updated_at`。Observation 的 freshness 当前为 `fresh`、`stale`、`unknown`，`observed_at` 可为 null。
+
+#### 专用 GET / PUT response
+
+`GET /api/system/hardware-volume` 与成功的 `PUT /api/system/hardware-volume` 返回相同 response schema，顶层为 `state`、`observation`、`lastRequest`。此 REST response 的 state / observation / lastRequest 内部字段均为 camelCase，与 `GET /api/state` 中的 snake_case 有意不同：
+
+- `state`：`status`、`volumePercent`、`outputName`、`outputPlugin`、`outputEnabled`、`controlSource`、`errorCode`、`errorMessage`、`updatedAt`、`stale`。
+- `observation`：`observedAt`、`freshness`、`errorCode`、`errorMessage`。
+- `lastRequest`：null 或 `requestedPercent`、`status`、`errorCode`、`errorMessage`、`updatedAt`。
+
+PUT body 为 `{"volumePercent": 0..100}`。字段必需、严格整数、范围 0–100，拒绝 bool/float/string/null、越界及未知额外字段。成功返回 HTTP 200 和完整状态；服务端先写入 MPD 再读回，只有 readback 与请求目标完全相等才令 `lastRequest.status=SUCCEEDED`。不是 204，也不能由客户端用 payload 乐观更新 SnapshotStore。
+
+#### HTTP 错误与幂等
+
+错误统一使用 `{"error":{"code":"...","message":"...","details":...}}`：
+
+以下是 PUT 的错误映射；GET 的硬件状态不可用通常仍返回 HTTP 200 状态快照：
+
+| HTTP | code | 语义 |
+|---:|---|---|
+| 400 | `HARDWARE_VOLUME_NOT_CONFIGURED` | PUT 时功能开关关闭/未配置；GET 返回显式 UNSUPPORTED |
+| 400 | `HARDWARE_VOLUME_OUTPUT_AMBIGUOUS` | PUT 时 ALSA 控制目标不唯一 |
+| 409 | `IDEMPOTENCY_KEY_CONFLICT` | 已用 key 被不同 method/path 或 payload 重用 |
+| 422 | `VALIDATION_ERROR` | PUT body 字段、类型、范围或额外字段无效 |
+| 422 | `IDEMPOTENCY_KEY_REQUIRED` | mutation 缺少 Idempotency-Key |
+| 502 | `HARDWARE_VOLUME_WRITE_FAILED` | MPD 写入失败 |
+| 502 | `HARDWARE_VOLUME_RECONCILIATION_FAILED` | 写入后的 MPD readback 与目标值不一致 |
+| 503 | `HARDWARE_VOLUME_UNAVAILABLE` | PUT 时硬件目标/MPD 观察不可用；GET 缺少 manager 时也返回此错误 |
+| 503 | `PLAYER_UNAVAILABLE` | PUT 时 MPD/player 当前不可用 |
+
+GET 成功读取到“目标不存在”会返回 HTTP 200、`state.status=UNAVAILABLE`、`volumePercent=null` 和 freshness=unknown；已有确认值后遇到 player disconnect 则会返回 HTTP 200、`state.status=UNAVAILABLE`、保留 last-known 值并标记 stale。GET 只有无法取得 manager/构造完整响应时才通过错误 envelope 返回 503。
+
+除 `POST /api/library/collections` 外，所有 `/api/**` 的 POST/PUT/PATCH/DELETE 均要求 Idempotency-Key。服务端按 method + path 和规范化 payload hash 绑定 key：同 key、相同 operation scope/payload 重放原 HTTP status/body，不重复执行 MPD 写入；key 被用于不同操作或 payload 时返回 409。新用户意图必须新建 key；同一 intent 出现 UNKNOWN 时，只能显式重试原 method/path/payload/origin/key，不能从当前 UI 状态重建或自动换 key。服务端 5xx 无法证明操作未提交，Android MutationCoordinator 必须按 UNKNOWN 处理。
+
+#### 状态与兼容语义
+
+- 只有连接/代次匹配、共享 snapshot fresh、status=`AVAILABLE`、observation freshness=`fresh`、`stale=false`、值非 null 且 0–100，才可写。
+- `UNSUPPORTED` 表示服务端明确未配置/不支持；`UNAVAILABLE` 可能携带 last-known 值，但当 stale 时仅可展示，不可作为新命令基值。
+- null、缺字段、未知未来枚举和无效音量子树均须 fail-closed；null 不是 0。旧服务端没有这两个新顶层字段时，Android 应局部投影为 UNKNOWN，不能使其他播放/Queue snapshot 解码失败，也不能将其伪装为显式 UNSUPPORTED。
+- 硬件音量是 MPD instance 级，不是每个 output ID 的独立音量；当前 schema 不提供 ALSA raw channel 值或 dB。没有 current song、暂停或停止不改变音量能力资格。
+- ACTIVE 只表示服务端输出状态，不证明实体 DAC 正在出声或 bit-perfect。
+
+#### Realtime invalidate
+
+WS `/api/realtime` protocol v1 收到硬件音量变化时，发送 `type=invalidate` 且 `domains` 包含 `hardware_volume`。典型帧结构：
+
+```json
+{
+  "type": "invalidate",
+  "protocol_version": 1,
+  "epoch": "<current server epoch>",
+  "sequence": 7,
+  "domains": ["hardware_volume"],
+  "revisions": {"library": 0, "playlist": 0}
+}
+```
+
+该帧只提供 epoch/sequence/domains/revisions，不包含 `state` 或 `hardware_volume` 数据；revisions 目前仍只有 library/playlist，没有独立 hardware-volume revision。客户端必须经唯一 RealtimeController / StateReadCoordinator 重新读取完整 `GET /api/state`，继续执行 epoch、sequence、connection-generation 和迟到结果保护。不得把 invalidate 当作音量 patch，也不得另建 WS 或 polling owner。
 
 
 ### 播放和 Queue（前缀 `/api/playback`）

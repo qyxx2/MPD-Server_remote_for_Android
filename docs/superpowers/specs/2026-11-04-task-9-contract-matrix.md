@@ -4,7 +4,7 @@
 > **基线：** Android `main` commit `c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef`。
 > **分支：** `feature/task-9-hardware-volume-control`。
 > **主设计：** [Task 9 硬件音量控制规格](2026-11-04-task-9-hardware-volume-control-design.md)。
-> **上游依据：** 2026-11-04 MPD-Server `feature/hardware-volume-control` 交接。精确 server HEAD 和响应 DTO 由 B0 锁定，不得将尚未核对的字段层级写成已验证事实。
+> **上游依据：** B0 已核对 MPD-Server `feature/hardware-volume-control` HEAD `b2f318bc69e828d4b17ecbfa1acffa3381cf9dae`，NAS 部署代码为其祖先 `7194191b27ad117b593d1cd302cf78bb11792457`；完整 DTO / error / realtime wire contract 已更新到 [Android 后端接口合同](2026-10-23-android-backend-api-contract.md)，证据见 [Task 9 Batch 0 报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 1. 上位合同与优先级
 

@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** 仅完成文档规划；本计划创建时未修改 Android 生产代码。
+**状态：** Batch 0 已完成（上游契约核对与集成预检，仅文档变更）；Android 生产代码未修改。Batch 1–7 尚未执行。详见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
