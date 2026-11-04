@@ -328,6 +328,7 @@ fun AppNavHost(
             intentId.startsWith("home-autoplay:") -> homeCollectionActions.retryAutoplayUnknown(intentId)
             intentId.startsWith("playlist:") -> playlistActions.retryUnknown(intentId)
             intentId.startsWith("favorite:") -> favoritesActions.retryUnknown(intentId)
+            intentId.startsWith("hardware-volume:") -> runtime.hardwareVolumeCommands.retryUnknown()
             else -> runtime.mutations.retryUnknown(intentId)
         }
     }

@@ -135,6 +135,7 @@ internal fun QueueScreen(
 ) {
     val scope = rememberCoroutineScope()
     val activities by runtime.mutations.activities.collectAsStateWithLifecycle()
+    val hardwareVolumeCommandState by runtime.hardwareVolumeCommands.state.collectAsStateWithLifecycle()
     val actions = remember(runtime, queueActionsFactory) {
         queueActionsFactory?.invoke() ?: QueueActions(
             stateProvider = { runtime.snapshots.state.value },
@@ -972,6 +973,8 @@ internal fun QueueScreen(
         visible = showDacPanel,
         anchorState = outputDialogAnchorState,
         onDismiss = { showDacPanel = false },
+        commandState = hardwareVolumeCommandState,
+        onVolumeCommit = { runtime.hardwareVolumeCommands.setAbsolute(it) },
     )
     QueueToolsDialog(
         dialog = toolDialog,

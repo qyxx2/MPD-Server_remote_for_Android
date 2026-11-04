@@ -16,9 +16,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,12 +48,15 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapability
 import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityStatus
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCommandPhase
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCommandState
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.ui.components.AnchoredDropdownPositionProvider
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionHost
 import java.util.Locale
+import kotlin.math.roundToInt
 
-/** Compact DAC/output summary and read-only server volume projection. */
+/** Compact DAC/output summary and server-authoritative hardware-volume control. */
 @Composable
 internal fun CompactDacPanelPopup(
     output: OutputPresentation,
@@ -53,8 +64,21 @@ internal fun CompactDacPanelPopup(
     visible: Boolean,
     onDismiss: () -> Unit,
     anchorState: PopupMotionAnchorState,
+    commandState: HardwareVolumeCommandState = HardwareVolumeCommandState(),
+    onVolumeCommit: (Int) -> Unit = {},
 ) {
     val volume = hardwareVolume.displayVolumePercent?.takeIf { it in 0..100 }
+    var sliderDraft by remember { mutableStateOf(HardwareVolumeSliderDraft()) }
+    val currentCanonicalTuple = rememberUpdatedState(hardwareVolume.canonicalTuple)
+    val currentCanWrite = rememberUpdatedState(hardwareVolume.canWrite)
+    val currentCommandPhase = rememberUpdatedState(commandState.phase)
+    LaunchedEffect(hardwareVolume.canonicalTuple) {
+        sliderDraft = sliderDraft.invalidateIfCanonicalChanged(hardwareVolume.canonicalTuple)
+    }
+    val previewVolume = sliderDraft.previewPercent?.roundToInt()
+    val sliderEnabled = hardwareVolume.canWrite && volume != null && commandState.phase != HardwareVolumeCommandPhase.UNKNOWN
+    val commandPending = commandState.phase == HardwareVolumeCommandPhase.QUEUED ||
+        commandState.phase == HardwareVolumeCommandPhase.IN_FLIGHT
     val outputInfo = buildDacOutputLine(output)
     val outputStatus = output.dacStatus.toChineseLabel()
     val volumeStatus = when {
@@ -121,13 +145,13 @@ internal fun CompactDacPanelPopup(
                     Column(
                         modifier = Modifier
                             .width(panelWidth)
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(30.dp)
+                                .height(28.dp)
                                 .testTag("dac-output-info"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -157,7 +181,7 @@ internal fun CompactDacPanelPopup(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(34.dp)
+                                .height(48.dp)
                                 .testTag("dac-volume-row"),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -167,50 +191,147 @@ internal fun CompactDacPanelPopup(
                                 tint = Color(0xFF555555),
                                 modifier = Modifier.size(20.dp),
                             )
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(percent = 50))
-                                    .background(Color(0xFFD8D8D8))
-                                    .testTag("dac-volume-slider")
-                                    .semantics {
-                                        testTag = "dac-volume-slider"
-                                        contentDescription = buildString {
-                                            append("硬件音量，只读，")
-                                            append(volume?.let { "服务端确认值 $it" } ?: "数值未知")
-                                            append("，$volumeStatus")
-                                        }
-                                        volume?.let {
-                                            progressBarRangeInfo = ProgressBarRangeInfo(it.toFloat(), 0f..100f)
-                                        }
-                                        disabled()
-                                    },
-                            ) {
-                                if (volume != null && volume > 0) {
+                            val trackProgress = (sliderDraft.previewPercent ?: volume?.toFloat() ?: 0f) / 100f
+                            if (sliderEnabled) {
+                                Box(
+                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxHeight()
-                                            .fillMaxWidth(volume / 100f)
-                                            .background(Color(0xFFB76520)),
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(percent = 50))
+                                            .background(Color(0xFFD8D8D8))
+                                            .testTag("dac-volume-track"),
+                                    ) {
+                                        if (trackProgress > 0f) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxHeight()
+                                                    .fillMaxWidth(trackProgress.coerceIn(0f, 1f))
+                                                    .background(Color(0xFFB76520)),
+                                            )
+                                        }
+                                    }
+                                    Slider(
+                                        value = sliderDraft.previewPercent ?: volume!!.toFloat(),
+                                        onValueChange = { requested ->
+                                            sliderDraft = sliderDraft.preview(requested, currentCanonicalTuple.value)
+                                        },
+                                        onValueChangeFinished = {
+                                            val target = sliderDraft.targetForRelease(
+                                                current = currentCanonicalTuple.value,
+                                                canWrite = currentCanWrite.value && currentCommandPhase.value != HardwareVolumeCommandPhase.UNKNOWN,
+                                            )
+                                            sliderDraft = HardwareVolumeSliderDraft()
+                                            target?.let(onVolumeCommit)
+                                        },
+                                        enabled = true,
+                                        valueRange = 0f..100f,
+                                        steps = 99,
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = Color.Transparent,
+                                            activeTrackColor = Color.Transparent,
+                                            inactiveTrackColor = Color.Transparent,
+                                            activeTickColor = Color.Transparent,
+                                            inactiveTickColor = Color.Transparent,
+                                            disabledThumbColor = Color.Transparent,
+                                            disabledActiveTrackColor = Color.Transparent,
+                                            disabledInactiveTrackColor = Color.Transparent,
+                                            disabledActiveTickColor = Color.Transparent,
+                                            disabledInactiveTickColor = Color.Transparent,
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("dac-volume-slider")
+                                            .semantics {
+                                                contentDescription = buildString {
+                                                    append("MPD 硬件音量，服务端确认值 $volume")
+                                                    previewVolume?.let { append("，本地拖动预览 $it，松手后提交") }
+                                                    if (commandPending) append("，正在等待服务端读回")
+                                                    if (commandState.phase == HardwareVolumeCommandPhase.FAILED) append("，上次设置失败")
+                                                }
+                                            },
                                     )
                                 }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(percent = 50))
+                                        .background(Color(0xFFD8D8D8))
+                                        .testTag("dac-volume-slider")
+                                        .semantics {
+                                            testTag = "dac-volume-slider"
+                                            contentDescription = buildString {
+                                                append("硬件音量，只读，")
+                                                append(volume?.let { "服务端确认值 $it" } ?: "数值未知")
+                                                append("，$volumeStatus")
+                                                commandState.message?.let { append("，$it") }
+                                            }
+                                            volume?.let {
+                                                progressBarRangeInfo = ProgressBarRangeInfo(it.toFloat(), 0f..100f)
+                                            }
+                                            disabled()
+                                        },
+                                ) {
+                                    if (volume != null && volume > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxHeight()
+                                                .fillMaxWidth(volume / 100f)
+                                                .background(Color(0xFFB76520)),
+                                        )
+                                    }
+                                }
+                            }
+                            if (commandPending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp).testTag("dac-volume-pending"),
+                                    strokeWidth = 1.5.dp,
+                                )
+                            } else if (commandState.phase == HardwareVolumeCommandPhase.FAILED) {
+                                Text(
+                                    text = "!",
+                                    modifier = Modifier.testTag("dac-volume-error").semantics {
+                                        contentDescription = commandState.message ?: "硬件音量设置失败"
+                                    },
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            } else if (commandState.phase == HardwareVolumeCommandPhase.UNKNOWN) {
+                                Text(
+                                    text = "?",
+                                    modifier = Modifier.testTag("dac-volume-unknown").semantics {
+                                        contentDescription = commandState.message ?: "硬件音量设置结果未知，需要使用原操作重试"
+                                    },
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
                             }
                             Text(
-                                text = volume?.toString() ?: "—",
+                                text = previewVolume?.toString() ?: volume?.toString() ?: "—",
                                 modifier = Modifier
                                     .widthIn(min = 24.dp)
                                     .testTag("dac-volume-value")
                                     .semantics {
-                                        contentDescription = volume?.let { "服务端确认硬件音量 $it" }
-                                            ?: "服务端确认硬件音量未知"
+                                        contentDescription = when {
+                                            previewVolume != null -> "硬件音量本地预览值 $previewVolume，尚未提交；服务端确认值 ${volume ?: "未知"}"
+                                            else -> volume?.let { "服务端确认硬件音量 $it" } ?: "服务端确认硬件音量未知"
+                                        }
                                     },
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF252525),
+                                color = if (previewVolume != null) Color(0xFFB76520) else Color(0xFF252525),
                                 maxLines = 1,
                             )
                         }
+
                     }
                 }
             }

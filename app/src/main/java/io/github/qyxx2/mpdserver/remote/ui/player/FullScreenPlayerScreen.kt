@@ -198,6 +198,7 @@ fun FullScreenPlayerScreen(
     var showDacPanel by remember { mutableStateOf(false) }
     val outputDialogAnchorState = rememberPopupMotionAnchorState()
     val hardwareVolumeCapability = remember(snapshotState) { HardwareVolumeCapabilityPolicy.evaluate(snapshotState) }
+    val hardwareVolumeCommandState by runtime.hardwareVolumeCommands.state.collectAsStateWithLifecycle()
     // Never let a previously cached track survive a canonical identity/connection change.
     // Subscribe only inside this screen so background preload state changes never tear down or
     // replace the root NavHost before a delayed mini-player open completes.
@@ -360,6 +361,8 @@ fun FullScreenPlayerScreen(
             visible = showDacPanel,
             anchorState = outputDialogAnchorState,
             onDismiss = { showDacPanel = false },
+            commandState = hardwareVolumeCommandState,
+            onVolumeCommit = { runtime.hardwareVolumeCommands.setAbsolute(it) },
         )
     }
 }

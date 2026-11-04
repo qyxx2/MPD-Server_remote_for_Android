@@ -6,6 +6,7 @@ import kotlinx.serialization.decodeFromString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -50,6 +51,42 @@ class HardwareVolumeCapabilityPolicyTest {
                             result.canWrite,
                         )
                     }
+    }
+
+    @Test
+    fun canonicalTupleTracksVolumeSpecificSessionStatusValueAndFreshness() {
+        val baseline = HardwareVolumeCapabilityPolicy.evaluate(state()).canonicalTuple
+        assertTrue("a decoded snapshot must expose its volume-specific draft identity", baseline != null)
+        assertEquals("epoch-a", baseline?.epoch)
+        assertEquals(1L, baseline?.connectionGeneration)
+        assertEquals(HardwareVolumeCapabilityStatus.AVAILABLE, baseline?.status)
+        assertEquals(80, baseline?.volumePercent)
+
+        assertNotEquals(
+            "observation freshness must invalidate an active slider draft",
+            baseline,
+            HardwareVolumeCapabilityPolicy.evaluate(state(observationFreshness = "stale")).canonicalTuple,
+        )
+        assertNotEquals(
+            "capability status must invalidate an active slider draft",
+            baseline,
+            HardwareVolumeCapabilityPolicy.evaluate(state(status = "UNAVAILABLE")).canonicalTuple,
+        )
+        assertNotEquals(
+            "server-confirmed value changes must invalidate an active slider draft",
+            baseline,
+            HardwareVolumeCapabilityPolicy.evaluate(state(volumePercent = 79)).canonicalTuple,
+        )
+        assertNotEquals(
+            "connection generation changes must invalidate an active slider draft",
+            baseline,
+            HardwareVolumeCapabilityPolicy.evaluate(state(connectionGeneration = 2, snapshotConnectionGeneration = 2)).canonicalTuple,
+        )
+        assertNotEquals(
+            "shared snapshot freshness changes must invalidate an active slider draft",
+            baseline,
+            HardwareVolumeCapabilityPolicy.evaluate(state(snapshotFreshness = SnapshotFreshness.STALE)).canonicalTuple,
+        )
     }
 
     @Test

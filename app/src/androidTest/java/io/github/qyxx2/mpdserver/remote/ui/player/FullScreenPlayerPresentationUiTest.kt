@@ -8,6 +8,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertCountEquals
@@ -31,6 +35,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
 import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapability
 import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityStatus
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityPolicy
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCanonicalTuple
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCommandPhase
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCommandState
+import io.github.qyxx2.mpdserver.remote.runtime.RuntimeConnectionStatus
+import io.github.qyxx2.mpdserver.remote.runtime.SnapshotFreshness
+import io.github.qyxx2.mpdserver.remote.protocol.dto.ObservationFreshnessDto
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAlphaKey
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionScaleKey
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
@@ -217,7 +228,7 @@ class FullScreenPlayerPresentationUiTest {
     }
 
     @Test
-    fun dacActionOpensCompactTwoRowPanelWithReadOnlyVolumePlaceholder() {
+    fun dacActionOpensCompactTwoRowPanelWithServerGatedSlider() {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         val base = testPresentation()
         val presentation = base.copy(
@@ -252,7 +263,12 @@ class FullScreenPlayerPresentationUiTest {
         composeRule.onNodeWithText("DAC · PCM · 44.1 kHz · 16 bit · 2 ch").assertIsDisplayed()
         composeRule.onNodeWithText("已启用").assertIsDisplayed()
         composeRule.onNodeWithTag("dac-volume-row").assertIsDisplayed()
-        composeRule.onNodeWithTag("dac-volume-slider").assertIsNotEnabled()
+        val serverAllowsVolumeWrite = HardwareVolumeCapabilityPolicy.evaluate(application.runtime.snapshots.state.value).canWrite
+        if (serverAllowsVolumeWrite) {
+            composeRule.onNodeWithTag("dac-volume-slider").assertIsEnabled()
+        } else {
+            composeRule.onNodeWithTag("dac-volume-slider").assertIsNotEnabled()
+        }
         composeRule.onNodeWithTag("dac-volume-value").assertIsDisplayed()
         composeRule.onAllNodesWithTag("player-output-details", useUnmergedTree = true).assertCountEquals(0)
         val popupSurface = composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true)
@@ -273,7 +289,12 @@ class FullScreenPlayerPresentationUiTest {
         val surfaceSize = surfaceNode.layoutInfo.coordinates.size
         val rootSize = rootNode.layoutInfo.coordinates.size
         val widthDp = surface.width / density
-        val volumeTrack = composeRule.onNodeWithTag("dac-volume-slider").fetchSemanticsNode().boundsInRoot
+        val volumeTrackTag = if (serverAllowsVolumeWrite) "dac-volume-track" else "dac-volume-slider"
+        val volumeTrack = composeRule.onNodeWithTag(volumeTrackTag).fetchSemanticsNode().boundsInRoot
+        if (serverAllowsVolumeWrite) {
+            val sliderTouchRow = composeRule.onNodeWithTag("dac-volume-row").fetchSemanticsNode().boundsInRoot
+            assertTrue("the interactive Slider row must keep at least a 48dp touch target", sliderTouchRow.height / density >= 48f)
+        }
         assertTrue("DAC panel should size to its information instead of always using a wide dialog", widthDp < 360f)
         assertTrue("DAC panel must not exceed 520dp", widthDp <= 520f)
         assertTrue("DAC panel must keep at least 16dp horizontal safe margin", (surfaceScreen.x - rootScreen.x) / density >= 16f)
@@ -523,6 +544,7 @@ class FullScreenPlayerPresentationUiTest {
             canWrite = true,
             diagnostics = emptySet(),
             decodeDiagnostics = emptyList(),
+            canonicalTuple = testHardwareVolumeTuple(72),
         )
         val capabilityState = mutableStateOf(capability)
         val themePreference = mutableStateOf(ThemePreference.LIGHT)
@@ -543,10 +565,10 @@ class FullScreenPlayerPresentationUiTest {
         composeRule.onNodeWithText("DAC").assertIsDisplayed()
         composeRule.onNodeWithTag("dac-volume-value").assertTextEquals("72")
         composeRule.onAllNodesWithText("72%").assertCountEquals(0)
-        composeRule.onNodeWithTag("dac-volume-slider").assertIsNotEnabled()
+        composeRule.onNodeWithTag("dac-volume-slider").assertIsEnabled()
         val confirmedSliderSemantics = composeRule.onNodeWithTag("dac-volume-slider").fetchSemanticsNode().config.toString()
-        assertTrue("slider accessibility should describe the confirmed value", confirmedSliderSemantics.contains("服务端确认值 72"))
-        assertTrue("a server-confirmed value should expose its real read-only slider range", confirmedSliderSemantics.contains("ProgressBarRangeInfo"))
+        assertTrue("slider accessibility should describe the server-confirmed value", confirmedSliderSemantics.contains("服务端确认值 72"))
+        assertTrue("an available slider must expose an integer 0..100 control range", confirmedSliderSemantics.contains("ProgressBarRangeInfo"))
         composeRule.runOnIdle { themePreference.value = ThemePreference.DARK }
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true).assertIsDisplayed()
@@ -579,6 +601,122 @@ class FullScreenPlayerPresentationUiTest {
             composeRule.onNodeWithTag("dac-output-status").assertTextEquals(label)
         }
     }
+
+    @Test
+    fun sliderSubmitsOneAbsoluteTargetOnReleaseAndWaitsForCanonicalReadback() {
+        val anchor = PopupMotionAnchorState().apply {
+            update(PopupMotionAnchorKind.OWNER, Rect(0f, 0f, 1080f, 2400f))
+            update(PopupMotionAnchorKind.TRIGGER, Rect(510f, 1700f, 570f, 1760f))
+        }
+        val tuple = testHardwareVolumeTuple(80)
+        val capabilityState = mutableStateOf(
+            HardwareVolumeCapability(
+                status = HardwareVolumeCapabilityStatus.AVAILABLE,
+                displayVolumePercent = 80,
+                controllableVolumePercent = 80,
+                canWrite = true,
+                diagnostics = emptySet(),
+                decodeDiagnostics = emptyList(),
+                canonicalTuple = tuple,
+            ),
+        )
+        val commandState = mutableStateOf(HardwareVolumeCommandState())
+        val committedTargets = mutableListOf<Int>()
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.LIGHT) {
+                CompactDacPanelPopup(
+                    output = testPresentation().output,
+                    hardwareVolume = capabilityState.value,
+                    visible = true,
+                    onDismiss = {},
+                    anchorState = anchor,
+                    commandState = commandState.value,
+                    onVolumeCommit = { target ->
+                        committedTargets += target
+                        commandState.value = HardwareVolumeCommandState(
+                            phase = HardwareVolumeCommandPhase.IN_FLIGHT,
+                            activeTargetPercent = target,
+                        )
+                    },
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val slider = composeRule.onNodeWithTag("dac-volume-slider")
+        slider.assertIsEnabled()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals("80")
+        slider.performTouchInput {
+            down(center.copy(x = center.x * 0.25f))
+            moveTo(center.copy(x = center.x * 1.72f), delayMillis = 220L)
+            up()
+        }
+        composeRule.waitForIdle()
+
+        assertEquals("one completed gesture must enqueue exactly one absolute intent", 1, committedTargets.size)
+        val target = committedTargets.single()
+        assertTrue("slider target must be an integer inside the server range", target in 0..100)
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals("80")
+        composeRule.onNodeWithTag("dac-volume-pending").assertIsDisplayed()
+        val pendingSemantics = slider.fetchSemanticsNode().config.toString()
+        assertTrue("pending presentation must keep the confirmed readback explicit", pendingSemantics.contains("服务端确认值 80"))
+
+        composeRule.runOnIdle {
+            capabilityState.value = capabilityState.value.copy(
+                displayVolumePercent = target,
+                controllableVolumePercent = target,
+                canonicalTuple = tuple.copy(volumePercent = target),
+            )
+            commandState.value = HardwareVolumeCommandState()
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals(target.toString())
+        composeRule.onAllNodesWithTag("dac-volume-pending").assertCountEquals(0)
+
+        // TalkBack/semantics progress changes use the same release callback and gateway seam.
+        slider.performSemanticsAction(SemanticsActions.SetProgress) { setProgress ->
+            assertTrue("accessibility must be able to set an integer Slider target", setProgress(33f))
+        }
+        composeRule.waitForIdle()
+        assertEquals("one accessibility adjustment must enqueue one more absolute intent", 2, committedTargets.size)
+        assertEquals(33, committedTargets.last())
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals(target.toString())
+        composeRule.onNodeWithTag("dac-volume-pending").assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            commandState.value = HardwareVolumeCommandState(
+                phase = HardwareVolumeCommandPhase.FAILED,
+                message = "server rejected volume target",
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals(target.toString())
+        composeRule.onNodeWithTag("dac-volume-error").assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            commandState.value = HardwareVolumeCommandState(
+                phase = HardwareVolumeCommandPhase.UNKNOWN,
+                message = "write outcome unknown; retry original intent",
+            )
+        }
+        composeRule.waitForIdle()
+        slider.assertIsNotEnabled()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals(target.toString())
+        composeRule.onNodeWithTag("dac-volume-unknown").assertIsDisplayed()
+    }
+
+    private fun testHardwareVolumeTuple(volume: Int) = HardwareVolumeCanonicalTuple(
+        epoch = "epoch-a",
+        connectionGeneration = 1,
+        snapshotConnectionGeneration = 1,
+        connectionStatus = RuntimeConnectionStatus.CONNECTED,
+        snapshotFreshness = SnapshotFreshness.FRESH,
+        status = HardwareVolumeCapabilityStatus.AVAILABLE,
+        volumePercent = volume,
+        stale = false,
+        observationFreshness = ObservationFreshnessDto.fresh,
+    )
 
     private fun testPresentation(): PlayerPresentation {
         val song = PlayerSongPresentation(

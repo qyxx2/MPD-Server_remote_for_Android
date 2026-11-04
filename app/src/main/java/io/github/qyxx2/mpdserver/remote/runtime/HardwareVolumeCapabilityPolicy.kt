@@ -23,6 +23,18 @@ enum class HardwareVolumeCapabilityDiagnostic {
  * UI-safe projection of the server-owned volume sample. displayVolumePercent may be last-known;
  * controllableVolumePercent is populated only when the whole shared snapshot is currently writable.
  */
+data class HardwareVolumeCanonicalTuple(
+    val epoch: String,
+    val connectionGeneration: Long,
+    val snapshotConnectionGeneration: Long?,
+    val connectionStatus: RuntimeConnectionStatus,
+    val snapshotFreshness: SnapshotFreshness,
+    val status: HardwareVolumeCapabilityStatus,
+    val volumePercent: Int?,
+    val stale: Boolean?,
+    val observationFreshness: ObservationFreshnessDto?,
+)
+
 data class HardwareVolumeCapability(
     val status: HardwareVolumeCapabilityStatus,
     val displayVolumePercent: Int?,
@@ -31,6 +43,8 @@ data class HardwareVolumeCapability(
     val diagnostics: Set<HardwareVolumeCapabilityDiagnostic>,
     /** Decoder details are diagnostic only and never become a control or display value. */
     val decodeDiagnostics: List<String>,
+    /** Volume-only identity used to invalidate an in-progress local Slider gesture. */
+    val canonicalTuple: HardwareVolumeCanonicalTuple? = null,
 )
 
 object HardwareVolumeCapabilityPolicy {
@@ -107,6 +121,17 @@ object HardwareVolumeCapabilityPolicy {
             decodeDiagnostics = listOfNotNull(
                 resources.hardwareVolumeDiagnostic,
                 resources.hardwareVolumeObservationDiagnostic,
+            ),
+            canonicalTuple = HardwareVolumeCanonicalTuple(
+                epoch = snapshot.epoch,
+                connectionGeneration = state.connectionGeneration,
+                snapshotConnectionGeneration = state.snapshotConnectionGeneration,
+                connectionStatus = state.connectionStatus,
+                snapshotFreshness = state.freshness,
+                status = status,
+                volumePercent = volumePercent,
+                stale = hardwareState?.stale,
+                observationFreshness = observation?.freshness,
             ),
         )
     }

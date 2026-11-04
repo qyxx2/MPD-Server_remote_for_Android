@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** Batch 0–4 已完成；Batch 5–7 尚未执行。B4 DAC 紧凑面板见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)；B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+**状态：** Batch 0–5 已完成；Batch 6–7 尚未执行。B5 Slider 控制/读回见 [Batch 5 验证报告](../reports/2026-11-04-task-9-batch5-verification.md)，B4 DAC 紧凑面板见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)；B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
@@ -162,6 +162,8 @@
 **退出门：** 面板位置/动效与 Task 8 全局 popup 一致，信息精简两行且无裁切；旧大详情 dialog 已被替换。
 
 ## Batch 5 — Slider 交互与读回确认
+
+**状态：已完成。** Player 与 Queue 的 DAC 面板共用 AppRuntime `HardwareVolumeCommandGateway`；Slider 只持有手势级 preview，释放后单次提交绝对目标，并继续等待 SnapshotStore 的服务端完整快照读回。canonical tuple 失效、FAILED、UNKNOWN 和无障碍 `SetProgress` 行为均有测试覆盖；证据见 [Batch 5 验证报告](../reports/2026-11-04-task-9-batch5-verification.md)。
 
 **目标：** 让 DAC 面板 Slider 能安全修改远端 MPD 硬件音量。
 
