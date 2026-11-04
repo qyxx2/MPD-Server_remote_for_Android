@@ -19,9 +19,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -84,6 +89,8 @@ import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingDraftPreviewOver
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingVisibilityController
 import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenPlayerScreen
+import io.github.qyxx2.mpdserver.remote.ui.player.ArtworkTransitionOverlay
+import io.github.qyxx2.mpdserver.remote.ui.player.ArtworkTransitionGeometry
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
@@ -412,7 +419,9 @@ fun AppNavHost(
     val currentMiniPlayerArtworkKey = artworkCacheKey?.takeIf {
         it.matches(mediaProjection.mediaPresentation)
     }
-    val miniPlayerArtwork = (artworkCacheState as? PlayerArtworkCacheState.Ready)
+    val miniPlayerArtworkReady = artworkCacheState as? PlayerArtworkCacheState.Ready
+    val miniPlayerArtworkKey = miniPlayerArtworkReady?.key
+    val miniPlayerArtwork = miniPlayerArtworkReady
         ?.takeIf { ready -> currentMiniPlayerArtworkKey != null && ready.key == currentMiniPlayerArtworkKey }
         ?.foreground
     val miniPlayerToggleAction = when (miniPlayerPresentation.playbackStatus) {
@@ -432,7 +441,47 @@ fun AppNavHost(
     var playerLayerHeightPx by remember { mutableFloatStateOf(1f) }
     var appWindowHeightPx by remember { mutableFloatStateOf(1f) }
     var miniPlayerTopPx by remember { mutableFloatStateOf(0f) }
+    var appRootPositionOnScreen by remember { mutableStateOf<Offset?>(null) }
+    var miniPlayerArtworkBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
+    var miniPlayerArtworkBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
+    var fullScreenArtworkBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
+    var fullScreenArtworkBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
+    // Keep the resting artwork rectangle fixed for the whole downward gesture. The child
+    // ArtworkStage is inside a graphicsLayer-translated Player sheet; positionOnScreen() is a
+    // layout-coordinate callback and is not guaranteed to be re-reported for every layer-only
+    // translation frame. Subtracting the live drag offset from that stale measurement made the
+    // overlay source move upward while the destination progress advanced, pinning the cover's
+    // top edge and leaving only its scale visibly changing.
+    var playerDismissArtworkSourceBoundsOnScreen by remember { mutableStateOf<Rect?>(null) }
+    var playerDismissArtworkSourceBoundsKey by remember { mutableStateOf<PlayerArtworkCacheKey?>(null) }
     var rootNavigationBarHeightPx by remember { mutableFloatStateOf(0f) }
+
+    val reportMiniPlayerArtworkBounds: (Rect) -> Unit = { bounds ->
+        val key = currentMiniPlayerArtworkKey
+        if (key != null && (miniPlayerArtworkBoundsOnScreen != bounds || miniPlayerArtworkBoundsKey != key)) {
+            miniPlayerArtworkBoundsOnScreen = bounds
+            miniPlayerArtworkBoundsKey = key
+        }
+    }
+    val reportFullScreenArtworkBounds: (Rect) -> Unit = { bounds ->
+        val key = currentMiniPlayerArtworkKey
+        if (key != null && (fullScreenArtworkBoundsOnScreen != bounds || fullScreenArtworkBoundsKey != key)) {
+            fullScreenArtworkBoundsOnScreen = bounds
+            fullScreenArtworkBoundsKey = key
+        }
+    }
+
+    fun screenBoundsInRoot(bounds: Rect?, key: PlayerArtworkCacheKey?): Rect? {
+        val rootOrigin = appRootPositionOnScreen ?: return null
+        if (key == null || key != currentMiniPlayerArtworkKey) return null
+        val screen = bounds ?: return null
+        return Rect(
+            left = screen.left - rootOrigin.x,
+            top = screen.top - rootOrigin.y,
+            right = screen.right - rootOrigin.x,
+            bottom = screen.bottom - rootOrigin.y,
+        )
+    }
     var isMiniPlayerExpansionPreview by remember { mutableStateOf(false) }
     var enterPlayerFromMini by remember { mutableStateOf(false) }
     var isExitingFullScreen by remember { mutableStateOf(false) }
@@ -543,8 +592,72 @@ fun AppNavHost(
             bottom = safeInsets.bottom.coerceAtLeast(0).toDp(),
         )
     }
+    val sourceArtworkBoundsInRoot = screenBoundsInRoot(
+        miniPlayerArtworkBoundsOnScreen,
+        miniPlayerArtworkBoundsKey,
+    )
+    val playerSheetTranslationY = if (enterPlayerFromMini || isMiniPlayerExpansionPreview) {
+        // Remove both the sheet translation and the simultaneously animated top safe-inset
+        // padding; both affect ArtworkStage.positionOnScreen before the sheet reaches rest.
+        (miniPlayerTopPx - safeInsets.top.coerceAtLeast(0)) * (1f - entryProgress)
+    } else {
+        0f
+    }
+    val targetArtworkBoundsInRoot = screenBoundsInRoot(
+        fullScreenArtworkBoundsOnScreen,
+        fullScreenArtworkBoundsKey,
+    )?.let { measuredBounds ->
+        // positionOnScreen includes the moving sheet's graphicsLayer translation. Remove it so
+        // interpolation always targets the final artwork location, not a target that moves too.
+        ArtworkTransitionGeometry.removeParentTranslation(
+            measuredBounds,
+            Offset(0f, playerSheetTranslationY),
+        )
+    }
+    val miniPlayerArtworkTransitionActive =
+        (enterPlayerFromMini || isMiniPlayerExpansionPreview) &&
+            currentMiniPlayerArtworkKey != null &&
+            miniPlayerArtwork != null &&
+            miniPlayerArtworkKey == currentMiniPlayerArtworkKey &&
+            sourceArtworkBoundsInRoot != null
+    val playerDismissArtworkSourceBoundsInRoot = screenBoundsInRoot(
+        playerDismissArtworkSourceBoundsOnScreen,
+        playerDismissArtworkSourceBoundsKey,
+    )
+    val playerArtworkDismissProgress = if (
+        playerDismissArtworkSourceBoundsInRoot != null && sourceArtworkBoundsInRoot != null
+    ) {
+        ArtworkTransitionGeometry.dismissalProgress(
+            source = playerDismissArtworkSourceBoundsInRoot,
+            target = sourceArtworkBoundsInRoot,
+            offsetPx = playerDragOffsetPx,
+        )
+    } else {
+        0f
+    }
+    val playerArtworkDismissTransitionActive =
+        currentRoute == AppDestination.FULL_SCREEN_PLAYER.route &&
+            fullScreenPagerState.currentPage == 0 &&
+            isPlayerDismissTransitionActive &&
+            currentMiniPlayerArtworkKey != null &&
+            miniPlayerArtwork != null &&
+            miniPlayerArtworkKey == currentMiniPlayerArtworkKey &&
+            playerDismissArtworkSourceBoundsInRoot != null
+    val artworkTransitionActive =
+        miniPlayerArtworkTransitionActive || playerArtworkDismissTransitionActive
+    val miniPlayerChromeAlpha = if (miniPlayerArtworkTransitionActive) {
+        1f - (entryProgress / 0.20f).coerceIn(0f, 1f)
+    } else {
+        1f
+    }
 
     fun navigateToExpandedPlayer() {
+        // The finger-following preview has already measured the fullscreen artwork destination.
+        // Preserve that rectangle across the route switch: clearing it here makes the shared
+        // overlay fall back to its mini-player source for a frame while both real images are
+        // hidden, producing a visible flash at the mini-player and fullscreen artwork positions.
+        playerDismissArtworkSourceBoundsOnScreen = null
+        playerDismissArtworkSourceBoundsKey = null
         isMiniPlayerExpansionPreview = false
         enterPlayerFromMini = true
         navController.navigate(AppDestination.FULL_SCREEN_PLAYER.route) {
@@ -552,12 +665,14 @@ fun AppNavHost(
         }
     }
 
-    fun updateMiniPlayerExpansion(distancePx: Float, upwardVelocityDpPerSecond: Float) {
+    fun updateMiniPlayerExpansion(distancePx: Float) {
         if (!distancePx.isFinite()) return
         val activeRoute = navController.currentDestination?.route ?: currentRoute
         if (!isMiniPlayerExpansionPreview) {
             val rootRoute = AppDestination.rootRouteFor(activeRoute)
             if (distancePx <= 0f || rootRoute == null) return
+            fullScreenArtworkBoundsOnScreen = null
+            fullScreenArtworkBoundsKey = null
             rootBeforeFullScreen = rootRoute
             returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
@@ -569,14 +684,8 @@ fun AppNavHost(
             upwardDistancePx = distancePx,
             miniPlayerTopPx = miniPlayerTopPx,
         )
-        val shouldExpandFromGesture = MiniPlayerExpansionPolicy.shouldExpand(
-            upwardDistancePx = distancePx,
-            windowHeightPx = appWindowHeightPx,
-            upwardVelocityDpPerSecond = upwardVelocityDpPerSecond,
-        )
-        if (shouldExpandFromGesture) {
-            navigateToExpandedPlayer()
-        }
+        // While the pointer is pressed, this callback owns only finger-following preview progress.
+        // Route commit and the 250ms settle are deliberately deferred to finishMiniPlayerExpansionGesture.
     }
 
     fun finishMiniPlayerExpansionGesture(
@@ -616,6 +725,22 @@ fun AppNavHost(
 
     fun updatePlayerDismissDrag(deltaPx: Float) {
         if (!deltaPx.isFinite()) return
+        if (playerDragOffsetPx <= 0f && deltaPx > 0f &&
+            currentRoute == AppDestination.FULL_SCREEN_PLAYER.route &&
+            fullScreenPagerState.currentPage == 0
+        ) {
+            // Snapshot the resting source before the first layer translation. Never normalize a
+            // potentially stale positionOnScreen() measurement by the changing drag offset.
+            val key = currentMiniPlayerArtworkKey
+            val measuredSource = fullScreenArtworkBoundsOnScreen
+            if (key != null && fullScreenArtworkBoundsKey == key && measuredSource != null) {
+                playerDismissArtworkSourceBoundsOnScreen = measuredSource
+                playerDismissArtworkSourceBoundsKey = key
+            } else {
+                playerDismissArtworkSourceBoundsOnScreen = null
+                playerDismissArtworkSourceBoundsKey = null
+            }
+        }
         playerDragOffsetPx = (playerDragOffsetPx + deltaPx).coerceIn(0f, playerLayerHeightPx)
         isPlayerDismissTransitionActive = playerDragOffsetPx > 0f
     }
@@ -625,9 +750,13 @@ fun AppNavHost(
         if (activeRoute == AppDestination.FULL_SCREEN_PLAYER.route) return
         val rootRoute = AppDestination.rootRouteFor(activeRoute)
         if (rootRoute != null) {
+            fullScreenArtworkBoundsOnScreen = null
+            fullScreenArtworkBoundsKey = null
             rootBeforeFullScreen = rootRoute
             returnRouteBeforeFullScreen = navController.currentBackStackEntry?.let(::concreteRootRoute) ?: rootRoute
             playerDragOffsetPx = 0f
+            playerDismissArtworkSourceBoundsOnScreen = null
+            playerDismissArtworkSourceBoundsKey = null
             playerEntryProgress = 0f
             isMiniPlayerExpansionPreview = false
             enterPlayerFromMini = true
@@ -650,6 +779,8 @@ fun AppNavHost(
             ) { value, _ -> playerDragOffsetPx = value }
             playerDragOffsetPx = 0f
             isPlayerDismissTransitionActive = false
+            playerDismissArtworkSourceBoundsOnScreen = null
+            playerDismissArtworkSourceBoundsKey = null
         }
     }
 
@@ -680,9 +811,13 @@ fun AppNavHost(
                     navController.popBackStack()
                 }
                 isPlayerDismissTransitionActive = false
+                playerDismissArtworkSourceBoundsOnScreen = null
+                playerDismissArtworkSourceBoundsKey = null
             } else {
                 playerDragOffsetPx = 0f
                 isPlayerDismissTransitionActive = false
+                playerDismissArtworkSourceBoundsOnScreen = null
+                playerDismissArtworkSourceBoundsKey = null
             }
         }
     }
@@ -784,7 +919,11 @@ fun AppNavHost(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .onSizeChanged { size -> appWindowHeightPx = size.height.toFloat().coerceAtLeast(1f) },
+            .onSizeChanged { size -> appWindowHeightPx = size.height.toFloat().coerceAtLeast(1f) }
+            .onGloballyPositioned { coordinates ->
+                val origin = coordinates.positionOnScreen()
+                if (appRootPositionOnScreen != origin) appRootPositionOnScreen = origin
+            },
     ) {
         if (currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
             currentRoute == AppDestination.QUEUE.route
@@ -798,38 +937,64 @@ fun AppNavHost(
 
             // The root backdrop remains aligned to the actual safe-content bounds, while its
             // fullscreen layer keeps the physical window geometry and the existing blur handoff.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(safeContentPadding),
-            ) {
-                RootBackdropShell(
-                    rootRoute = rootBeforeFullScreen,
-                    runtime = runtime,
-                    homeState = homeState,
-                    homeScrollStateHolder = homeScrollStateHolder,
-                    homeArtworkIdentity = homeArtworkIdentity,
-                    miniPlayerPresentation = miniPlayerPresentation,
-                    searchController = searchController,
-                    navController = navController,
-                    uiPreferences = uiPreferences,
-                    preferenceWriteScope = preferenceWriteScope,
-                    windowGeometry = windowGeometry,
-                    onApplyServerOrigin = applyServerOrigin,
-                    blurRadiusDp = backdropBlurDp,
-                    hideNavigationBar = (enterPlayerFromMini && entryProgress < 0.999f) ||
-                        isPlayerDismissTransitionActive,
-                    modifier = Modifier.fillMaxSize(),
-                )
+            Box(modifier = Modifier.fillMaxSize()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {},
+                        .padding(safeContentPadding),
+                ) {
+                    RootBackdropShell(
+                        rootRoute = rootBeforeFullScreen,
+                        runtime = runtime,
+                        homeState = homeState,
+                        homeScrollStateHolder = homeScrollStateHolder,
+                        homeArtworkIdentity = homeArtworkIdentity,
+                        miniPlayerPresentation = miniPlayerPresentation,
+                        miniPlayerArtwork = miniPlayerArtwork,
+                        miniPlayerArtworkAlpha = if (artworkTransitionActive) 0f else 1f,
+                        miniPlayerChromeAlpha = miniPlayerChromeAlpha,
+                        onArtworkBoundsChanged = reportMiniPlayerArtworkBounds,
+                        searchController = searchController,
+                        navController = navController,
+                        uiPreferences = uiPreferences,
+                        preferenceWriteScope = preferenceWriteScope,
+                        windowGeometry = windowGeometry,
+                        onApplyServerOrigin = applyServerOrigin,
+                        blurRadiusDp = backdropBlurDp,
+                        hideNavigationBar = (enterPlayerFromMini && entryProgress < 0.999f) ||
+                            isPlayerDismissTransitionActive,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // Keep the root input shield within safe content so it does not consume
+                    // status-bar or navigation-bar system gestures.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                            )
+                            .testTag("full-screen-root-backdrop-input-shield"),
+                    )
+                }
+                // The root artwork/navigation may respect safe insets, but the scrim is a
+                // window-level layer and must also cover the status and navigation bar regions.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Color.Black.copy(
+                                alpha = MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(
+                                    entryProgress = entryProgress,
+                                    dismissProgress = FullScreenPlayerDismissPolicy.dragProgress(
+                                        offsetPx = playerDragOffsetPx,
+                                        screenHeightPx = playerLayerHeightPx,
+                                    ),
+                                ),
+                            ),
                         )
-                        .testTag("full-screen-root-backdrop-input-shield"),
+                        .testTag("full-screen-root-backdrop-scrim"),
                 )
             }
 
@@ -851,7 +1016,8 @@ fun AppNavHost(
                             )
                             translationY = miniPlayerTopPx * (1f - entry) + playerDragOffsetPx
                             shape = RoundedCornerShape(topStart = radius.dp, topEnd = radius.dp)
-                            clip = entry < 1f || playerDragOffsetPx > 0f
+                            // Keep the rounded sheet silhouette after the entry animation settles.
+                            clip = true
                         }
                         .testTag("full-screen-player-motion-layer"),
                 ) {
@@ -875,6 +1041,8 @@ fun AppNavHost(
                                     actions = playerActions,
                                     artworkCacheKey = artworkCacheKey,
                                     artworkCache = artworkCache,
+                                    artworkVisibleForTransition = !artworkTransitionActive,
+                                    onArtworkBoundsChanged = reportFullScreenArtworkBounds,
                                     onExit = ::exitFullScreenToRoot,
                                     onOpenQueue = {
                                         navigationScope.launch { fullScreenPagerState.animateScrollToPage(1) }
@@ -961,12 +1129,15 @@ fun AppNavHost(
                                 presentation = miniPlayerPresentation,
                                 onOpen = ::openFullScreenPlayer,
                                 artwork = miniPlayerArtwork,
+                                artworkAlpha = if (artworkTransitionActive) 0f else 1f,
+                                chromeAlpha = miniPlayerChromeAlpha,
                                 playbackControlEnabled = miniPlayerControlEnabled,
+                                onArtworkBoundsChanged = reportMiniPlayerArtworkBounds,
                                 onTogglePlayback = { miniPlayerToggleAction?.let(playerActions::perform) },
                                 onBoundsChanged = { topPx, _ ->
                                     if (!isMiniPlayerExpansionPreview) miniPlayerTopPx = topPx
                                 },
-                                onExpandDragDistanceChanged = ::updateMiniPlayerExpansion,
+                                onExpandDragDistanceChanged = { distance, _ -> updateMiniPlayerExpansion(distance) },
                                 onExpandDragEnd = ::finishMiniPlayerExpansionGesture,
                                 onExpandDragCancel = ::cancelMiniPlayerExpansionGesture,
                             )
@@ -1049,6 +1220,16 @@ fun AppNavHost(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .background(
+                                Color.Black.copy(
+                                    alpha = MiniPlayerExpansionPolicy.rootBackdropScrimAlpha(entryProgress),
+                                ),
+                            )
+                            .testTag("mini-player-expansion-backdrop-scrim"),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
                             .graphicsLayer {
                                 val progress = playerEntryProgress.coerceIn(0f, 1f)
                                 translationY = miniPlayerTopPx * (1f - progress)
@@ -1074,6 +1255,8 @@ fun AppNavHost(
                             actions = null,
                             artworkCacheKey = artworkCacheKey,
                             artworkCache = artworkCache,
+                            artworkVisibleForTransition = !artworkTransitionActive,
+                            onArtworkBoundsChanged = reportFullScreenArtworkBounds,
                             onExit = {},
                             onOpenQueue = {},
                             onOpenPlayer = {},
@@ -1097,6 +1280,31 @@ fun AppNavHost(
                     )
                 }
             }
+        }
+        if (artworkTransitionActive) {
+            val isDismissingArtwork = playerArtworkDismissTransitionActive
+            ArtworkTransitionOverlay(
+                bitmap = miniPlayerArtwork,
+                bitmapKey = miniPlayerArtworkKey,
+                currentKey = currentMiniPlayerArtworkKey,
+                sourceBounds = if (isDismissingArtwork) {
+                    playerDismissArtworkSourceBoundsInRoot
+                } else {
+                    sourceArtworkBoundsInRoot
+                },
+                targetBounds = if (isDismissingArtwork) {
+                    sourceArtworkBoundsInRoot
+                } else {
+                    targetArtworkBoundsInRoot
+                },
+                progress = if (isDismissingArtwork) {
+                    playerArtworkDismissProgress
+                } else {
+                    entryProgress
+                },
+                dismissalTransition = isDismissingArtwork,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
         if (currentRoute == SettingsSection.APPEARANCE.route) {
             StatusRingDraftPreviewOverlay(
@@ -1142,6 +1350,10 @@ private fun RootBackdropShell(
     homeScrollStateHolder: io.github.qyxx2.mpdserver.remote.ui.home.HomeScrollStateHolder,
     homeArtworkIdentity: QueueResourceIdentity,
     miniPlayerPresentation: MiniPlayerPresentation,
+    miniPlayerArtwork: ImageBitmap?,
+    miniPlayerArtworkAlpha: Float,
+    miniPlayerChromeAlpha: Float,
+    onArtworkBoundsChanged: (Rect) -> Unit,
     searchController: SearchController,
     navController: NavHostController,
     uiPreferences: UiPreferencesRepository,
@@ -1167,7 +1379,14 @@ private fun RootBackdropShell(
                 title = rootTitle,
                 miniPlayer = {
                     if (resolvedRootRoute != AppDestination.SETTINGS.route) {
-                        MiniPlayer(presentation = miniPlayerPresentation, onOpen = {})
+                        MiniPlayer(
+                            presentation = miniPlayerPresentation,
+                            onOpen = {},
+                            artwork = miniPlayerArtwork,
+                            artworkAlpha = miniPlayerArtworkAlpha,
+                            chromeAlpha = miniPlayerChromeAlpha,
+                            onArtworkBoundsChanged = onArtworkBoundsChanged,
+                        )
                     }
                 },
                 bottomBar = {
@@ -1240,6 +1459,16 @@ private fun PullUpRootNavigationOverlay(
 }
 
 @Composable
+private fun OpaqueRouteSurface(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxSize().testTag("opaque-route-surface"),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        content()
+    }
+}
+
+@Composable
 private fun AppNavigationGraph(
     navController: NavHostController,
     runtime: AppRuntime,
@@ -1298,65 +1527,79 @@ private fun AppNavigationGraph(
         navController = navController,
         startDestination = AppDestination.HOME.route,
         modifier = modifier,
+        // All ordinary routes switch immediately. The full-screen Player owns its
+        // Player/Queue pager motion internally and must not inherit NavHost motion.
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
     ) {
         composable(AppDestination.HOME.route) {
-            HomeScreen(
-                state = homeState,
-                scrollStateHolder = homeScrollStateHolder,
-                runtime = runtime,
-                artworkIdentity = homeArtworkIdentity,
-                enableArtworkPrefetch = snapshotState.controlsEligible,
-                onRefreshRecent = onRefreshRecent,
-                onRefreshHistory = onRefreshHistory,
-                onRefreshAutoplay = onRefreshAutoplay,
-                homeCollectionActions = homeCollectionActions,
-                songActions = songActions,
-                onOpenAlbum = { albumId ->
-                    navController.navigate(LibraryRoutes.album(albumId)) { launchSingleTop = true }
-                },
-                interactionEnabled = true,
-            )
+            OpaqueRouteSurface {
+                HomeScreen(
+                    state = homeState,
+                    scrollStateHolder = homeScrollStateHolder,
+                    runtime = runtime,
+                    artworkIdentity = homeArtworkIdentity,
+                    enableArtworkPrefetch = snapshotState.controlsEligible,
+                    onRefreshRecent = onRefreshRecent,
+                    onRefreshHistory = onRefreshHistory,
+                    onRefreshAutoplay = onRefreshAutoplay,
+                    homeCollectionActions = homeCollectionActions,
+                    songActions = songActions,
+                    onOpenAlbum = { albumId ->
+                        navController.navigate(LibraryRoutes.album(albumId)) { launchSingleTop = true }
+                    },
+                    interactionEnabled = true,
+                )
+            }
         }
         composable(AppDestination.SEARCH.route) {
-            SearchScreen(
-                controller = searchController,
-                onOpenCategory = { kind, sourceId, _ ->
-                    navController.navigate(SearchProjection.categoryRoute(kind, sourceId)) {
-                        launchSingleTop = true
-                    }
-                },
-                runtime = runtime,
-                artworkIdentity = homeArtworkIdentity,
-                searchHistory = uiPreferences.searchHistory,
-                onClearSearchHistory = uiPreferences::clearSearchHistory,
-                songActions = songActions,
-                collectionActions = collectionActions,
-            )
+            OpaqueRouteSurface {
+                SearchScreen(
+                    controller = searchController,
+                    onOpenCategory = { kind, sourceId, _ ->
+                        navController.navigate(SearchProjection.categoryRoute(kind, sourceId)) {
+                            launchSingleTop = true
+                        }
+                    },
+                    runtime = runtime,
+                    artworkIdentity = homeArtworkIdentity,
+                    searchHistory = uiPreferences.searchHistory,
+                    onClearSearchHistory = uiPreferences::clearSearchHistory,
+                    songActions = songActions,
+                    collectionActions = collectionActions,
+                )
+            }
         }
         composable(AppDestination.LIBRARY.route) {
-            LibraryScreen(
-                onOpenCategory = { category ->
-                    navController.navigate(LibraryRoutes.category(category)) { launchSingleTop = true }
-                },
-            )
+            OpaqueRouteSurface {
+                LibraryScreen(
+                    onOpenCategory = { category ->
+                        navController.navigate(LibraryRoutes.category(category)) { launchSingleTop = true }
+                    },
+                )
+            }
         }
         composable(
             route = LibraryRoutes.CATEGORY_PATTERN,
             arguments = listOf(navArgument(LibraryRoutes.KIND_ARGUMENT) { type = NavType.StringType }),
         ) { entry ->
-            val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
-            if (category == null) {
-                Text("不支持的音乐库分类")
-            } else {
-                LibraryCategoryScreen(
-                    runtime = runtime,
-                    category = category,
-                    onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
-                    onBack = { navController.popBackStack() },
-                    songActions = songActions,
-                    collectionActions = collectionActions,
-                    playlistActions = playlistActions,
-                )
+            OpaqueRouteSurface {
+                val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
+                if (category == null) {
+                    Text("不支持的音乐库分类")
+                } else {
+                    LibraryCategoryScreen(
+                        runtime = runtime,
+                        category = category,
+                        onOpenDetail = { route -> navController.navigate(route) { launchSingleTop = true } },
+                        onBack = { navController.popBackStack() },
+                        songActions = songActions,
+                        collectionActions = collectionActions,
+                        playlistActions = playlistActions,
+                    )
+                }
             }
         }
         composable(
@@ -1366,54 +1609,62 @@ private fun AppNavigationGraph(
                 navArgument(LibraryRoutes.ID_ARGUMENT) { type = NavType.StringType },
             ),
         ) { entry ->
-            val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
-            val sourceId = entry.arguments?.getString(LibraryRoutes.ID_ARGUMENT)
-            if (category == null || sourceId.isNullOrBlank()) {
-                Text("无效的音乐库资源")
-            } else {
-                LibraryCollectionScreen(
-                    runtime = runtime,
-                    category = category,
-                    sourceId = sourceId,
-                    onBack = { navController.popBackStack() },
-                    artworkIdentity = homeArtworkIdentity,
-                    songActions = songActions,
-                    collectionActions = collectionActions,
-                    playlistActions = playlistActions,
-                )
+            OpaqueRouteSurface {
+                val category = LibraryRoutes.categoryOrNull(entry.arguments?.getString(LibraryRoutes.KIND_ARGUMENT))
+                val sourceId = entry.arguments?.getString(LibraryRoutes.ID_ARGUMENT)
+                if (category == null || sourceId.isNullOrBlank()) {
+                    Text("无效的音乐库资源")
+                } else {
+                    LibraryCollectionScreen(
+                        runtime = runtime,
+                        category = category,
+                        sourceId = sourceId,
+                        onBack = { navController.popBackStack() },
+                        artworkIdentity = homeArtworkIdentity,
+                        songActions = songActions,
+                        collectionActions = collectionActions,
+                        playlistActions = playlistActions,
+                    )
+                }
             }
         }
         composable(AppDestination.SETTINGS.route) {
-            SettingsHomeScreen(onOpenSection = { section ->
-                navController.navigate(section.route) { launchSingleTop = true }
-            })
+            OpaqueRouteSurface {
+                SettingsHomeScreen(
+                    onOpenSection = { section ->
+                        navController.navigate(section.route) { launchSingleTop = true }
+                    },
+                )
+            }
         }
         SettingsSection.entries.forEach { section ->
             composable(section.route) {
-                when (section) {
-                    SettingsSection.STATUS -> StatusSettingsScreen(
-                        presentation = statusPresentation,
-                        mediaControlAvailability = mediaControlAvailability,
-                        onRetryUnknown = onRetryUnknownActivity,
-                    )
-                    SettingsSection.SERVER -> ServerSettingsScreen(
-                        preferencesRepository = uiPreferences,
-                        onApplyServerOrigin = applyServerOrigin,
-                        readMpdStatus = { runtime.reads.getMpdStatus() },
-                    )
-                    SettingsSection.APPEARANCE -> AppearanceSettingsScreen(
-                        preferencesRepository = uiPreferences,
-                        preferenceWriteScope = preferenceWriteScope,
-                        ringDraft = ringDraft,
-                        onRingDraftChange = onRingDraftChange,
-                    )
-                    SettingsSection.ABOUT -> {
-                        val context = LocalContext.current
-                        AboutScreen(onOpenRepository = {
-                            runCatching {
-                                context.startActivity(createRepositoryLinkIntent())
-                            }
-                        })
+                OpaqueRouteSurface {
+                    when (section) {
+                        SettingsSection.STATUS -> StatusSettingsScreen(
+                            presentation = statusPresentation,
+                            mediaControlAvailability = mediaControlAvailability,
+                            onRetryUnknown = onRetryUnknownActivity,
+                        )
+                        SettingsSection.SERVER -> ServerSettingsScreen(
+                            preferencesRepository = uiPreferences,
+                            onApplyServerOrigin = applyServerOrigin,
+                            readMpdStatus = { runtime.reads.getMpdStatus() },
+                        )
+                        SettingsSection.APPEARANCE -> AppearanceSettingsScreen(
+                            preferencesRepository = uiPreferences,
+                            preferenceWriteScope = preferenceWriteScope,
+                            ringDraft = ringDraft,
+                            onRingDraftChange = onRingDraftChange,
+                        )
+                        SettingsSection.ABOUT -> {
+                            val context = LocalContext.current
+                            AboutScreen(onOpenRepository = {
+                                runCatching {
+                                    context.startActivity(createRepositoryLinkIntent())
+                                }
+                            })
+                        }
                     }
                 }
             }

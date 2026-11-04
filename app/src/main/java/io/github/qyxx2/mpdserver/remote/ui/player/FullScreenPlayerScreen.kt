@@ -19,13 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -56,7 +55,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ActualPlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
+import io.github.qyxx2.mpdserver.remote.ui.components.MotionAlertDialog
 import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
+import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
@@ -87,6 +91,8 @@ fun FullScreenPlayerScreen(
     contentPadding: PaddingValues = PaddingValues(),
     artworkCacheKey: PlayerArtworkCacheKey? = null,
     artworkCache: PlayerArtworkMemoryCache? = null,
+    artworkVisibleForTransition: Boolean = true,
+    onArtworkBoundsChanged: (boundsOnScreen: Rect) -> Unit = {},
 ) {
     val currentOnDismissDragDelta = rememberUpdatedState(onDismissDragDelta)
     val currentOnDismissGestureEnd = rememberUpdatedState(onDismissGestureEnd)
@@ -191,6 +197,7 @@ fun FullScreenPlayerScreen(
             clockSnapshot.controlsEligible && it.isFinite() && it > 0.0
     }
     var showOutputDetails by remember { mutableStateOf(false) }
+    val outputDialogAnchorState = rememberPopupMotionAnchorState()
     // Never let a previously cached track survive a canonical identity/connection change.
     // Subscribe only inside this screen so background preload state changes never tear down or
     // replace the root NavHost before a delayed mini-player open completes.
@@ -314,6 +321,8 @@ fun FullScreenPlayerScreen(
                                     gestureCancel = currentOnDismissGestureCancel,
                                 ),
                                 onTap = { showLyrics = true },
+                                artworkVisible = artworkVisibleForTransition,
+                                onArtworkBoundsChanged = onArtworkBoundsChanged,
                             )
                         }
 
@@ -340,15 +349,17 @@ fun FullScreenPlayerScreen(
                 onOutputClick = { showOutputDetails = true },
                 onNowPlayingClick = onOpenPlayer,
                 onQueueClick = onOpenQueue,
+                outputAnchorModifier = Modifier.popupMotionAnchor(outputDialogAnchorState, PopupMotionAnchorKind.TRIGGER),
+                outputOwnerAnchorModifier = Modifier.popupMotionAnchor(outputDialogAnchorState, PopupMotionAnchorKind.OWNER),
             )
         }
 
-        if (showOutputDetails) {
-            OutputDetailsDialog(
-                presentation = presentation,
-                onDismiss = { showOutputDetails = false },
-            )
-        }
+        OutputDetailsDialog(
+            presentation = presentation,
+            visible = showOutputDetails,
+            anchorState = outputDialogAnchorState,
+            onDismiss = { showOutputDetails = false },
+        )
     }
 }
 
@@ -803,6 +814,8 @@ private fun PlaybackControls(
 internal fun OutputDetailsDialog(
     presentation: PlayerPresentation,
     onDismiss: () -> Unit,
+    visible: Boolean = true,
+    anchorState: PopupMotionAnchorState = rememberPopupMotionAnchorState(),
 ) {
     val output = presentation.output
     val observation = when (output.observationStatus) {
@@ -829,10 +842,14 @@ internal fun OutputDetailsDialog(
         output.errorMessage?.takeIf { it.isNotBlank() }?.let(::add)
         add("服务端显示为 ACTIVE 不代表已确认硬件发声或 bit-perfect。")
     }
-    AlertDialog(
+    MotionAlertDialog(
+        visible = visible,
         onDismissRequest = onDismiss,
+        anchorState = anchorState,
         containerColor = dialogSurfaceColor(),
-        title = { Text("DAC / 输出状态") },
+        dialogTitle = "DAC / 输出状态",
+        modifier = Modifier.testTag("player-output-details"),
+        title = { Text("DAC / 输出状态", style = MaterialTheme.typography.headlineSmall) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 details.forEach { detail ->
@@ -840,7 +857,6 @@ internal fun OutputDetailsDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-        modifier = Modifier.testTag("player-output-details"),
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭") } },
     )
 }

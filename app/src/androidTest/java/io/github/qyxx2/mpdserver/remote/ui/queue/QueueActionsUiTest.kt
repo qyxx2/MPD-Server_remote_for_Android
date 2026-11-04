@@ -81,12 +81,14 @@ class QueueActionsUiTest {
         val screenWidth = composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
         val title = composeRule.onNodeWithTag("queue-menu-title").fetchSemanticsNode().boundsInRoot
         val optionTags = listOf("queue-menu-next-label", "queue-menu-add-label", "queue-menu-remove-label", "queue-menu-cancel-label")
-        val optionCenters = optionTags.map { tag ->
-            composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.center.x
+        val optionBounds = optionTags.map { tag ->
+            composeRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         }
+        val optionLefts = optionBounds.map { it.left }
         assertTrue("menu should be noticeably narrower than the available screen", panel.width < screenWidth * 0.80f)
         assertTrue("title should be centered in the menu", kotlin.math.abs(panel.center.x - title.center.x) < 2f)
-        assertTrue("every option should be centered in the menu", optionCenters.all { kotlin.math.abs(panel.center.x - it) < 2f })
+        assertTrue("all action labels should share one left edge", optionLefts.maxOrNull()!! - optionLefts.minOrNull()!! < 1f)
+        assertTrue("action labels should stay inside the measured menu content", optionBounds.all { it.left >= panel.left && it.right <= panel.right })
         val density = composeRule.density.density
         listOf("queue-menu-next", "queue-menu-add", "queue-menu-remove", "queue-menu-cancel").forEach { tag ->
             val heightDp = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height / density

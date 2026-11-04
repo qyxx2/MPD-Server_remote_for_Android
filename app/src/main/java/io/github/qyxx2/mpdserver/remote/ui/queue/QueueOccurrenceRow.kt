@@ -2,7 +2,10 @@ package io.github.qyxx2.mpdserver.remote.ui.queue
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,7 +27,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,6 +42,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -47,6 +55,8 @@ import androidx.core.graphics.ColorUtils
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -56,6 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueSourceDto
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
 /** Keep the selected row's existing hue/lightness and opacity; strengthen only its saturation. */
 internal fun queueOccurrenceBackgroundColor(isCurrent: Boolean, primary: Color): Color {
     if (!isCurrent) return Color.Transparent
@@ -90,12 +103,18 @@ internal fun QueueOccurrenceRow(
     isDragSource: Boolean = false,
     isDropTarget: Boolean = false,
     dropAtEnd: Boolean = false,
-    onReorderStart: () -> Unit = {},
+    onReorderStart: (Offset) -> Unit = {},
     onReorderDelta: (Offset) -> Unit = {},
     onReorderEnd: () -> Unit = {},
     onReorderCancel: () -> Unit = {},
+    onRowBoundsChanged: (Rect) -> Unit = {},
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }
+    val menuAnchorState = remember(occurrence.queueItemId) { PopupMotionAnchorState() }
+    var retainMenuForExit by remember(occurrence.queueItemId) { mutableStateOf(false) }
+    LaunchedEffect(menuExpanded) {
+        if (menuExpanded) retainMenuForExit = true
+    }
     val background = queueOccurrenceBackgroundColor(
         isCurrent = isCurrent,
         primary = MaterialTheme.colorScheme.primary,
@@ -131,6 +150,15 @@ internal fun QueueOccurrenceRow(
             // A graphics layer for every non-dragging row adds layout/render-node work without
             // changing its appearance. Allocate one only for the actively dragged occurrence.
             .then(if (isDragSource) Modifier.graphicsLayer { alpha = 0.30f } else Modifier)
+            .onGloballyPositioned { onRowBoundsChanged(it.boundsInRoot()) }
+            .popupMotionAnchor(menuAnchorState, PopupMotionAnchorKind.OWNER)
+            .then(
+                when {
+                    dropAtEnd -> Modifier.testTag("queue-row-drop-at-end-${occurrence.queueItemId}")
+                    isDropTarget -> Modifier.testTag("queue-row-drop-target-${occurrence.queueItemId}")
+                    else -> Modifier
+                },
+            )
             // Merge pointer handling and accessibility click semantics into one modifier node;
             // keep the previous no-ripple row tap behavior.
             .clickable(
@@ -230,15 +258,19 @@ internal fun QueueOccurrenceRow(
             IconButton(
                 enabled = menuEnabled,
                 onClick = onMenu,
-                modifier = Modifier.size(48.dp).testTag("queue-row-menu-${occurrence.queueItemId}"),
+                modifier = Modifier.size(48.dp)
+                    .popupMotionAnchor(menuAnchorState, PopupMotionAnchorKind.TRIGGER)
+                    .testTag("queue-row-menu-${occurrence.queueItemId}"),
             ) {
                 QueueMoreGlyph()
             }
-            QueueRowMenu(
-                item = occurrence.takeIf { menuExpanded },
+            if (menuExpanded || retainMenuForExit) QueueRowMenu(
+                item = occurrence,
                 title = menuTitle,
                 enabled = menuEnabled,
                 expanded = menuExpanded,
+                anchorState = menuAnchorState,
+                onDismissComplete = { retainMenuForExit = false },
                 onDismiss = onDismissMenu,
                 onMoveNext = onMoveNext,
                 onMoveToEnd = onMoveToEnd,
@@ -255,6 +287,7 @@ internal fun QueueOccurrenceDragGhost(
     cacheEntry: QueueSongCacheEntry?,
     rowHeight: Dp,
     modifier: Modifier = Modifier,
+    rowWidth: Dp? = null,
 ) {
     val song = cacheEntry?.takeIf { it.identity.epoch.isNotBlank() }
     val title = song?.title?.takeIf { it.isNotBlank() }
@@ -273,7 +306,7 @@ internal fun QueueOccurrenceDragGhost(
     val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = modifier
-            .fillMaxWidth()
+            .then(if (rowWidth == null) Modifier.fillMaxWidth() else Modifier.width(rowWidth))
             .height(rowHeight)
             .shadow(12.dp, shape)
             .clip(shape)
@@ -348,7 +381,7 @@ private fun formatSampleRate(rate: Int): String =
 @Composable
 private fun QueueDragHandle(
     enabled: Boolean,
-    onDragStart: () -> Unit,
+    onDragStart: (Offset) -> Unit,
     onDragDelta: (Offset) -> Unit,
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit,
@@ -356,18 +389,38 @@ private fun QueueDragHandle(
 ) {
     val tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 0.78f else 0.28f)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
-    val currentOnDragDelta by rememberUpdatedState(onDragDelta)
+    // Function references to local composable callbacks can compare equal while closing over a
+    // newer Queue revision. Use referential equality for this one callback so the pointer-input
+    // coroutine never keeps the prior draft baseline after canonical readback.
+    val dragDeltaCallbackState = remember {
+        mutableStateOf(onDragDelta, referentialEqualityPolicy())
+    }
+    SideEffect { dragDeltaCallbackState.value = onDragDelta }
     val currentOnDragEnd by rememberUpdatedState(onDragEnd)
     val currentOnDragCancel by rememberUpdatedState(onDragCancel)
     val dragGestureModifier = if (enabled) {
         Modifier.pointerInput(enabled) {
-            detectDragGesturesAfterLongPress(
-                onDragStart = { currentOnDragStart() },
-                onDragEnd = { currentOnDragEnd() },
-                onDragCancel = { currentOnDragCancel() },
-            ) { change, dragAmount ->
-                change.consume()
-                currentOnDragDelta(dragAmount)
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val touchSlopChange = awaitTouchSlopOrCancellation(down.id) { change, _ ->
+                    change.consume()
+                }
+                if (touchSlopChange != null) {
+                    // The touch-slop callback reports only the over-slop remainder separately;
+                    // the change position preserves the complete movement from the original down.
+                    currentOnDragStart(touchSlopChange.position - down.position)
+                    // Resolve the first target from the exact initial proxy position even when
+                    // the pointer is released without emitting another movement event.
+                    dragDeltaCallbackState.value(Offset.Zero)
+                    val completed = drag(touchSlopChange.id) { change ->
+                        val pointerDelta = change.position - change.previousPosition
+                        if (pointerDelta != Offset.Zero) {
+                            change.consume()
+                            dragDeltaCallbackState.value(pointerDelta)
+                        }
+                    }
+                    if (completed) currentOnDragEnd() else currentOnDragCancel()
+                }
             }
         }
     } else {

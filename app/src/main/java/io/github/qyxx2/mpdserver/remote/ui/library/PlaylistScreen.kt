@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +43,10 @@ import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.dto.PlaylistDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
+import io.github.qyxx2.mpdserver.remote.ui.components.MotionAlertDialog
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
+import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -82,13 +85,16 @@ fun PlaylistScreen(
         ) { runtime.reads.getPlaylists() }
         var creating by remember { mutableStateOf(false) }
         var createName by remember { mutableStateOf("") }
+        val createDialogAnchorState = rememberPopupMotionAnchorState()
         val unknownTicket = lastTicket?.takeIf { ticket ->
             activities.firstOrNull { it.intentId == ticket.intentId }?.status == MutationStatus.UNKNOWN
         }
 
         LibraryPage(modifier, "library-playlists-screen", onBack) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 10.dp, bottom = 8.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .popupMotionAnchor(createDialogAnchorState, PopupMotionAnchorKind.OWNER)
+                    .padding(start = 20.dp, end = 16.dp, top = 10.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("播放列表", modifier = Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -96,7 +102,9 @@ fun PlaylistScreen(
                     enabled = playlistActions?.canWrite(listState is LibraryLoadState.Ready) == true &&
                         listState is LibraryLoadState.Ready,
                     onClick = { createName = ""; creating = true },
-                    modifier = Modifier.testTag("playlist-create"),
+                    modifier = Modifier
+                        .popupMotionAnchor(createDialogAnchorState, PopupMotionAnchorKind.TRIGGER)
+                        .testTag("playlist-create"),
                 ) { Text("创建歌单") }
             }
             if (unknownTicket != null) {
@@ -145,33 +153,35 @@ fun PlaylistScreen(
             }
         }
 
-        if (creating) {
-            AlertDialog(
-                onDismissRequest = { creating = false },
-                title = { Text("创建歌单") },
-                text = {
-                    TextField(
-                        value = createName,
-                        onValueChange = { createName = it },
-                        singleLine = true,
-                        label = { Text("歌单名称") },
-                        modifier = Modifier.testTag("playlist-create-name"),
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        enabled = createName.isNotBlank() &&
-                            playlistActions?.canWrite(listState is LibraryLoadState.Ready) == true &&
-                            listState is LibraryLoadState.Ready,
-                        onClick = {
-                            playlistActions?.create(createName, resourceFresh = listState is LibraryLoadState.Ready)
-                            creating = false
-                        },
-                    ) { Text("创建") }
-                },
-                dismissButton = { TextButton(onClick = { creating = false }) { Text("取消") } },
-            )
-        }
+        MotionAlertDialog(
+            visible = creating,
+            onDismissRequest = { creating = false },
+            anchorState = createDialogAnchorState,
+            dialogTitle = "创建歌单",
+            modifier = Modifier.testTag("playlist-create-dialog"),
+            title = { Text("创建歌单", style = MaterialTheme.typography.headlineSmall) },
+            text = {
+                TextField(
+                    value = createName,
+                    onValueChange = { createName = it },
+                    singleLine = true,
+                    label = { Text("歌单名称") },
+                    modifier = Modifier.testTag("playlist-create-name"),
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = createName.isNotBlank() &&
+                        playlistActions?.canWrite(listState is LibraryLoadState.Ready) == true &&
+                        listState is LibraryLoadState.Ready,
+                    onClick = {
+                        playlistActions?.create(createName, resourceFresh = listState is LibraryLoadState.Ready)
+                        creating = false
+                    },
+                ) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { creating = false }) { Text("取消") } },
+        )
         return
     }
 
@@ -184,6 +194,9 @@ fun PlaylistScreen(
         dependsOnPlaylistRevision = true,
     ) { readPlaylistDetail(runtime, playlistId) }
     var addingSongs by remember(playlistId) { mutableStateOf(false) }
+    val renameDialogAnchorState = rememberPopupMotionAnchorState()
+    val deleteDialogAnchorState = rememberPopupMotionAnchorState()
+    val addSongsDialogAnchorState = rememberPopupMotionAnchorState()
     val pickerState = if (addingSongs) rememberLibraryLoadState(
         runtime,
         "library-playlist-song-picker",
@@ -233,7 +246,10 @@ fun PlaylistScreen(
 
     LibraryPage(modifier, "library-playlist-detail-screen", onBack) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 6.dp),
+            modifier = Modifier.fillMaxWidth()
+                .popupMotionAnchor(renameDialogAnchorState, PopupMotionAnchorKind.OWNER)
+                .popupMotionAnchor(deleteDialogAnchorState, PopupMotionAnchorKind.OWNER)
+                .padding(start = 20.dp, end = 12.dp, top = 10.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("播放列表", modifier = Modifier.weight(1f), fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -241,12 +257,16 @@ fun PlaylistScreen(
                 TextButton(
                     enabled = canEdit,
                     onClick = { renameValue = detail.playlist.name; editingName = true },
-                    modifier = Modifier.testTag("playlist-rename"),
+                    modifier = Modifier
+                        .popupMotionAnchor(renameDialogAnchorState, PopupMotionAnchorKind.TRIGGER)
+                        .testTag("playlist-rename"),
                 ) { Text("重命名") }
                 TextButton(
                     enabled = canEdit,
                     onClick = { deleteConfirmation = true },
-                    modifier = Modifier.testTag("playlist-delete"),
+                    modifier = Modifier
+                        .popupMotionAnchor(deleteDialogAnchorState, PopupMotionAnchorKind.TRIGGER)
+                        .testTag("playlist-delete"),
                 ) { Text("删除") }
             }
         }
@@ -264,7 +284,9 @@ fun PlaylistScreen(
         ) { current ->
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp),
+                    modifier = Modifier.fillMaxWidth()
+                        .popupMotionAnchor(addSongsDialogAnchorState, PopupMotionAnchorKind.OWNER)
+                        .padding(horizontal = 20.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -285,7 +307,9 @@ fun PlaylistScreen(
                     TextButton(
                         enabled = canEdit,
                         onClick = { addingSongs = true },
-                        modifier = Modifier.testTag("playlist-add-songs"),
+                        modifier = Modifier
+                            .popupMotionAnchor(addSongsDialogAnchorState, PopupMotionAnchorKind.TRIGGER)
+                            .testTag("playlist-add-songs"),
                     ) { Text("添加歌曲") }
                 }
                 if (collectionActions != null) {
@@ -410,100 +434,113 @@ fun PlaylistScreen(
         }
     }
 
-    if (editingName && detail != null) {
-        AlertDialog(
-            onDismissRequest = { editingName = false },
-            title = { Text("重命名歌单") },
-            text = {
-                TextField(
-                    value = renameValue,
-                    onValueChange = { renameValue = it },
-                    singleLine = true,
-                    label = { Text("歌单名称") },
-                    modifier = Modifier.testTag("playlist-rename-name"),
-                )
-            },
-            confirmButton = {
-                Button(
-                    enabled = canEdit && renameValue.isNotBlank(),
-                    onClick = {
-                        baseline?.let {
-                            playlistActions?.rename(it, renameValue, resourceFresh, detail.membersConsistent)
-                        }
-                        editingName = false
-                    },
-                ) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { editingName = false }) { Text("取消") } },
-        )
-    }
+    MotionAlertDialog(
+        visible = editingName && detail != null,
+        onDismissRequest = { editingName = false },
+        anchorState = renameDialogAnchorState,
+        dialogTitle = "重命名歌单",
+        modifier = Modifier.testTag("playlist-rename-dialog"),
+        title = { Text("重命名歌单", style = MaterialTheme.typography.headlineSmall) },
+        text = {
+            TextField(
+                value = renameValue,
+                onValueChange = { renameValue = it },
+                singleLine = true,
+                label = { Text("歌单名称") },
+                modifier = Modifier.testTag("playlist-rename-name"),
+            )
+        },
+        confirmButton = {
+            Button(
+                enabled = canEdit && renameValue.isNotBlank(),
+                onClick = {
+                    baseline?.let {
+                        playlistActions?.rename(it, renameValue, resourceFresh, detail?.membersConsistent == true)
+                    }
+                    editingName = false
+                },
+            ) { Text("保存") }
+        },
+        dismissButton = { TextButton(onClick = { editingName = false }) { Text("取消") } },
+    )
 
-    if (deleteConfirmation && detail != null) {
-        AlertDialog(
-            onDismissRequest = { deleteConfirmation = false },
-            title = { Text("删除歌单") },
-            text = { Text("确定删除「${detail.playlist.name}」？") },
-            confirmButton = {
-                Button(
-                    enabled = canEdit,
-                    onClick = {
-                        baseline?.let { playlistActions?.delete(it, resourceFresh, detail.membersConsistent) }
-                        deleteConfirmation = false
-                    },
-                    modifier = Modifier.testTag("playlist-confirm-delete"),
-                ) { Text("删除") }
-            },
-            dismissButton = { TextButton(onClick = { deleteConfirmation = false }) { Text("取消") } },
-        )
-    }
+    MotionAlertDialog(
+        visible = deleteConfirmation && detail != null,
+        onDismissRequest = { deleteConfirmation = false },
+        anchorState = deleteDialogAnchorState,
+        dialogTitle = "删除歌单",
+        modifier = Modifier.testTag("playlist-delete-dialog"),
+        title = { Text("删除歌单", style = MaterialTheme.typography.headlineSmall) },
+        text = {
+            Text(
+                detail?.let { "确定删除「${it.playlist.name}」？" }.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            Button(
+                enabled = canEdit,
+                onClick = {
+                    detail?.let { current ->
+                        baseline?.let { playlistActions?.delete(it, resourceFresh, current.membersConsistent) }
+                    }
+                    deleteConfirmation = false
+                },
+                modifier = Modifier.testTag("playlist-confirm-delete"),
+            ) { Text("删除") }
+        },
+        dismissButton = { TextButton(onClick = { deleteConfirmation = false }) { Text("取消") } },
+    )
 
-    if (addingSongs && detail != null) {
-        AlertDialog(
-            onDismissRequest = { addingSongs = false },
-            title = { Text("添加歌曲") },
-            text = {
-                Column {
-                    when (val picker = pickerState) {
-                        LibraryLoadState.Loading -> Text("正在加载歌曲")
-                        LibraryLoadState.Empty -> Text("暂无可添加歌曲")
-                        is LibraryLoadState.Failed -> Text(picker.message)
-                        is LibraryLoadState.Stale -> Text("音乐库数据已过期，暂不可添加")
-                        is LibraryLoadState.Ready -> LazyColumn(modifier = Modifier.size(300.dp, 380.dp)) {
-                            items(picker.value.items, key = { it.songId ?: it.fileUri }) { song ->
-                                val songId = song.songId
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(song.title, maxLines = 1)
-                                        Text(
-                                            song.availabilityStatus.name,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 11.sp,
-                                        )
-                                    }
-                                    TextButton(
-                                        enabled = canEdit && songId != null,
-                                        onClick = {
-                                            val captured = baseline ?: return@TextButton
-                                            if (songId != null) {
-                                                playlistActions?.add(
-                                                    captured, songId, resourceFresh, detail.membersConsistent,
-                                                )
-                                            }
-                                        },
-                                        modifier = Modifier.testTag("playlist-add-song-${songId ?: "unindexed"}"),
-                                    ) { Text("添加") }
+    MotionAlertDialog(
+        visible = addingSongs && detail != null,
+        onDismissRequest = { addingSongs = false },
+        anchorState = addSongsDialogAnchorState,
+        dialogTitle = "添加歌曲",
+        modifier = Modifier.testTag("playlist-add-songs-dialog"),
+        title = { Text("添加歌曲", style = MaterialTheme.typography.headlineSmall) },
+        text = {
+            Column {
+                when (val picker = pickerState) {
+                    LibraryLoadState.Loading -> Text("正在加载歌曲", style = MaterialTheme.typography.bodyMedium)
+                    LibraryLoadState.Empty -> Text("暂无可添加歌曲", style = MaterialTheme.typography.bodyMedium)
+                    is LibraryLoadState.Failed -> Text(picker.message, style = MaterialTheme.typography.bodyMedium)
+                    is LibraryLoadState.Stale -> Text("音乐库数据已过期，暂不可添加", style = MaterialTheme.typography.bodyMedium)
+                    is LibraryLoadState.Ready -> LazyColumn(modifier = Modifier.size(300.dp, 380.dp)) {
+                        items(picker.value.items, key = { it.songId ?: it.fileUri }) { song ->
+                            val songId = song.songId
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(song.title, maxLines = 1)
+                                    Text(
+                                        song.availabilityStatus.name,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp,
+                                    )
                                 }
+                                TextButton(
+                                    enabled = canEdit && songId != null,
+                                    onClick = {
+                                        val captured = baseline ?: return@TextButton
+                                        if (songId != null) {
+                                            detail?.let { current ->
+                                                playlistActions?.add(captured, songId, resourceFresh, current.membersConsistent)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("playlist-add-song-${songId ?: "unindexed"}"),
+                                ) { Text("添加") }
                             }
                         }
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { addingSongs = false }) { Text("完成") } },
-        )
-    }
+            }
+        },
+        confirmButton = { TextButton(onClick = { addingSongs = false }) { Text("完成") } },
+    )
 }
 
 private suspend fun readPlaylistDetail(

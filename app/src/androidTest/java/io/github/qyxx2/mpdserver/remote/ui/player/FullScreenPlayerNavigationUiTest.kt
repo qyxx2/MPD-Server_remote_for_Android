@@ -3,6 +3,7 @@ package io.github.qyxx2.mpdserver.remote.ui.player
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
@@ -24,6 +25,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
 import io.github.qyxx2.mpdserver.remote.ui.navigation.AppDestination
 import io.github.qyxx2.mpdserver.remote.ui.navigation.AppNavHost
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingInsets
+import io.github.qyxx2.mpdserver.remote.ui.components.StatusRingWindowGeometry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -38,7 +41,7 @@ class FullScreenPlayerNavigationUiTest {
 
     private lateinit var navController: NavHostController
 
-    private fun launchNavigation() {
+    private fun launchNavigation(windowGeometry: StatusRingWindowGeometry = StatusRingWindowGeometry()) {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         composeRule.setContent {
             val controller = rememberNavController()
@@ -48,6 +51,7 @@ class FullScreenPlayerNavigationUiTest {
                 navController = controller,
                 uiPreferences = application.uiPreferences,
                 preferenceWriteScope = application.uiPreferencesWriteScope,
+                windowGeometry = windowGeometry,
             )
         }
         composeRule.waitForIdle()
@@ -82,6 +86,7 @@ class FullScreenPlayerNavigationUiTest {
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-backdrop").assertIsDisplayed()
         composeRule.onNodeWithTag("player-artwork-backdrop-theme-mask").assertIsDisplayed()
+        composeRule.onNodeWithTag("full-screen-root-backdrop-scrim").assertIsDisplayed()
         val backdropBounds = composeRule.onNodeWithTag("full-screen-root-backdrop").fetchSemanticsNode().boundsInRoot
         assertTrue("root backdrop should remain laid out beneath the player", backdropBounds.width > 0f && backdropBounds.height > 0f)
         composeRule.onNodeWithTag("full-screen-exit-gesture-band").assertIsDisplayed()
@@ -140,6 +145,28 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
+    fun fullscreenPlayerAndQueueKeepTheirOwnPagerMotion() {
+        launchNavigation()
+        openPlayerAndWaitForArtwork()
+        composeRule.mainClock.autoAdvance = false
+
+        composeRule.runOnIdle { navController.navigate(AppDestination.QUEUE.route) }
+        composeRule.mainClock.advanceTimeBy(40L)
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.QUEUE.route, navController.currentDestination?.route)
+        val queueBounds = composeRule.onNodeWithTag("queue-screen").fetchSemanticsNode().boundsInRoot
+        assertEquals("Queue must not inherit ordinary route motion", 0f, queueBounds.left, 1.5f)
+
+        composeRule.runOnIdle { assertTrue(navController.popBackStack()) }
+        composeRule.mainClock.advanceTimeBy(40L)
+        composeRule.waitForIdle()
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        val playerBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Full-screen Player keeps its dedicated motion layer", 0f, playerBounds.left, 1.5f)
+    }
+
+    @Test
     fun horizontalSwipesSwitchBetweenPlayerAndQueueRoutes() {
         launchNavigation()
         openPlayerAndWaitForArtwork()
@@ -177,6 +204,70 @@ class FullScreenPlayerNavigationUiTest {
         }
         composeRule.waitForIdle()
         assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+    }
+
+    @Test
+    fun downwardDismissUsesSharedArtworkHandoffBackToMiniPlayer() {
+        launchNavigation()
+        // Capture the mini-player artwork's measured root-space rectangle before its route is
+        // replaced by the accessibility-collapsed root backdrop. The backdrop MiniPlayer reports
+        // its live bounds through the same AppNavHost callback after the route transition.
+        val miniArtworkBounds = composeRule.onNodeWithTag("mini-player-artwork")
+            .fetchSemanticsNode().boundsInRoot
+        openPlayerAndWaitForArtwork()
+
+        val fullscreenWindowBounds = composeRule.onNodeWithTag("full-screen-motion-container")
+            .fetchSemanticsNode().boundsInRoot
+        val restingMotionArtworkBounds = composeRule.onNodeWithTag("player-artwork-stage")
+            .fetchSemanticsNode().boundsInRoot
+        // The artwork must remain vertically attached to the moving Player sheet. Its measured
+        // travel ends when its top edge reaches the mini-player artwork's top edge.
+        val artworkTravelPx = miniArtworkBounds.top - restingMotionArtworkBounds.top
+        assertTrue("Mini-player artwork must be below the full-screen artwork", artworkTravelPx > 0f)
+        val dragDistancePx = artworkTravelPx * 0.5f
+        val gesture = composeRule.onNodeWithTag("full-screen-exit-gesture-band")
+
+        gesture.performTouchInput {
+            down(center)
+            // Repeated MOVE events are important here: graphicsLayer translation does not
+            // necessarily trigger a fresh onGloballyPositioned callback for ArtworkStage.
+            moveTo(Offset(center.x, center.y + artworkTravelPx * 0.15f), 180L)
+            moveTo(Offset(center.x, center.y + artworkTravelPx * 0.30f), 360L)
+            moveTo(Offset(center.x, center.y + dragDistancePx), 540L)
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(AppDestination.FULL_SCREEN_PLAYER.route, navController.currentDestination?.route)
+        val motionBounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        val actualSheetTranslationPx = motionBounds.top - fullscreenWindowBounds.top
+        assertTrue("A held downward drag must move the Player sheet", actualSheetTranslationPx > 0f)
+        val handoffProgress = (actualSheetTranslationPx / artworkTravelPx).coerceIn(0f, 1f)
+        val expectedOverlayBounds = ArtworkTransitionGeometry.interpolate(
+            restingMotionArtworkBounds,
+            miniArtworkBounds,
+            handoffProgress,
+        )
+        val actualOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+            .fetchSemanticsNode().boundsInRoot
+        assertRectEquals(
+            expectedOverlayBounds,
+            actualOverlayBounds,
+            "motion=$motionBounds window=$fullscreenWindowBounds mini=$miniArtworkBounds fullscreen=$restingMotionArtworkBounds progress=$handoffProgress",
+        )
+        assertEquals(
+            "Artwork top must track the Player sheet one-for-one until it reaches the mini-player",
+            actualSheetTranslationPx,
+            actualOverlayBounds.top - restingMotionArtworkBounds.top,
+            1.5f,
+        )
+
+        gesture.performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.HOME.route
+        }
+        composeRule.onNodeWithTag("mini-player-artwork-image").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("mini-player-artwork-transition-overlay").assertCountEquals(0)
     }
 
     @Test
@@ -246,6 +337,25 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
+    fun dismissalScrimCoversFullWindowIncludingSystemBarInsets() {
+        launchNavigation(
+            StatusRingWindowGeometry(
+                safeInsets = StatusRingInsets(top = 72, bottom = 96),
+            ),
+        )
+        openPlayerAndWaitForArtwork()
+
+        val windowBounds = composeRule.onNodeWithTag("full-screen-motion-container")
+            .fetchSemanticsNode().boundsInRoot
+        val scrimBounds = composeRule.onNodeWithTag("full-screen-root-backdrop-scrim")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("scrim must start at the physical window top, above the status-bar inset", windowBounds.top, scrimBounds.top, 1.5f)
+        assertEquals("scrim must extend to the physical window bottom, including navigation inset", windowBounds.bottom, scrimBounds.bottom, 1.5f)
+        assertEquals(windowBounds.left, scrimBounds.left, 1.5f)
+        assertEquals(windowBounds.right, scrimBounds.right, 1.5f)
+    }
+
+    @Test
     fun miniPlayerPullUpTracksFingerAndReturnsWhenReleasedBeforeThreshold() {
         launchNavigation()
         val miniBounds = composeRule.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot
@@ -263,6 +373,13 @@ class FullScreenPlayerNavigationUiTest {
         val preview = composeRule.onAllNodesWithTag("mini-player-expansion-preview")
             .fetchSemanticsNodes(atLeastOneRootRequired = false)
         assertTrue("a full-player surface must be pulled out while the finger is held", preview.isNotEmpty())
+        composeRule.onNodeWithTag("mini-player-expansion-backdrop-scrim").assertIsDisplayed()
+        val previewBounds = preview.single().boundsInRoot
+        val scrimBounds = composeRule.onNodeWithTag("mini-player-expansion-backdrop-scrim")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("the drag scrim must cover the full preview content width", previewBounds.left, scrimBounds.left, 1.5f)
+        assertEquals("the drag scrim must cover the full preview content width", previewBounds.width, scrimBounds.width, 1.5f)
+        assertEquals("the drag scrim must cover the full preview content height", previewBounds.height, scrimBounds.height, 1.5f)
         val playerBounds = composeRule.onNodeWithTag("mini-player-expansion-motion-layer")
             .fetchSemanticsNode().boundsInRoot
         assertTrue(
@@ -287,28 +404,41 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
-    fun fastUpwardFlickEntersFullScreenBeforeHalfWindowDistanceWhileFingerIsHeld() {
+    fun distanceThresholdKeepsFollowingFingerUntilPointerRelease() {
         launchNavigation()
         val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
-        val dragDistancePx = windowHeightPx * 0.28f
+        val dragDistancePx = windowHeightPx * 0.60f
 
         composeRule.onNodeWithTag("mini-player-body").performTouchInput {
             down(center)
-            moveTo(Offset(center.x, center.y - dragDistancePx * 0.45f), 40L)
-            moveTo(Offset(center.x, center.y - dragDistancePx), 40L)
+            moveTo(Offset(center.x, center.y - dragDistancePx * 0.45f), 300L)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 600L)
         }
+        composeRule.waitForIdle()
 
+        assertTrue("the held pointer has crossed the 50% commit threshold", dragDistancePx >= windowHeightPx * 0.5f)
+        assertEquals(
+            "crossing the distance threshold must not commit while the pointer is still pressed",
+            AppDestination.HOME.route,
+            navController.currentDestination?.route,
+        )
+        val preview = composeRule.onAllNodesWithTag("mini-player-expansion-preview")
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+        assertTrue("the finger-following Player preview must remain composed while pressed", preview.isNotEmpty())
+        val playerBounds = composeRule.onNodeWithTag("mini-player-expansion-motion-layer")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("the Player must not jump to its settled full-screen position while pressed", playerBounds.top > 0f)
+
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput { up() }
         composeRule.waitUntil(timeoutMillis = 10_000) {
             navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route
         }
-        assertTrue(
-            "the fast-flick path must trigger before the 50% distance and before finger release",
-            dragDistancePx < windowHeightPx * 0.5f,
-        )
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
-        composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
-
-        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            val bounds = composeRule.onNodeWithTag("full-screen-player-motion-layer")
+                .fetchSemanticsNode().boundsInRoot
+            kotlin.math.abs(bounds.top) <= 1.5f
+        }
     }
 
     @Test
@@ -409,6 +539,63 @@ class FullScreenPlayerNavigationUiTest {
     }
 
     @Test
+    fun miniPlayerArtworkDoesNotJumpBackToSourceWhenPullUpCommits() {
+        launchNavigation()
+        composeRule.waitUntil(timeoutMillis = 20_000) {
+            composeRule.onAllNodesWithTag("mini-player-artwork-image")
+                .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+
+        val miniArtworkBounds = composeRule.onNodeWithTag("mini-player-artwork")
+            .fetchSemanticsNode().boundsInRoot
+        val dragDistancePx = composeRule.activity.window.decorView.height * 0.60f
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y - dragDistancePx), 900L)
+        }
+        composeRule.waitForIdle()
+
+        assertEquals(AppDestination.HOME.route, navController.currentDestination?.route)
+        val previewOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "the held expansion preview must move the artwork away from its mini-player source: mini=$miniArtworkBounds preview=$previewOverlayBounds",
+            previewOverlayBounds.top < miniArtworkBounds.top - 100f,
+        )
+
+        // Freeze the Compose clock at the route handoff so the assertion sees the first committed
+        // frame, before the 250ms settle animation can hide a one-frame jump.
+        composeRule.mainClock.autoAdvance = false
+        composeRule.onNodeWithTag("mini-player-body").performTouchInput { up() }
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                composeRule.onAllNodesWithTag("mini-player-artwork-transition-overlay")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+
+        val committedOverlayBounds = composeRule.onNodeWithTag("mini-player-artwork-transition-overlay")
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "committing the preview must not reset the artwork overlay to the mini-player source: mini=$miniArtworkBounds preview=$previewOverlayBounds committed=$committedOverlayBounds",
+            kotlin.math.abs(committedOverlayBounds.top - miniArtworkBounds.top) > 100f,
+        )
+        assertTrue(
+            "the first committed frame must continue from the preview position without a coordinate jump: preview=$previewOverlayBounds committed=$committedOverlayBounds",
+            kotlin.math.abs(committedOverlayBounds.top - previewOverlayBounds.top) < 80f,
+        )
+
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitUntil(timeoutMillis = 10_000) {
+            navController.currentDestination?.route == AppDestination.FULL_SCREEN_PLAYER.route &&
+                composeRule.onAllNodesWithTag("mini-player-artwork-transition-overlay")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isEmpty() &&
+                composeRule.onAllNodesWithTag("full-screen-player-root")
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+        }
+        composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
+    }
+
+    @Test
     fun miniPlayerPullUpCrossingThresholdContinuesIntoFullScreenPlayer() {
         launchNavigation()
         val windowHeightPx = composeRule.activity.window.decorView.height.toFloat()
@@ -435,6 +622,13 @@ class FullScreenPlayerNavigationUiTest {
         assertEquals("threshold handoff finishes at the real window top without a scale-open phase", 0f, motionBounds.top, 2f)
         composeRule.onNodeWithTag("full-screen-player-root").assertIsDisplayed()
         composeRule.onAllNodesWithTag("root-navigation-bar").assertCountEquals(0)
+    }
+
+    private fun assertRectEquals(expected: Rect, actual: Rect, context: String = "") {
+        assertEquals("left edge: $context expected=$expected actual=$actual", expected.left, actual.left, 2f)
+        assertEquals("top edge: $context expected=$expected actual=$actual", expected.top, actual.top, 2f)
+        assertEquals("right edge: $context expected=$expected actual=$actual", expected.right, actual.right, 2f)
+        assertEquals("bottom edge: $context expected=$expected actual=$actual", expected.bottom, actual.bottom, 2f)
     }
 
     @Test

@@ -9,6 +9,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
@@ -30,6 +31,7 @@ import io.github.qyxx2.mpdserver.remote.ui.theme.MpdServerRemoteTheme
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Rule
@@ -40,7 +42,7 @@ class QueueReorderUiTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun pendingLongPressDragSubmitsOneOccurrencePutAndWaitsForCanonicalReadback() {
+    fun pendingHandleDragStartsAfterTouchSlopWithoutLongPress() {
         val application = composeRule.activity.application as MpdServerRemoteApplication
         val state = snapshotState()
         val submitted = mutableListOf<MutationIntent>()
@@ -58,9 +60,8 @@ class QueueReorderUiTest {
 
         composeRule.onNodeWithTag("queue-row-drag-handle-pending-b", useUnmergedTree = true).performTouchInput {
             down(center)
-            advanceEventTime(700)
             moveBy(Offset(0f, upwardDelta))
-            advanceEventTime(120)
+            advanceEventTime(80)
             up()
         }
         composeRule.waitForIdle()
@@ -80,6 +81,95 @@ class QueueReorderUiTest {
     }
 
     @Test
+    fun stationaryHandleTouchDoesNotCreateReorder() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val submitted = mutableListOf<MutationIntent>()
+        launchQueue(application, snapshotState(), submitted)
+
+        composeRule.onNodeWithTag("queue-row-drag-handle-pending-b", useUnmergedTree = true).performTouchInput {
+            down(center)
+            advanceEventTime(180)
+            up()
+        }
+        composeRule.waitForIdle()
+
+        assertTrue("a stationary handle touch must not submit a reorder", submitted.none { it.method == "PUT" })
+    }
+
+    @Test
+    fun ordinaryRowTapStillPlaysWithoutStartingDrag() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val submitted = mutableListOf<MutationIntent>()
+        launchQueue(application, snapshotState(), submitted)
+
+        composeRule.onNodeWithTag("queue-row-pending-b").performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(1, submitted.size)
+        assertEquals("POST", submitted.single().method)
+        assertEquals("/api/playback/queue/items/pending-b/play", submitted.single().path)
+    }
+
+    @Test
+    fun dragGhostTracksMeasuredSourceBoundsAndShowsEligibleInsertionTarget() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val submitted = mutableListOf<MutationIntent>()
+        launchQueue(application, snapshotState(), submitted)
+
+        val source = composeRule.onNodeWithTag("queue-row-pending-b").fetchSemanticsNode().boundsInRoot
+        val target = composeRule.onNodeWithTag("queue-row-pending-a").fetchSemanticsNode().boundsInRoot
+        val handle = composeRule.onNodeWithTag("queue-row-drag-handle-pending-b", useUnmergedTree = true)
+        handle.performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + target.center.y - source.center.y), 120L)
+        }
+        composeRule.waitForIdle()
+        val ghost = composeRule.onNodeWithTag("queue-drag-ghost-pending-b")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("drag proxy width must equal the measured source row", source.width, ghost.width, 1f)
+        assertEquals("drag proxy height must equal the measured source row", source.height, ghost.height, 1f)
+        assertEquals("drag proxy center must track the pointer's final position across touch slop", target.center.y, ghost.center.y, 1f)
+        composeRule.onNodeWithTag("queue-row-drop-target-pending-a").assertExists()
+        handle.performTouchInput { up() }
+        composeRule.waitForIdle()
+
+        assertEquals(1, submitted.size)
+        assertEquals("pending-b", submitted.single().path.substringAfterLast('/'))
+        assertEquals(
+            "pending-a",
+            JsonConfiguration.json.parseToJsonElement(submitted.single().payload!!).jsonObject
+                .getValue("before_queue_item_id").jsonPrimitive.contentOrNull,
+        )
+    }
+
+    @Test
+    fun dropBelowLastPendingRowUsesAppendSemantics() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val submitted = mutableListOf<MutationIntent>()
+        launchQueue(application, snapshotState(), submitted)
+
+        val source = composeRule.onNodeWithTag("queue-row-pending-a").fetchSemanticsNode().boundsInRoot
+        val lastPending = composeRule.onNodeWithTag("queue-row-pending-c").fetchSemanticsNode().boundsInRoot
+        val handle = composeRule.onNodeWithTag("queue-row-drag-handle-pending-a", useUnmergedTree = true)
+        handle.performTouchInput {
+            down(center)
+            moveTo(Offset(center.x, center.y + lastPending.bottom + 12f - source.top), 140L)
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("queue-row-drop-at-end-pending-c").assertExists()
+        handle.performTouchInput { up() }
+        composeRule.waitForIdle()
+
+        assertEquals(1, submitted.size)
+        assertEquals("/api/playback/queue/items/pending-a", submitted.single().path)
+        assertEquals(
+            null,
+            JsonConfiguration.json.parseToJsonElement(submitted.single().payload!!).jsonObject
+                .getValue("before_queue_item_id").jsonPrimitive.contentOrNull,
+        )
+    }
+
+    @Test
     fun floatingDragGhostRendersWhiteMaskAndTracksItsOffset() {
         val occurrence = QueueItemDto(
             queueItemId = "ghost-item",
@@ -95,6 +185,7 @@ class QueueReorderUiTest {
                         occurrence = occurrence,
                         cacheEntry = null,
                         rowHeight = 92.dp,
+                        rowWidth = 320.dp,
                         modifier = Modifier.offset { IntOffset(24, 40) },
                     )
                 }
@@ -107,6 +198,7 @@ class QueueReorderUiTest {
         assertEquals("floating proxy must retain the assigned horizontal offset", 24f, ghost.left, 1f)
         assertEquals("floating proxy must retain the assigned vertical offset", 40f, ghost.top, 1f)
         assertTrue("proxy must have a stable row-sized touch-independent surface", ghost.height >= 90f)
+        assertEquals("proxy uses the source row width instead of the viewport width", with(composeRule.density) { 320.dp.toPx() }, ghost.width, 1f)
     }
 
     @Test
@@ -122,9 +214,8 @@ class QueueReorderUiTest {
             .fetchSemanticsNode().boundsInRoot.center
         composeRule.onNodeWithTag("queue-row-drag-handle-pending-b", useUnmergedTree = true).performTouchInput {
             down(center)
-            advanceEventTime(700)
             moveBy(Offset(0f, targetCenter.y - sourceCenter.y - 8f))
-            advanceEventTime(100)
+            advanceEventTime(80)
             cancel()
         }
         composeRule.waitForIdle()

@@ -3,7 +3,9 @@ package io.github.qyxx2.mpdserver.remote.ui.navigation
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performSemanticsAction
@@ -137,6 +139,53 @@ class AppNavigationUiTest {
             )
         }
         composeRule.waitForIdle()
+    }
+
+    private fun routeBoundsOrNull(tag: String): androidx.compose.ui.geometry.Rect? =
+        composeRule.onAllNodesWithTag(tag)
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+            .firstOrNull()
+            ?.boundsInRoot
+
+    @Test
+    fun ordinaryRoutesNavigateImmediatelyWithoutSlideOrFade() {
+        launchNavigation()
+
+        composeRule.runOnIdle { navController.navigate(AppDestination.SEARCH.route) }
+        composeRule.waitForIdle()
+        val searchBounds = requireNotNull(routeBoundsOrNull("search-screen"))
+
+        composeRule.runOnIdle { navController.navigate(AppDestination.LIBRARY.route) }
+        composeRule.waitForIdle()
+        val libraryBounds = requireNotNull(routeBoundsOrNull("library-root-screen"))
+        assertEquals("the incoming page must occupy its final position immediately", searchBounds.left, libraryBounds.left, 1.5f)
+        assertTrue("the outgoing page must not remain during a transition", routeBoundsOrNull("search-screen") == null)
+
+        composeRule.runOnIdle { assertTrue(navController.popBackStack()) }
+        composeRule.waitForIdle()
+        val returnedSearchBounds = requireNotNull(routeBoundsOrNull("search-screen"))
+        assertEquals("pop navigation must also be immediate", libraryBounds.left, returnedSearchBounds.left, 1.5f)
+        assertTrue("the popped page must not remain during a transition", routeBoundsOrNull("library-root-screen") == null)
+    }
+
+    @Test
+    fun ordinaryDestinationsUseOpaquePageSurfaces() {
+        launchNavigation()
+        val homeSurface = composeRule.onNodeWithTag("opaque-route-surface").captureToImage().toPixelMap()
+        assertEquals("the Home destination must paint a fully opaque page background", 1f, homeSurface[0, 0].alpha, 0.001f)
+
+        composeRule.runOnIdle { navController.navigate(AppDestination.SEARCH.route) }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("opaque-route-surface").assertIsDisplayed()
+        val searchSurface = composeRule.onNodeWithTag("opaque-route-surface").captureToImage().toPixelMap()
+        assertEquals("the Search destination must paint over the outgoing page", 1f, searchSurface[0, 0].alpha, 0.001f)
+        composeRule.onAllNodesWithTag("opaque-route-surface").assertCountEquals(1)
+
+        composeRule.runOnIdle { navController.navigate(AppDestination.LIBRARY.route) }
+        composeRule.waitForIdle()
+        val librarySurface = composeRule.onNodeWithTag("opaque-route-surface").captureToImage().toPixelMap()
+        assertEquals("the Library destination must paint over the outgoing page", 1f, librarySurface[0, 0].alpha, 0.001f)
+        composeRule.onAllNodesWithTag("opaque-route-surface").assertCountEquals(1)
     }
 
     @Test

@@ -44,6 +44,17 @@ internal object MiniPlayerExpansionPolicy {
     /** A quick upward flick may enter the Player before the distance threshold is reached. */
     const val UPWARD_FLING_THRESHOLD_DP_PER_SECOND = 1000f
 
+    fun rootBackdropScrimAlpha(
+        entryProgress: Float,
+        dismissProgress: Float = 0f,
+        maximumAlpha: Float = 1f,
+    ): Float {
+        val progress = entryProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        val dismissal = dismissProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        val maximum = maximumAlpha.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
+        return progress * (1f - dismissal) * maximum
+    }
+
     fun shouldExpand(
         upwardDistancePx: Float,
         windowHeightPx: Float,
@@ -83,10 +94,11 @@ internal object FullScreenPlayerDismissPolicy {
         return blur * entry * (1f - dragProgress(offsetPx, screenHeightPx))
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun topCornerRadiusDp(entryProgress: Float, offsetPx: Float, screenHeightPx: Float): Float {
-        val entry = entryProgress.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 0f
         val progress = dragProgress(offsetPx, screenHeightPx)
-        val entryRadius = 14f * (1f - entry)
+        // The Player remains a rounded sheet even at rest; only a downward pull increases the radius.
+        val entryRadius = 16f
         val dragRadius = 32f * (progress / 0.12f).coerceIn(0f, 1f)
         return maxOf(entryRadius, dragRadius)
     }

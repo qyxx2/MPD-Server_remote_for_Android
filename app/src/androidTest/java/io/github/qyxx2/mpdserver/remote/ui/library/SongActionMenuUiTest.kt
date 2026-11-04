@@ -87,7 +87,10 @@ class SongActionMenuUiTest {
                 .assertIsDisplayed()
         }
         val labels = listOf("play_now", "play_next", "add_to_queue", "favorite").map { action ->
-            composeRule.onNodeWithTag("song-action-label-$action-song-a").fetchSemanticsNode().boundsInRoot
+            composeRule.onNodeWithTag(
+                "song-action-label-$action-song-a",
+                useUnmergedTree = true,
+            ).fetchSemanticsNode().boundsInRoot
         }
         val labelLefts = labels.map { it.left }
         assertTrue("All menu labels must share one left edge", labelLefts.maxOrNull()!! - labelLefts.minOrNull()!! < 1f)
@@ -279,6 +282,7 @@ class SongActionMenuUiTest {
                 AnchoredSongActionMenu(
                     menuKey = "song-a",
                     enabled = true,
+                    modifier = Modifier.align(Alignment.Center),
                     onAction = onAction,
                     onFavorite = onFavorite,
                     content = { Text("Song A") },

@@ -13,7 +13,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -29,7 +39,28 @@ fun ArtworkStage(
     modifier: Modifier = Modifier,
     dismissGestureModifier: Modifier = Modifier,
     onTap: (() -> Unit)? = null,
+    artworkVisible: Boolean = true,
+    onArtworkBoundsChanged: (boundsOnScreen: Rect) -> Unit = {},
 ) {
+    var artworkCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val currentArtworkCoordinates = artworkCoordinates
+    SideEffect {
+        currentArtworkCoordinates?.let { coordinates ->
+            // BoxWithConstraints may report an initial zero-sized layout before real window
+            // constraints arrive. Such a rectangle is not a usable transition anchor.
+            if (coordinates.size.width <= 0 || coordinates.size.height <= 0) return@SideEffect
+            val origin = coordinates.positionOnScreen()
+            if (!origin.x.isFinite() || !origin.y.isFinite()) return@SideEffect
+            onArtworkBoundsChanged(
+                Rect(
+                    left = origin.x,
+                    top = origin.y,
+                    right = origin.x + coordinates.size.width,
+                    bottom = origin.y + coordinates.size.height,
+                ),
+            )
+        }
+    }
     BoxWithConstraints(modifier = modifier.fillMaxSize().testTag("player-artwork-bounds")) {
         val artworkSide = calculateArtworkSideDp(
             availableWidthDp = maxWidth.value,
@@ -40,8 +71,11 @@ fun ArtworkStage(
                 .size(artworkSide)
                 .align(Alignment.Center)
                 .then(dismissGestureModifier)
+                // The visibility layer must enclose the background as well as the artwork image.
+                .graphicsLayer { alpha = if (artworkVisible) 1f else 0f }
                 .clip(RoundedCornerShape(18.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
+                .onGloballyPositioned { artworkCoordinates = it }
                 .clickable(enabled = onTap != null) { onTap?.invoke() }
                 .testTag("player-artwork-stage"),
             contentAlignment = Alignment.Center,

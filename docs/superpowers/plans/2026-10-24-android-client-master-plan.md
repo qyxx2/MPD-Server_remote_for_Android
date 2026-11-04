@@ -228,6 +228,8 @@
 
 **目标：** 将所有功能作为一个应用验证，修复跨页面、实时状态、后台生命周期和设备适配问题，按 Task 0 的方案验证交付产物。
 
+**专项子范围（2026-11-02）：** 已在 `feature/task-8-player-interaction-polish` 建立 Player/Queue 交互与视觉打磨工作流；设计已批准，合同矩阵见 [Task 8 合同矩阵](../specs/2026-11-02-task-8-contract-matrix.md)，B0–B5 计划见 [Task 8 UI-polish 实施计划](2026-11-02-task-8-player-interaction-polish.md)。当前仅完成设计/计划文档，产品代码尚未开始修改。该专项不替代 Task 7 Batch 4 实机锁屏验收；Task 7 与本 Task 总退出门仍保持未完成。
+
 **合同矩阵起点：** 四份权威规格全部相关章节；Task 0 的环境/统一签名/本地交付合同；Task 1–7 已冻结且已通过的 Task 合同。
 
 **机器验证：** 完整本地构建、单元/协议/UI 测试、Lint、APK 签名/包名检查；验证统一签名和重复构建的一致性。当前不要求 CI artifact 或远端发布构建。

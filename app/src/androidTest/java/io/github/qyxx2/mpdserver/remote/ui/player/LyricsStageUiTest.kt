@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.longClick
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -304,7 +306,70 @@ class LyricsStageUiTest {
         val cueNode = composeRule.onNodeWithTag("lyrics-cue-active").fetchSemanticsNode()
         val description = cueNode.config.getOrNull(SemanticsProperties.ContentDescription)
             .orEmpty().joinToString(" ")
-        assertTrue("the full cue remains accessible while its second visual line scrolls", description.contains(longCue))
+        assertTrue("the complete cue remains accessible while its visual presentation is capped at two lines", description.contains(longCue))
+    }
+
+    @Test
+    fun overlongSecondLineRemainsStaticAndEllipsized() {
+        val longCue = "超长歌词内容".repeat(45)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song("[00:01]$longCue"),
+                    resourceIdentity = "static-ellipsis-second-line",
+                    positionSeconds = 1.5,
+                    durationSeconds = 120.0,
+                    seekEnabled = false,
+                    onSeek = {},
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val secondLine = composeRule.onNodeWithTag("lyrics-cue-second-line", useUnmergedTree = true)
+        val before = secondLine.captureToImage().toPixelMap()
+        composeRule.mainClock.advanceTimeBy(1_500L)
+        composeRule.waitForIdle()
+        val after = composeRule.onNodeWithTag("lyrics-cue-second-line", useUnmergedTree = true).captureToImage().toPixelMap()
+        assertEquals(before.width, after.width)
+        assertEquals(before.height, after.height)
+        for (x in 0 until before.width) {
+            for (y in 0 until before.height) {
+                assertEquals("second-line pixels must not move over time", before[x, y], after[x, y])
+            }
+        }
+    }
+
+    @Test
+    fun timedCueStillSeeksAndFollowsCurrentLine() {
+        var positionSeconds by mutableStateOf<Double?>(1.5)
+        var sought: Double? = null
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song("[00:01]第一行\n[00:05]第二行"),
+                    resourceIdentity = "seek-and-follow-current-line",
+                    positionSeconds = positionSeconds,
+                    durationSeconds = 120.0,
+                    seekEnabled = true,
+                    onSeek = { sought = it },
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("lyrics-cue-1").performClick()
+        composeRule.runOnIdle { assertEquals(5.0, sought!!, 0.0001) }
+
+        composeRule.runOnIdle { positionSeconds = 5.5 }
+        composeRule.waitForIdle()
+        val activeDescription = composeRule.onNodeWithTag("lyrics-cue-active")
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.ContentDescription)
+            .orEmpty().joinToString(" ")
+        assertTrue("the active cue must follow the updated playback position", activeDescription.contains("第二行"))
     }
 
     @Test
