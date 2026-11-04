@@ -139,11 +139,12 @@ Android 只负责：
 
 ### 5.3 尺寸、摆放与动效
 
-- 面板宽度以可用窗口宽度的 92% 为基准，最大 520dp、最小 296dp，并保留至少 16dp 水平安全边距；392dp 参考宽度下约 360dp。
-- 内容仅两行，每行保持单行布局；面板目标总高度约 88–108dp，按字体缩放和无障碍需求允许自然增加，不允许信息被裁切。
-- 表面采用现有主题语义色、弹窗 surface/elevation 体系和圆角语言；避免厚重卡片边框。浅色/深色主题都要保持文字、状态点、图标和滑块轨道可读。
-- 沿用现有 MotionAlertDialog 的全窗口 modal 布局和 surface 放置方式，面板在可用内容区域居中；DAC 图标的实测屏幕坐标仅用于计算展开/收回 transform origin，不另造一套弹窗位置策略。
-- 使用 Task 8 已交付的共享 `PopupMotionHost` / `PopupMotionAnchorState`：180ms、scale 0.82→1、alpha 0→1，关闭时反向播放，origin 由实测触发控件/面板 bounds 计算。复用现有弹窗 scrim 和 surface 风格，不另造一套动画。
+- 面板宽度按内容自然展开：最小 200dp，最大不超过可用窗口的 92% / 520dp，并保留至少 16dp 水平安全边距；只含 DAC 名称/状态时应明显短于带完整采样格式信息的面板，长文本在最大宽度内单行省略。
+- 内容仅两行，每行保持单行布局；面板目标总高度约 76–90dp，按字体缩放和无障碍需求允许自然增加，不允许信息被裁切。
+- 音量条采用精简进度条外观，约 4dp 轨道、圆角填充，不使用传统大圆形 thumb；B4 只读/禁用，后续启用拖动时继续沿用精简轨道视觉。
+- 表面采用现有主题语义色、弹窗 surface/elevation 体系和圆角语言；避免厚重卡片边框。浅色/深色主题都要保持文字、状态点、图标和音量轨道可读。
+- 面板锚定 DAC 按钮上方，优先对齐按钮起始边缘；空间不足时按共享 AnchoredDropdownPositionProvider 回退为末端对齐；依据按钮与弹窗宿主的实测屏幕坐标计算位置，遵守安全 Insets 和 16dp 边距。上方空间确实不足时才回退到按钮下方，不得放回屏幕中央。
+- 弹窗宿主与队列条目三点菜单保持一致：使用 attached `Popup`、共享 `AnchoredDropdownPositionProvider`、`PopupProperties(focusable = true, dismissOnBackPress = true, dismissOnClickOutside = true)`；不得采用全窗口 Dialog，也不以清空待播确认弹窗为参考。使用 Task 8 已交付的共享 `PopupMotionHost` / `PopupMotionAnchorState`：180ms、scale 0.82→1、alpha 0→1，关闭时反向播放，origin 由实测触发控件/面板 bounds 计算。Popup 不暗化背景，不添加全窗口透明拦截层；其他 MotionAlertDialog 调用保持原状。
 - 动画结束前保留内容宿主；Back、外部点击、再次点击入口和无障碍关闭动作都只触发一次 dismiss。
 
 ### 5.4 可访问性

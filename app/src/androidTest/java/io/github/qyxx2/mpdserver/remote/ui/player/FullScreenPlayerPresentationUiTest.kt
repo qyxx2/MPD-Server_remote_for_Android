@@ -1,21 +1,40 @@
 package io.github.qyxx2.mpdserver.remote.ui.player
 
+import android.os.SystemClock
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.github.qyxx2.mpdserver.remote.MpdServerRemoteApplication
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapability
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityStatus
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAlphaKey
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionScaleKey
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
+import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.ui.theme.MpdServerRemoteTheme
 import io.github.qyxx2.mpdserver.remote.ui.theme.ThemePreference
 import org.junit.Assert.assertEquals
@@ -195,6 +214,370 @@ class FullScreenPlayerPresentationUiTest {
             ),
             entityRequest,
         )
+    }
+
+    @Test
+    fun dacActionOpensCompactTwoRowPanelWithReadOnlyVolumePlaceholder() {
+        val application = composeRule.activity.application as MpdServerRemoteApplication
+        val base = testPresentation()
+        val presentation = base.copy(
+            output = OutputPresentation(
+                observationStatus = OutputObservationStatus.FRESH,
+                dacStatus = DacOutputStatus.ACTIVE,
+                dacFormat = "pcm",
+                dacSampleRateHz = 44100,
+                dacBitDepth = 16,
+                dacChannels = 2,
+                errorCode = null,
+                errorMessage = null,
+                diagnostics = emptyList(),
+            ),
+        )
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                FullScreenPlayerScreen(
+                    runtime = application.runtime,
+                    presentation = presentation,
+                    onExit = {},
+                    onOpenQueue = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("player-bottom-output").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-output-info").assertIsDisplayed()
+        composeRule.onNodeWithText("DAC · PCM · 44.1 kHz · 16 bit · 2 ch").assertIsDisplayed()
+        composeRule.onNodeWithText("已启用").assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-volume-row").assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-volume-slider").assertIsNotEnabled()
+        composeRule.onNodeWithTag("dac-volume-value").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("player-output-details", useUnmergedTree = true).assertCountEquals(0)
+        val popupSurface = composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true)
+        val popupSemantics = popupSurface.fetchSemanticsNode().config
+        assertEquals(1f, popupSemantics[PopupMotionAlphaKey], 0.001f)
+        assertEquals(1f, popupSemantics[PopupMotionScaleKey], 0.001f)
+
+        val density = composeRule.activity.resources.displayMetrics.density
+        val surfaceNode = composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true)
+            .fetchSemanticsNode()
+        val surface = surfaceNode.boundsInRoot
+        val rootNode = composeRule.onNodeWithTag("full-screen-player-root").fetchSemanticsNode()
+        val triggerNode = composeRule.onNodeWithTag("player-bottom-output").fetchSemanticsNode()
+        val surfaceScreen = surfaceNode.layoutInfo.coordinates.positionOnScreen()
+        val triggerScreen = triggerNode.layoutInfo.coordinates.positionOnScreen()
+        val triggerSize = triggerNode.layoutInfo.coordinates.size
+        val rootScreen = rootNode.layoutInfo.coordinates.positionOnScreen()
+        val surfaceSize = surfaceNode.layoutInfo.coordinates.size
+        val rootSize = rootNode.layoutInfo.coordinates.size
+        val widthDp = surface.width / density
+        val volumeTrack = composeRule.onNodeWithTag("dac-volume-slider").fetchSemanticsNode().boundsInRoot
+        assertTrue("DAC panel should size to its information instead of always using a wide dialog", widthDp < 360f)
+        assertTrue("DAC panel must not exceed 520dp", widthDp <= 520f)
+        assertTrue("DAC panel must keep at least 16dp horizontal safe margin", (surfaceScreen.x - rootScreen.x) / density >= 16f)
+        assertTrue("DAC panel must keep at least 16dp horizontal safe margin", (rootScreen.x + rootSize.width - surfaceScreen.x - surfaceSize.width) / density >= 16f)
+        assertTrue(
+            "DAC panel must sit above the DAC trigger; panelScreen=$surfaceScreen size=${surfaceNode.layoutInfo.coordinates.size} triggerScreen=$triggerScreen",
+            surfaceScreen.y + surfaceNode.layoutInfo.coordinates.size.height < triggerScreen.y,
+        )
+        val startEdgeDelta = abs(surfaceScreen.x - triggerScreen.x)
+        val endEdgeDelta = abs(surfaceScreen.x + surfaceSize.width - triggerScreen.x - triggerSize.width)
+        assertTrue(
+            "DAC popup should align to the trigger after accounting for attached-popup shadow insets: surface=$surfaceScreen size=$surfaceSize trigger=$triggerScreen size=$triggerSize startDelta=$startEdgeDelta endDelta=$endEdgeDelta",
+            minOf(startEdgeDelta, endEdgeDelta) / density <= 16f,
+        )
+        assertTrue("volume control must look like a thin progress bar", volumeTrack.height / density <= 8f)
+
+        // Match QueueRowMenu's focusable Popup dismissal contract.
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag("player-dac-volume-panel", useUnmergedTree = true).assertCountEquals(0)
+
+        composeRule.onNodeWithTag("player-bottom-output").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true).assertIsDisplayed()
+        val outsideX = rootScreen.x + 8f * density
+        val outsideY = rootScreen.y + rootSize.height * 0.5f
+        val downTime = SystemClock.uptimeMillis()
+        val outsideDown = MotionEvent.obtain(
+            downTime, downTime, MotionEvent.ACTION_DOWN, outsideX, outsideY, 0,
+        )
+        val outsideUp = MotionEvent.obtain(
+            downTime, downTime + 60L, MotionEvent.ACTION_UP, outsideX, outsideY, 0,
+        )
+        try {
+            instrumentation.uiAutomation.injectInputEvent(outsideDown, true)
+            instrumentation.uiAutomation.injectInputEvent(outsideUp, true)
+        } finally {
+            outsideDown.recycle()
+            outsideUp.recycle()
+        }
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag("player-dac-volume-panel", useUnmergedTree = true).assertCountEquals(0)
+
+        composeRule.onNodeWithTag("player-bottom-output").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("player-bottom-output").performClick()
+        composeRule.waitForIdle()
+        composeRule.onAllNodesWithTag("player-dac-volume-panel", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun compactPanelWidthExpandsOnlyWhenFreshOutputFieldsNeedMoreSpace() {
+        val anchor = PopupMotionAnchorState().apply {
+            update(PopupMotionAnchorKind.OWNER, Rect(0f, 0f, 1080f, 2400f))
+            update(PopupMotionAnchorKind.TRIGGER, Rect(510f, 1700f, 570f, 1760f))
+        }
+        val minimalOutput = OutputPresentation(
+            observationStatus = OutputObservationStatus.FRESH,
+            dacStatus = DacOutputStatus.UNKNOWN,
+            dacFormat = null,
+            dacSampleRateHz = null,
+            dacBitDepth = null,
+            dacChannels = null,
+            errorCode = null,
+            errorMessage = null,
+            diagnostics = emptyList(),
+        )
+        val outputState = mutableStateOf(minimalOutput)
+        val capability = HardwareVolumeCapability(
+            status = HardwareVolumeCapabilityStatus.UNKNOWN,
+            displayVolumePercent = null,
+            controllableVolumePercent = null,
+            canWrite = false,
+            diagnostics = emptySet(),
+            decodeDiagnostics = emptyList(),
+        )
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.LIGHT) {
+                CompactDacPanelPopup(
+                    output = outputState.value,
+                    hardwareVolume = capability,
+                    visible = true,
+                    onDismiss = {},
+                    anchorState = anchor,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        val compactWidth = composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.width
+
+        composeRule.runOnIdle {
+            outputState.value = minimalOutput.copy(
+                dacStatus = DacOutputStatus.ACTIVE,
+                dacFormat = "pcm",
+                dacSampleRateHz = 192000,
+                dacBitDepth = 24,
+                dacChannels = 2,
+            )
+        }
+        composeRule.waitForIdle()
+        val detailedWidth = composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.width
+        assertTrue("sparse output information should produce a shorter panel", detailedWidth > compactWidth + 40f)
+    }
+
+    @Test
+    fun staleDacOutputMetadataIsNeverPresentedAsCurrentOutput() {
+        val anchor = PopupMotionAnchorState().apply {
+            update(PopupMotionAnchorKind.OWNER, Rect(0f, 0f, 1080f, 2400f))
+            update(PopupMotionAnchorKind.TRIGGER, Rect(510f, 1700f, 570f, 1760f))
+        }
+        val output = OutputPresentation(
+            observationStatus = OutputObservationStatus.STALE,
+            dacStatus = DacOutputStatus.STALE,
+            dacFormat = "pcm",
+            dacSampleRateHz = 96000,
+            dacBitDepth = 24,
+            dacChannels = 2,
+            errorCode = null,
+            errorMessage = null,
+            diagnostics = emptyList(),
+        )
+        val capability = HardwareVolumeCapability(
+            status = HardwareVolumeCapabilityStatus.UNKNOWN,
+            displayVolumePercent = null,
+            controllableVolumePercent = null,
+            canWrite = false,
+            diagnostics = emptySet(),
+            decodeDiagnostics = emptyList(),
+        )
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.LIGHT) {
+                CompactDacPanelPopup(
+                    output = output,
+                    hardwareVolume = capability,
+                    visible = true,
+                    onDismiss = {},
+                    anchorState = anchor,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("dac-output-info").assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-output-format").assertTextEquals("DAC")
+        composeRule.onAllNodesWithText("PCM").assertCountEquals(0)
+        composeRule.onAllNodesWithText("96 kHz").assertCountEquals(0)
+        composeRule.onAllNodesWithText("24 bit").assertCountEquals(0)
+        composeRule.onAllNodesWithText("2 ch").assertCountEquals(0)
+        composeRule.onNodeWithText("已过期").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactPanelKeepsTwoRowsAndSafeMarginsWithLargerSystemFontScale() {
+        val anchor = PopupMotionAnchorState().apply {
+            update(PopupMotionAnchorKind.OWNER, Rect(0f, 0f, 1080f, 2400f))
+            update(PopupMotionAnchorKind.TRIGGER, Rect(510f, 1700f, 570f, 1760f))
+        }
+        val output = OutputPresentation(
+            observationStatus = OutputObservationStatus.FRESH,
+            dacStatus = DacOutputStatus.ACTIVE,
+            dacFormat = "pcm",
+            dacSampleRateHz = 192000,
+            dacBitDepth = 24,
+            dacChannels = 2,
+            errorCode = null,
+            errorMessage = null,
+            diagnostics = emptyList(),
+        )
+        val capability = HardwareVolumeCapability(
+            status = HardwareVolumeCapabilityStatus.UNKNOWN,
+            displayVolumePercent = null,
+            controllableVolumePercent = null,
+            canWrite = false,
+            diagnostics = emptySet(),
+            decodeDiagnostics = emptyList(),
+        )
+        val baseDensity = composeRule.activity.resources.displayMetrics.density
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(baseDensity, fontScale = 1.35f)) {
+                MpdServerRemoteTheme(themePreference = ThemePreference.LIGHT) {
+                    CompactDacPanelPopup(
+                        output = output,
+                        hardwareVolume = capability,
+                        visible = true,
+                        onDismiss = {},
+                        anchorState = anchor,
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("dac-output-info").assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-volume-row").assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals("—")
+        val density = baseDensity
+        val panelNode = composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true).fetchSemanticsNode()
+        val panel = panelNode.boundsInRoot
+        val panelScreen = panelNode.layoutInfo.coordinates.positionOnScreen()
+        val panelSize = panelNode.layoutInfo.coordinates.size
+        val outputRow = composeRule.onNodeWithTag("dac-output-info").fetchSemanticsNode().boundsInRoot
+        val volumeRow = composeRule.onNodeWithTag("dac-volume-row").fetchSemanticsNode().boundsInRoot
+        val outputText = composeRule.onNodeWithTag("dac-output-format").fetchSemanticsNode().boundsInRoot
+        val root = composeRule.activity.window.decorView
+        val rootLocation = IntArray(2)
+        root.getLocationOnScreen(rootLocation)
+        val rootWidthDp = root.width / density
+        val effectiveMaxWidthDp = minOf(rootWidthDp * 0.92f, 520f, (rootWidthDp - 96f).coerceAtLeast(200f))
+        assertTrue("scaled DAC panel remains wide enough for a usable compact volume track", panel.width / density >= 200f)
+        assertTrue("scaled DAC panel remains no wider than its safe width policy", panel.width / density <= effectiveMaxWidthDp + 1f)
+        assertTrue("scaled panel keeps horizontal safety margins", (panelScreen.x - rootLocation[0]) / density >= 16f)
+        assertTrue("scaled panel keeps horizontal safety margins", (rootLocation[0] + root.width - panelScreen.x - panelSize.width) / density >= 16f)
+        assertTrue("DAC information remains a single bounded row", outputRow.height / density <= 40f)
+        assertTrue("volume remains a separate second row", volumeRow.top >= outputRow.bottom)
+        assertTrue("output text remains inside its row under font scaling", outputText.top >= outputRow.top && outputText.bottom <= outputRow.bottom)
+    }
+
+    @Test
+    fun compactPanelDisplaysConfirmedDigitsOmitsUnknownFieldsAndMapsOutputStates() {
+        val anchor = PopupMotionAnchorState().apply {
+            update(PopupMotionAnchorKind.OWNER, Rect(0f, 0f, 1080f, 2400f))
+            update(PopupMotionAnchorKind.TRIGGER, Rect(510f, 1700f, 570f, 1760f))
+        }
+        val output = OutputPresentation(
+            observationStatus = OutputObservationStatus.FRESH,
+            dacStatus = DacOutputStatus.INACTIVE,
+            dacFormat = null,
+            dacSampleRateHz = null,
+            dacBitDepth = null,
+            dacChannels = null,
+            errorCode = null,
+            errorMessage = null,
+            diagnostics = emptyList(),
+        )
+        val outputState = mutableStateOf(output)
+        val capability = HardwareVolumeCapability(
+            status = HardwareVolumeCapabilityStatus.AVAILABLE,
+            displayVolumePercent = 72,
+            controllableVolumePercent = 72,
+            canWrite = true,
+            diagnostics = emptySet(),
+            decodeDiagnostics = emptyList(),
+        )
+        val capabilityState = mutableStateOf(capability)
+        val themePreference = mutableStateOf(ThemePreference.LIGHT)
+
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = themePreference.value) {
+                CompactDacPanelPopup(
+                    output = outputState.value,
+                    hardwareVolume = capabilityState.value,
+                    visible = true,
+                    onDismiss = {},
+                    anchorState = anchor,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("DAC").assertIsDisplayed()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals("72")
+        composeRule.onAllNodesWithText("72%").assertCountEquals(0)
+        composeRule.onNodeWithTag("dac-volume-slider").assertIsNotEnabled()
+        val confirmedSliderSemantics = composeRule.onNodeWithTag("dac-volume-slider").fetchSemanticsNode().config.toString()
+        assertTrue("slider accessibility should describe the confirmed value", confirmedSliderSemantics.contains("服务端确认值 72"))
+        assertTrue("a server-confirmed value should expose its real read-only slider range", confirmedSliderSemantics.contains("ProgressBarRangeInfo"))
+        composeRule.runOnIdle { themePreference.value = ThemePreference.DARK }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("player-dac-volume-panel", useUnmergedTree = true).assertIsDisplayed()
+
+        val unknownCapability = capability.copy(
+            status = HardwareVolumeCapabilityStatus.UNKNOWN,
+            displayVolumePercent = null,
+            controllableVolumePercent = null,
+            canWrite = false,
+        )
+        composeRule.runOnIdle { capabilityState.value = unknownCapability }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("dac-volume-value").assertTextEquals("—")
+        composeRule.onAllNodesWithText("0").assertCountEquals(0)
+        val unknownSliderSemantics = composeRule.onNodeWithTag("dac-volume-slider").fetchSemanticsNode().config.toString()
+        assertTrue("unknown hardware volume must be announced as unknown", unknownSliderSemantics.contains("数值未知"))
+        assertTrue("unknown hardware volume must not be exposed as a zero-valued slider", !unknownSliderSemantics.contains("ProgressBarRangeInfo"))
+
+        val statusLabels = listOf(
+            DacOutputStatus.ACTIVE to "已启用",
+            DacOutputStatus.INACTIVE to "未启用",
+            DacOutputStatus.UNAVAILABLE to "不可用",
+            DacOutputStatus.STALE to "已过期",
+            DacOutputStatus.UNKNOWN to "未知",
+            DacOutputStatus.ERROR to "错误",
+        )
+        for ((status, label) in statusLabels) {
+            composeRule.runOnIdle { outputState.value = output.copy(dacStatus = status) }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("dac-output-status").assertTextEquals(label)
+        }
     }
 
     private fun testPresentation(): PlayerPresentation {

@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 
-internal enum class PlayerGlyphKind { ALBUM, BACK, OUTPUT, NOW_PLAYING, QUEUE, PREVIOUS, PLAY, PAUSE, NEXT }
+internal enum class PlayerGlyphKind { ALBUM, BACK, OUTPUT, VOLUME, NOW_PLAYING, QUEUE, PREVIOUS, PLAY, PAUSE, NEXT }
 
 /** Small native vector glyphs avoid an added icon dependency and keep navigation distinct from play controls. */
 @Composable
@@ -41,7 +41,7 @@ internal fun PlayerGlyph(
                 drawLine(tint, tip, Offset(w * .43f, h * .31f), arrowStroke, StrokeCap.Round)
                 drawLine(tint, tip, Offset(w * .43f, h * .69f), arrowStroke, StrokeCap.Round)
             }
-            PlayerGlyphKind.OUTPUT -> drawOutputGlyph(tint, line, w, h)
+            PlayerGlyphKind.OUTPUT, PlayerGlyphKind.VOLUME -> drawOutputGlyph(tint, line, w, h)
             PlayerGlyphKind.NOW_PLAYING -> {
                 // A minimal three-bar waveform keeps the navigation mark distinct from playback controls.
                 val bars = listOf(.42f, .78f, .42f)

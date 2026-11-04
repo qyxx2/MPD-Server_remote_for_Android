@@ -54,9 +54,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.qyxx2.mpdserver.remote.protocol.dto.ActualPlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityPolicy
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
-import io.github.qyxx2.mpdserver.remote.ui.components.MotionAlertDialog
-import io.github.qyxx2.mpdserver.remote.ui.components.dialogSurfaceColor
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
@@ -196,8 +195,9 @@ fun FullScreenPlayerScreen(
         presentation.playbackStatus != ConfirmedPlaybackStatus.UNKNOWN &&
             clockSnapshot.controlsEligible && it.isFinite() && it > 0.0
     }
-    var showOutputDetails by remember { mutableStateOf(false) }
+    var showDacPanel by remember { mutableStateOf(false) }
     val outputDialogAnchorState = rememberPopupMotionAnchorState()
+    val hardwareVolumeCapability = remember(snapshotState) { HardwareVolumeCapabilityPolicy.evaluate(snapshotState) }
     // Never let a previously cached track survive a canonical identity/connection change.
     // Subscribe only inside this screen so background preload state changes never tear down or
     // replace the root NavHost before a delayed mini-player open completes.
@@ -346,7 +346,7 @@ fun FullScreenPlayerScreen(
             PlaybackControls(presentation = presentation, actions = actions)
             FullScreenBottomNavigation(
                 selectedDestination = FullScreenBottomNavigation.Destination.NOW_PLAYING,
-                onOutputClick = { showOutputDetails = true },
+                onOutputClick = { showDacPanel = !showDacPanel },
                 onNowPlayingClick = onOpenPlayer,
                 onQueueClick = onOpenQueue,
                 outputAnchorModifier = Modifier.popupMotionAnchor(outputDialogAnchorState, PopupMotionAnchorKind.TRIGGER),
@@ -354,11 +354,12 @@ fun FullScreenPlayerScreen(
             )
         }
 
-        OutputDetailsDialog(
-            presentation = presentation,
-            visible = showOutputDetails,
+        CompactDacPanelPopup(
+            output = presentation.output,
+            hardwareVolume = hardwareVolumeCapability,
+            visible = showDacPanel,
             anchorState = outputDialogAnchorState,
-            onDismiss = { showOutputDetails = false },
+            onDismiss = { showDacPanel = false },
         )
     }
 }
@@ -808,55 +809,4 @@ private fun PlaybackControls(
             )
         }
     }
-}
-
-@Composable
-internal fun OutputDetailsDialog(
-    presentation: PlayerPresentation,
-    onDismiss: () -> Unit,
-    visible: Boolean = true,
-    anchorState: PopupMotionAnchorState = rememberPopupMotionAnchorState(),
-) {
-    val output = presentation.output
-    val observation = when (output.observationStatus) {
-        OutputObservationStatus.FRESH -> "观察新鲜"
-        OutputObservationStatus.STALE -> "观察已过期"
-        OutputObservationStatus.UNKNOWN -> "观察状态未知"
-        OutputObservationStatus.ERROR -> "观察读取出错"
-    }
-    val status = when (output.dacStatus) {
-        DacOutputStatus.ACTIVE -> "已启用"
-        DacOutputStatus.INACTIVE -> "未启用"
-        DacOutputStatus.UNAVAILABLE -> "不可用"
-        DacOutputStatus.STALE -> "状态已过期"
-        DacOutputStatus.UNKNOWN -> "状态未知"
-        DacOutputStatus.ERROR -> "状态错误"
-    }
-    val details = buildList {
-        add("DAC：$status")
-        add("输出观察：$observation")
-        output.dacFormat?.takeIf { it.isNotBlank() }?.let { add("输出格式：$it") }
-        output.dacSampleRateHz?.takeIf { it > 0 }?.let { add("输出采样率：$it Hz") }
-        output.dacBitDepth?.takeIf { it > 0 }?.let { add("输出位深：$it bit") }
-        output.dacChannels?.takeIf { it > 0 }?.let { add("输出声道：$it") }
-        output.errorMessage?.takeIf { it.isNotBlank() }?.let(::add)
-        add("服务端显示为 ACTIVE 不代表已确认硬件发声或 bit-perfect。")
-    }
-    MotionAlertDialog(
-        visible = visible,
-        onDismissRequest = onDismiss,
-        anchorState = anchorState,
-        containerColor = dialogSurfaceColor(),
-        dialogTitle = "DAC / 输出状态",
-        modifier = Modifier.testTag("player-output-details"),
-        title = { Text("DAC / 输出状态", style = MaterialTheme.typography.headlineSmall) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                details.forEach { detail ->
-                    Text(text = detail, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("关闭") } },
-    )
 }

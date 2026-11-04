@@ -55,6 +55,7 @@ import io.github.qyxx2.mpdserver.remote.protocol.ApiResult
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueItemDto
 import io.github.qyxx2.mpdserver.remote.protocol.dto.QueueListDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
+import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityPolicy
 import io.github.qyxx2.mpdserver.remote.runtime.MutationStatus
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenBottomNavigation
@@ -62,7 +63,7 @@ import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
 import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
 import io.github.qyxx2.mpdserver.remote.ui.player.FullScreenExitGestureBand
-import io.github.qyxx2.mpdserver.remote.ui.player.OutputDetailsDialog
+import io.github.qyxx2.mpdserver.remote.ui.player.CompactDacPanelPopup
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkBackdrop
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheKey
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkCacheState
@@ -625,7 +626,7 @@ internal fun QueueScreen(
         }
     }
 
-    var showOutputDetails by remember { mutableStateOf(false) }
+    var showDacPanel by remember { mutableStateOf(false) }
     val outputDialogAnchorState = rememberPopupMotionAnchorState()
     Box(modifier = Modifier.fillMaxSize().testTag("queue-screen-root")) {
         PlayerArtworkBackdrop(
@@ -957,7 +958,7 @@ internal fun QueueScreen(
 
             FullScreenBottomNavigation(
                 selectedDestination = FullScreenBottomNavigation.Destination.QUEUE,
-                onOutputClick = { showOutputDetails = true },
+                onOutputClick = { showDacPanel = !showDacPanel },
                 onNowPlayingClick = onOpenPlayer,
                 onQueueClick = {},
                 outputAnchorModifier = Modifier.popupMotionAnchor(outputDialogAnchorState, PopupMotionAnchorKind.TRIGGER),
@@ -965,11 +966,12 @@ internal fun QueueScreen(
             )
         }
     }
-    OutputDetailsDialog(
-        presentation = presentation,
-        visible = showOutputDetails,
+    CompactDacPanelPopup(
+        output = presentation.output,
+        hardwareVolume = remember(snapshotState) { HardwareVolumeCapabilityPolicy.evaluate(snapshotState) },
+        visible = showDacPanel,
         anchorState = outputDialogAnchorState,
-        onDismiss = { showOutputDetails = false },
+        onDismiss = { showDacPanel = false },
     )
     QueueToolsDialog(
         dialog = toolDialog,

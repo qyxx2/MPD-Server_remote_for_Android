@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** Batch 0–3 已完成；Batch 4–7 尚未执行。B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+**状态：** Batch 0–4 已完成；Batch 5–7 尚未执行。B4 DAC 紧凑面板见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)；B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
@@ -138,25 +138,26 @@
 
 ## Batch 4 — DAC 紧凑弹窗与信息展示
 
+**状态：已完成。** 两行 DAC 面板替换旧 Output Details dialog，复用 SnapshotStore 音量投影；弹窗宿主直接采用队列条目三点菜单的 attached `Popup`、`AnchoredDropdownPositionProvider` 与 `PopupMotionHost`，不采用 Dialog，也不以“清空待播”确认弹窗为视觉/交互参考。面板锚定 DAC 入口上方、不暗化背景、按信息量自适应宽度，音量条采用 4dp 精简轨道。最终实机相关 instrumentation 及自动化回归证据见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)。
+
 **目标：** 用扁宽两行弹窗替换当前大型 Output Details dialog。
 
 **预期代码范围：**
 - ui/player/FullScreenPlayerScreen.kt
 - ui/player/FullScreenBottomNavigation.kt
 - 新的紧凑 DAC panel composable（如有必要）
-- ui/components/MotionAlertDialog.kt（仅当需要增加不带 title/footer padding 的 compact content slot）
 - ui/components/PopupMotion.kt 仅当现有 anchor transform 支持被证明不满足时才扩展；优先复用现有能力
 - 对应 player/popup UI tests
 
 **步骤：**
-1. 复用现有 DAC 图标及 screen-space anchor bounds；点击打开/再次点击关闭，锚点只用于 transform origin。
+1. 复用现有 DAC 图标和 screen-space anchor bounds；定位与 PopupMotion transform origin 均使用实测锚点。弹窗宿主/样式参考 `QueueRowMenu` 的三点菜单，不参考清空待播确认弹窗。
 2. 替换而不是并列新增 OutputDetailsDialog；面板只保留两行，不显示传统 title/footer。
 3. 第一行展示服务端 fresh 的 DAC 输出格式字段和简短状态；缺失字段省略，单行 ellipsis。
 4. 第二行先显示音量图标、确认纯数字/未知占位及 Slider；此批 Slider 可以保持禁用占位，交给 B5 接入控制。
-5. 设置 92% 宽度、296dp min、520dp max、16dp safe margins；沿用现有 MotionAlertDialog 全窗口居中 surface 布局，DAC icon 实测 bounds 仅用于 transform origin。
-6. 复用现有 Dialog window host、PopupMotionHost / PopupMotionAnchorState 的 180ms、0.82→1、alpha 与 transform-origin；保留现有 0.32 scrim 和 surface 样式。若 MotionAlertDialog 当前 title/footer slot 不能表达紧凑两行内容，只为它增加 compact content slot，不复制第二套 dialog host。
+5. 宽度按内容自适应，200dp min、92% 可用宽度 / 520dp max、16dp 水平安全边距；面板锚定 DAC 按钮上方，必要时才回退到下方，不居中。
+6. 直接使用与 `QueueRowMenu` 相同的 attached `Popup`、`AnchoredDropdownPositionProvider` 和 `PopupProperties(focusable, dismissOnBackPress, dismissOnClickOutside)`；继续复用 PopupMotionHost / PopupMotionAnchorState 的 180ms、0.82→1、alpha 与 transform-origin。无 Dialog、scrim 或全窗口透明拦截层。音量轨道采用约 4dp 精简进度条视觉，不保留传统大 thumb。
 7. 验证深浅主题、ACTIVE/INACTIVE/STALE/UNKNOWN/ERROR 文本、信息缺失、窄宽度和系统字体缩放。
-8. 验证 Back/外部点击/入口再次点击只执行一次 dismiss，反向动画完成前不卸载内容。
+8. 验证 Back/外部点击/入口再次点击均关闭同一个 Popup，反向动画完成前不卸载内容。
 
 **退出门：** 面板位置/动效与 Task 8 全局 popup 一致，信息精简两行且无裁切；旧大详情 dialog 已被替换。
 
