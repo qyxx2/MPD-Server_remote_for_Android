@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** Batch 0–2 已完成；Batch 3–7 尚未执行。B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+**状态：** Batch 0–3 已完成；Batch 4–7 尚未执行。B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
@@ -104,6 +104,8 @@
 **退出门：** 仅一个 RealtimeController/WS owner；hardware_volume 更新完全通过 SnapshotStore 接受的完整状态呈现。
 
 ## Batch 3 — PUT mutation 与命令串行化
+
+**状态：已完成。** 新增 AppRuntime 单例 `HardwareVolumeCommandGateway`，Slider absolute intent 与 Volume key delta 经同一个 FIFO 串行进入现有 `MutationCoordinator`；每步均等待服务端 post-write 完整快照 readback 后再从 SnapshotStore 最新 fresh 值计算下一目标。UNKNOWN 显式重试保留原 intent/key/payload，失败、origin/generation/freshness 失效会丢弃未发送输入。没有新增 HTTP client、状态 Store、持久化或本地音量写入。验证见 [Batch 3 报告](../reports/2026-11-04-task-9-batch3-verification.md)。
 
 **目标：** 为两种输入建立同一个远端命令路径，复用现有幂等与完整快照 readback。
 

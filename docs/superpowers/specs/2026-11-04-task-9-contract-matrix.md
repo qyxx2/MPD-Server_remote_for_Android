@@ -1,6 +1,6 @@
 # Task 9 — DAC 硬件音量控制合同矩阵
 
-> **状态：** 规格已冻结；Batch 1（DTO、局部快照解码、capability policy）已完成；Batch 2–7 尚未执行。
+> **状态：** 规格已冻结；Batch 1（DTO/资格投影）、Batch 2（实时 invalidate/完整快照）和 Batch 3（PUT mutation/命令串行化）已完成；Batch 4–7 尚未执行。
 > **基线：** Android `main` commit `c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef`。
 > **分支：** `feature/task-9-hardware-volume-control`。
 > **主设计：** [Task 9 硬件音量控制规格](2026-11-04-task-9-hardware-volume-control-design.md)。
@@ -59,7 +59,7 @@
 | B0 — 上游接口核对与集成预检 | 锁定 MPD-Server 实际 HEAD、DTO/错误/幂等/WS 语义；核实部署能力和客户端接缝；不改 Android 生产代码。 | T9-01、T9-03、T9-06 |
 | B1 — Hardware Volume DTO 与共享快照 | 加入可兼容旧 server 的 typed DTO 与完整快照投影；建立状态/freshness 资格规则。 | T9-02 至 T9-04、T9-09 |
 | B2 — WebSocket invalidate 与快照同步 | 接通 hardware_volume domain 的现有实时失效/完整重读；验证水位、重连、origin/generation 和迟到响应。 | T9-02、T9-05、T9-19 |
-| B3 — Mutation 与命令串行化 | PUT/幂等/读回；Slider absolute intent 与 key delta 输入仲裁；unknown/failed/retry 语义。 | T9-06 至 T9-10、T9-19 |
+| B3 — Mutation 与命令串行化 | PUT/幂等/读回；Slider absolute intent 与 key delta 输入仲裁；unknown/failed/retry 语义。实现与自动化验证已完成，详见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)。 | T9-06 至 T9-10、T9-19 |
 | B4 — DAC 紧凑弹窗展示 | 替换大型详情对话框；完成两行信息布局、几何锚定、现有弹窗动效与状态投影。 | T9-11 至 T9-14 |
 | B5 — Slider 交互控制 | 添加拖动 preview、释放提交、pending/readback、禁用/失败/外部状态变化行为。 | T9-04、T9-07、T9-08、T9-15 |
 | B6 — App 前台全局音量键与提示浮窗 | 建立 Activity/应用窗口级输入 adapter；加入顶部横条纯数字浮窗，覆盖所有前台路由和自有弹窗；按键立即更新，2 秒无新按键后隐藏；未来输入源保持可扩展。 | T9-08、T9-09、T9-16 至 T9-18、T9-21 |

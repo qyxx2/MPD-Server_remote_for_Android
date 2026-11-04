@@ -138,6 +138,21 @@ class AppRuntime private constructor(
             commandLock = playerCommandLock,
         )
     }
+    private val hardwareVolumeCommandGatewayDelegate = lazy {
+        HardwareVolumeCommandGateway(
+            stateProvider = { snapshots.state.value },
+            snapshots = snapshots.state,
+            activitiesProvider = mutations.activities,
+            originProvider = { realtimeController.currentOrigin() },
+            submitter = mutations::submit,
+            retryUnknownSubmitter = mutations::retryUnknown,
+            parentScope = scope,
+            commandEligibilityProvider = { !originChangeInProgress },
+            commandLock = playerCommandLock,
+        )
+    }
+    /** Shared input path for foreground volume keys and the Slider UI added in a later batch. */
+    val hardwareVolumeCommands: HardwareVolumeCommandGateway by hardwareVolumeCommandGatewayDelegate
 
     fun start() = realtimeController.start()
 
@@ -151,6 +166,9 @@ class AppRuntime private constructor(
         // old canonical snapshot.
         synchronized(playerCommandLock) {
             originChangeInProgress = true
+            if (hardwareVolumeCommandGatewayDelegate.isInitialized()) {
+                hardwareVolumeCommandGatewayDelegate.value.onOriginChanging(origin)
+            }
             mutations.changeOrigin(origin)
         }
         try {
@@ -167,6 +185,9 @@ class AppRuntime private constructor(
         CoroutineScope(Dispatchers.IO).launch {
             resourceIdentityJob.cancelAndJoin()
             resources.close()
+            if (hardwareVolumeCommandGatewayDelegate.isInitialized()) {
+                hardwareVolumeCommandGatewayDelegate.value.close()
+            }
             mutations.close()
             realtimeController.stop()
             scope.cancel()

@@ -36,6 +36,19 @@ class RuntimeCompositionTest {
         }
     }
 
+    @Test fun hardwareVolumeGatewayIsApplicationScopedAndReusesRuntimeMutationOwner() {
+        val runtime = AppRuntime.createForTesting(
+            origin = ServerOrigin.parse("http://music.example:18000"),
+            socketFactory = RecordingSocketFactory(),
+        )
+        try {
+            assertSame(runtime.hardwareVolumeCommands, runtime.hardwareVolumeCommands)
+            assertSame(runtime.mutations, runtime.mutations)
+        } finally {
+            runtime.close()
+        }
+    }
+
     @Test fun newRuntimeStartsWithUnknownSnapshotInsteadOfPriorRuntimeState() {
         val first = AppRuntime.createForTesting(ServerOrigin.parse("http://music.example:18000"), RecordingSocketFactory())
         val second = AppRuntime.createForTesting(ServerOrigin.parse("http://music.example:18000"), RecordingSocketFactory())
