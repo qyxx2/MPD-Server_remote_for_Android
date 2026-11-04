@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** Batch 0 已完成（上游契约核对与集成预检，仅文档变更）；Android 生产代码未修改。Batch 1–7 尚未执行。详见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+**状态：** Batch 0 与 Batch 1 已完成；Batch 2–7 尚未执行。B1 实现 DTO、局部快照解码和硬件音量资格 policy，验证证据见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
@@ -50,6 +50,8 @@
 **退出门：** 上游 endpoint/schema/WS/error/idempotency 与 Android 连接 seam 全部有可追溯证据；否则暂停 B1，先修订合同。
 
 ## Batch 1 — Hardware Volume DTO 与共享快照投影
+
+**状态：已完成。** DTO、局部快照解码、strict numeric validation 与 capability policy 均通过测试；证据见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)。
 
 **目标：** 将服务端硬件音量纳入现有 canonical snapshot，建立可测试的状态/freshness 判定。
 

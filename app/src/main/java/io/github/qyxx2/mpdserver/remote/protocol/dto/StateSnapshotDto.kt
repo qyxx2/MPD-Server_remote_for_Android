@@ -19,6 +19,9 @@ data class StateSnapshotDto(
     val output: JsonElement,
     @SerialName("output_observation") val outputObservation: JsonElement,
     @SerialName("library_sync") val librarySync: JsonElement,
+    // Optional server extension: older MPD-Server deployments omit both fields.
+    @SerialName("hardware_volume") val hardwareVolume: JsonElement? = null,
+    @SerialName("hardware_volume_observation") val hardwareVolumeObservation: JsonElement? = null,
 )
 
 @Serializable

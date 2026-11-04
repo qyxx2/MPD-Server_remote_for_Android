@@ -58,8 +58,9 @@
 - [Task 8 Player Interaction Polish Implementation Plan](plans/2026-11-02-task-8-player-interaction-polish.md)：B0–B5 实现批次已完成；B5 共享 Popup/Dialog 动效报告已提交。T8-17 全量 clean/connected/实机验收及 Task 8 总退出门仍待关闭。
 - [Task 9 DAC 硬件音量控制设计规格](specs/2026-11-04-task-9-hardware-volume-control-design.md)：冻结 MPD-Server 唯一状态权威、hardware_volume 状态/freshness、invalidate、幂等写入、DAC 扁宽双行弹窗、Slider、App 前台音量键、状态环下方 2 秒纯数字提示浮窗及未来输入源扩展边界。
 - [Task 9 合同矩阵](specs/2026-11-04-task-9-contract-matrix.md)：T9-01 至 T9-21，覆盖 DTO/快照、WebSocket、mutation、串行输入、UI、设备验收与退出门。
-- [Task 9 Implementation Plan](plans/2026-11-04-task-9-hardware-volume-control.md)：B0–B7 分批执行计划；B0 上游接口核对已完成，B1–B7 尚未执行。
+- [Task 9 Implementation Plan](plans/2026-11-04-task-9-hardware-volume-control.md)：B0–B7 分批执行计划；B0 上游核对与 B1 DTO/共享快照投影已完成，B2–B7 尚未执行。
 - [Task 9 Batch 0 验证报告](reports/2026-11-04-task-9-batch0-verification.md)：记录上游 exact HEAD / NAS 部署 SHA、完整 hardware-volume DTO / error / idempotency / realtime frame、Android 现有集成 seam 与本次实时连接复核限制。
+- [Task 9 Batch 1 验证报告](reports/2026-11-04-task-9-batch1-verification.md)：记录兼容旧快照的 typed DTO、局部解码诊断、严格数值验证、共享快照 capability policy 和 513 项完整 unit-test 回归。
 - [Task 8 MPD 音量与输出能力实测](reports/2026-11-04-task-8-mpd-volume-output-capability-test.md)：对 `192.168.3.94:6600` 执行实时只读能力查询及可恢复的 `setvol` 单步测试；确认 MPD 音量命令和 USB DAC ALSA 输出元数据可用，并记录硬件音量/完整 DAC 能力信息的证据边界。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
 - [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。

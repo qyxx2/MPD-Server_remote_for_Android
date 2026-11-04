@@ -1,6 +1,6 @@
 # Task 9 — DAC 硬件音量控制合同矩阵
 
-> **状态：** 规格已冻结；Android 实现尚未开始。
+> **状态：** 规格已冻结；Batch 1（DTO、局部快照解码、capability policy）已完成；Batch 2–7 尚未执行。
 > **基线：** Android `main` commit `c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef`。
 > **分支：** `feature/task-9-hardware-volume-control`。
 > **主设计：** [Task 9 硬件音量控制规格](2026-11-04-task-9-hardware-volume-control-design.md)。
