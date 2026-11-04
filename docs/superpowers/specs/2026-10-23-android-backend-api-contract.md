@@ -2,6 +2,7 @@
 
 > **状态：权威接口合同（基线快照）。** 本文约束 Android 客户端如何消费当前 MPD-Server 接口，不重新定义服务端领域规则、数据库、MPD 执行流程或业务状态。
 > 核对基线：`qyxx2/MPD-Server/main`，commit `2ad84454ceb70817bd996c92b590cfa2d9e9b128`（2026-10-18）。
+> **2026-11-04 硬件音量扩展：** 新增接口依据 MPD-Server feature/hardware-volume-control 的交接。交接未记录服务端精确 commit；Task 9 Batch 0 必须从上游代码、schema 和 tests 锁定 HEAD 与完整 DTO 后，才可将未给出的字段层级和错误结构视为确定合同。上方 2026-10-18 commit 仍是既有接口的历史核对基线，不代表当时已包含本扩展。
 
 ## 1. 权威与总原则
 
@@ -36,6 +37,7 @@
 | `history` | 历史存在状态、活动事件和 session |
 | `playback_observation` | 实际播放、current 身份绑定、控制目标、新鲜度与错误 |
 | `output`、`output_observation` | 输出请求/状态以及输出观察新鲜度 |
+| `hardware_volume`、`hardware_volume_observation` | MPD 实例级硬件音量能力/值与观察状态、freshness；不代表每个 output ID 的独立音量 |
 | `library_sync` | 曲库同步状态、generation、计数和错误 |
 
 若组装本地必需域失败，接口返回 HTTP 503 `STATE_SNAPSHOT_UNAVAILABLE`，不能返回伪装为成功的部分快照。外部播放或输出观察可能返回显式 stale/unknown。
@@ -43,7 +45,7 @@
 ### `WS /api/realtime`
 
 - 当前协议版本为 1。连接后的第一条成功帧是完整 snapshot：`type=snapshot`、`protocol_version=1`、`epoch`、`sequence`、`state`。
-- 后续 invalidate 帧同样包含 `protocol_version=1`，以及 `epoch`、`sequence`、`domains` 和 `revisions`。客户端必须验证两种帧的版本均为 1；缺失或不支持的版本都是协议错误。domains 可包括 playback、queue、history、library、playlist、output、library_sync。
+- 后续 invalidate 帧同样包含 `protocol_version=1`，以及 `epoch`、`sequence`、`domains` 和 `revisions`。客户端必须验证两种帧的版本均为 1；缺失或不支持的版本都是协议错误。domains 可包括 playback、queue、history、library、playlist、output、hardware_volume、library_sync。
 - snapshot 外层 epoch/sequence 必须与 state 内部对应字段一致。
 - invalidate 代表重新读取的义务，不是 state patch；消息可重复。客户端按 epoch/sequence 过滤后调用 `GET /api/state`。
 - 每次重连都必须获得新连接的完整初始快照；不要依据旧 cursor 或本地持久化快照恢复权威状态。
@@ -65,10 +67,22 @@
 | GET | `/api/state` | 完整状态快照 |
 | WS | `/api/realtime` | 初始快照与 invalidate 通知 |
 | GET / PUT | `/api/system/output` | 读取输出状态；PUT body `{mode, enabled}`，enabled 必须是 bool |
+| GET / PUT | `/api/system/hardware-volume` | 查询/设置 MPD 实例级硬件音量；PUT body 使用 {`volumePercent`}，范围 0–100，并要求 Idempotency-Key |
 | GET | `/api/system/mpd` | MPD 版本、统计、更新状态和分项错误 |
 | GET / PUT | `/api/system/mpd/connection` | 读取/保存连接目标；保存后需按现有部署要求重启才生效 |
 
 输出模式 schema 含 `NAS_DAC` 和 `CLIENT_STREAM`，输出状态含 `UNAVAILABLE`、`INACTIVE`、`ACTIVE`；schema 存在不保证当前服务实例支持某模式。`/api/system/output` 外层字段为 `states`、`last_request`，内部对象使用 camelCase；聚合的 `/api/state` 使用 snake_case。
+### 硬件音量（2026-11-04 上游扩展）
+
+- 查询：`GET /api/system/hardware-volume`；完整共享状态也包含 `hardware_volume` 与 `hardware_volume_observation`。
+- 设置：`PUT /api/system/hardware-volume`，请求目标字段为 `volumePercent`，整数范围 0–100，必须携带 `Idempotency-Key`。
+- 已知能力状态：AVAILABLE、UNSUPPORTED、UNAVAILABLE。音量值可为 null；null 表示未知，绝不是 0。
+- freshness 必须与数值一起解释。stale 值只能作为最后确认值展示，不可作为可写当前值；仅 AVAILABLE 且 fresh、值非 null 的状态可开放控制。
+- 写入由服务端执行 MPD 写入并重新读取确认，读回必须与目标值一致。Android 不重复进行 MPD 协议操作，也不得从请求 payload 乐观更新 canonical snapshot。
+- WebSocket 的 domains 含 hardware_volume 只表示状态失效，不携带新音量值；必须调用完整 GET /api/state，并通过现有 snapshot 水位规则接受结果。
+- 该音量是 MPD 实例级，不是每个 output ID 独立音量。ACTIVE 输出状态不证明实体 DAC 正在出声。
+- **待 B0 锁定：** 两个 GET 响应的完整 JSON 嵌套结构、observation/error DTO、未知枚举兼容细节和写入读回失败的具体 HTTP 错误形状，以当时上游代码/schema/tests 为准。
+
 
 ### 播放和 Queue（前缀 `/api/playback`）
 

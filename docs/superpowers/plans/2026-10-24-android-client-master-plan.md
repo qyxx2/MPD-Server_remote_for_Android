@@ -238,6 +238,23 @@
 
 **阻塞/退出门：** Task 0–7 的必需退出门均通过；无 Critical/Important 审查问题；本地构建、测试、Lint 和交付产物证据可追溯；遗留问题被记录、分类并经用户接受。不得将未完成的签名或真机验收标作通过。
 
+### Task 9：MPD DAC 硬件音量控制与状态观察
+
+- [x] 基于 Android main 冻结基线创建独立分支并完成规格、边界、矩阵合同与 Batch 计划。
+- [ ] 完成上游 MPD-Server 硬件音量接口核对、Android 分批实现、自动验证、NAS/Android 实机验收与退出门。
+
+**当前状态（2026-11-04）：** 已从 main commit c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef 创建 feature/task-9-hardware-volume-control。仅完成文档规格与计划，Android 生产代码尚未修改。上游硬件音量能力来自 MPD-Server feature/hardware-volume-control 交接；精确上游 HEAD/DTO 在 B0 记录。
+
+**目标：** 让 Android 遥控端通过 MPD-Server 控制 MPD 实例级硬件音量，并观察服务器广播的状态。全屏 Player 的 DAC 图标打开扁宽双行弹窗；弹窗 Slider 与 App 前台任意页面的手机音量键共用一个远端命令路径；按键时显示位于状态环安全间距下方的顶部纯数字横条浮窗，最后一次按键后 2 秒隐藏。
+
+**权威合同：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)、[Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)。后端接口扩展记录于 [Android 后端 API 合同](../specs/2026-10-23-android-backend-api-contract.md)；实现路线见 [Task 9 Implementation Plan](2026-11-04-task-9-hardware-volume-control.md)。
+
+**关键约束：** MPD-Server 是唯一状态权威；Android 只发送 PUT 并接收 hardware_volume invalidate，后者必须触发现有完整快照读取。不得创建本地音量状态、第二条 WS、独立轮询、AudioManager 本机音量控制或直接 MPD/ALSA/USB 操作。硬件音量为 MPD 实例级，不是每个 output ID 独立音量。控制必须依据 AVAILABLE + fresh + 非 null 确认值；stale/unknown/null/unsupported/unavailable 全部 fail-closed。Slider 与前台 volume keys 需串行、幂等并以 readback 确认。
+
+**Batch 拆分：** B0 上游接口/DTO 核对；B1 typed DTO 与 SnapshotStore 投影；B2 WebSocket invalidate 同步；B3 PUT mutation 与命令串行化；B4 DAC 两行弹窗；B5 Slider 控制；B6 App 前台全局音量键与 2 秒提示浮窗；B7 NAS/Android 集成验收。
+
+**退出门：** T9-01 至 T9-21 全部有测试与实机证据；完成可恢复 NAS 音量写入并恢复原值；证明音量 mutation 不改变曲目、播放状态、Queue occurrence/顺序或历史。Task 9 不自动关闭 Task 7 Batch 4 或 Task 8 全项目集成验收门。
+
 ## Review Focus / 五个重点回归风险
 
 以下风险必须映射到所属 Task 的自动测试，不得只靠人工注意：

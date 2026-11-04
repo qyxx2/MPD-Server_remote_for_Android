@@ -17,11 +17,13 @@
 - 真实播放观察、epoch/sequence/revision、输出观察、曲库同步状态。
 - Collection 查询/排序/随机选择、搜索、Playlist/Favorites 业务规则。
 - MPD 连接与输出设备控制、事务、错误码、幂等及最终 mutation 结果。
+- MPD 实例级硬件音量的读取、写入后读回确认、能力/freshness 判断及硬件音量 invalidate 广播。
 
 ### Android 负责
 
 - Compose 原生 UI、导航、可访问性、排版与动画。
 - 经 HTTP 发出用户明确发起的已有操作，经 WebSocket 接收 invalidate 并读取权威快照/资源。
+- 通过现有 HTTP mutation 入口发送 MPD 硬件音量目标；从共享快照读取和展示服务端确认的音量，不建立本地音量权威。
 - DTO 校验、内存中的规范化快照、fresh/stale/unknown 展示、操作 pending/unknown/failed 状态与恢复交互。
 - 暂时性 UI 状态：路由、封面/歌词模式、搜索输入、列表滚动、seek/drag 草稿、弹窗与状态环动画。
 - 只持久化非业务偏好，如服务地址和状态环尺寸/位置偏移/线宽。业务实体不得靠本地持久层成为另一数据来源。
@@ -31,6 +33,7 @@
 - 不新增 Room/SQLite 本地业务数据库，不镜像歌曲库、Queue、History、Playlist 或 Favorites 并离线维护一份权威副本。
 - 不把持久化的 FullStateSnapshot 作为下一次启动时的权威状态。last-known 可在内存中供说明，但必须标 stale/unknown，写操作等完整新快照后再开放。
 - 不直接操作 MPD、不使用 ExoPlayer/Media3 作为本项目播放引擎、不本地解码 NAS 音频、不处理服务端文件或数据库。
+- 不直接连接 MPD TCP、ALSA、USB mixer，也不调用 Android AudioManager 改变本机媒体音量；远端硬件音量必须经 MPD-Server HTTP API。
 - 不在客户端重新生成 AutoPlay、决定下一首、写 History、猜 actual current、构造后端缺失业务状态或代替服务器完成 reconciliation。
 - 不为安卓专属 UI 偏好新增后端 endpoint，除非已确认现有 API 确实无法满足新增的业务需求。
 
@@ -74,6 +77,7 @@ MPD-Server（唯一业务状态来源）
 - 以服务端 FullStateSnapshot 为 canonical state，按 epoch、sequence、resource revisions、library_sync generation、explicit_stop_generation 处理更新。
 - 缓存只优化重复 GET。资源缓存必须绑定当前会话/对应 revision；不能跨 epoch 将旧业务数据当作事实。
 - invalidate 触发权威重读，不从 domains 自行拼凑本地 state patch。
+- hardware_volume invalidate 与其他状态域一样只触发完整状态重读；音量值必须从被 SnapshotStore 接受的快照投影。
 - 连接失效或 observation stale/unknown 时可以保留 last-known 展示，但必须显式区分过期事实与当前事实，并禁用依赖 fresh target 的 controls。
 - 共享操作协调器保留 key/payload/状态/恢复动作，统一展示 unknown 与 read-failure；UI 的成功动画不能越过服务端确认。
 

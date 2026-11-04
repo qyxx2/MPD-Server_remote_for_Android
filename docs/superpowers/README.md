@@ -12,7 +12,10 @@
 4. [客户端权威边界与架构规格](specs/2026-10-23-android-client-boundary-and-architecture.md)：MPD-Server 与 Android 的职责、禁止复制的服务端能力、共享状态架构方向及应用内状态环范围。
 5. [Task 3 视觉设计规格](specs/2026-10-25-task-3-visual-design-specification.md)：冻结参考实机截图的布局比例、四入口导航、橙色主题、迷你播放器、音乐库列表、状态环参数，以及后续集合级操作的视觉入口与行为映射。
 
+2026-11-04 新增 Task 9 硬件音量扩展：其上游接口依据 MPD-Server 的硬件音量交接；服务端精确 HEAD 与完整 wire DTO 由 Task 9 B0 核对，不回溯修改 2026-10-18 历史基线。
+
 上述文档按职责共同构成 Android 客户端权威合同：
+
 - 产品与工程总规格决定 Android 端的产品范围、顶层 UI 结构和技术栈方向。
 - 后端接口合同决定客户端如何消费现有 server API 和实时协议。
 - Web 行为继承合同决定需要保留的业务操作与状态恢复语义。
@@ -53,6 +56,9 @@
 - [Task 8 Player/Queue 交互与视觉打磨设计规格](specs/2026-11-02-task-8-player-interaction-polish-design.md)：已于 2026-11-02 获用户批准，冻结 Queue 菜单/拖拽、普通导航转场、歌词字号、mini-player 封面 shared-element 与应用自有 Popup/Dialog 动效；不改变播放/服务端权威边界。
 - [Task 8 合同矩阵](specs/2026-11-02-task-8-contract-matrix.md)：T8-01 至 T8-17，定义六批交付、自动/实机验收和 Task 7/Task 8 总退出门边界。
 - [Task 8 Player Interaction Polish Implementation Plan](plans/2026-11-02-task-8-player-interaction-polish.md)：B0–B5 实现批次已完成；B5 共享 Popup/Dialog 动效报告已提交。T8-17 全量 clean/connected/实机验收及 Task 8 总退出门仍待关闭。
+- [Task 9 DAC 硬件音量控制设计规格](specs/2026-11-04-task-9-hardware-volume-control-design.md)：冻结 MPD-Server 唯一状态权威、hardware_volume 状态/freshness、invalidate、幂等写入、DAC 扁宽双行弹窗、Slider、App 前台音量键、状态环下方 2 秒纯数字提示浮窗及未来输入源扩展边界。
+- [Task 9 合同矩阵](specs/2026-11-04-task-9-contract-matrix.md)：T9-01 至 T9-21，覆盖 DTO/快照、WebSocket、mutation、串行输入、UI、设备验收与退出门。
+- [Task 9 Implementation Plan](plans/2026-11-04-task-9-hardware-volume-control.md)：B0 上游核对至 B7 NAS/Android 实机验收；当前仅完成文档，尚未开始 Android 实现。
 - [Task 8 MPD 音量与输出能力实测](reports/2026-11-04-task-8-mpd-volume-output-capability-test.md)：对 `192.168.3.94:6600` 执行实时只读能力查询及可恢复的 `setvol` 单步测试；确认 MPD 音量命令和 USB DAC ALSA 输出元数据可用，并记录硬件音量/完整 DAC 能力信息的证据边界。
 - [MS 服务器地址设置设计](specs/2026-10-27-ms-server-address-settings.md) 与 [实施计划](plans/2026-10-27-ms-server-address-settings.md)：记录 Task 4 Batch 1 前额外授权的最小地址设置入口；支持 IPv4、IPv6、域名、HTTP(S)、DataStore 恢复和共享 Runtime origin 切换。
 - [MS 服务器地址设置验证报告](reports/2026-10-27-ms-server-address-settings-verification.md)：记录地址解析、持久化、设置 UI、构建/单测证据及未覆盖的真机连接验收边界。
