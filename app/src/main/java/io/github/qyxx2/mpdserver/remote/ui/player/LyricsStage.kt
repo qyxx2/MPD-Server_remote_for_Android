@@ -4,21 +4,21 @@ import android.os.SystemClock
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -47,7 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsDisplayStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsFollowReducer
 import io.github.qyxx2.mpdserver.remote.ui.player.lyrics.LyricsClockPresentation
@@ -99,7 +98,7 @@ fun LyricsStage(
     val lyricsClock by lyricsClockFlow.collectAsStateWithLifecycle(initialLyricsClock)
     var followState by remember(resourceIdentity) { mutableStateOf(LyricsFollowReducer.initialState()) }
     var selectionEndedAtMillis by remember(resourceIdentity) { mutableStateOf<Long?>(null) }
-    val listState = rememberLazyListState()
+    val listState = remember(resourceIdentity) { LazyListState() }
     var programmaticScroll by remember(resourceIdentity) { mutableStateOf(false) }
     val activeIndexes = lyricsClock.activeCueIndexes
     val activeIndex = activeIndexes.firstOrNull()
@@ -150,22 +149,6 @@ fun LyricsStage(
         followState = transition.state
     }
 
-    // Position may change continuously, but manual browsing suspends this effect until follow resumes.
-    LaunchedEffect(resourceIdentity, activeIndex, followState.following, timed) {
-        if (!timed || !followState.following || activeIndex == null) return@LaunchedEffect
-        programmaticScroll = true
-        try {
-            val viewportHeight = snapshotFlow { listState.layoutInfo.viewportSize.height }
-                .first { it > 0 }
-            listState.animateScrollToItem(
-                activeIndex,
-                scrollOffset = if (document.cues.size > 1) -(viewportHeight / 2) else 0,
-            )
-        } finally {
-            programmaticScroll = false
-        }
-    }
-
     Box(
         modifier = modifier.fillMaxSize().testTag("lyrics-stage"),
     ) {
@@ -203,12 +186,98 @@ fun LyricsStage(
                         .weight(1f)
                         .testTag("lyrics-selection-container"),
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val density = LocalDensity.current
+                        val textMeasurer = rememberTextMeasurer()
+                        val activeMeasureStyle = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = LyricsTypographyPolicy.activeCue.fontSize,
+                            lineHeight = LyricsTypographyPolicy.activeCue.lineHeight,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = LyricsTypographyPolicy.textAlignment,
+                        )
+                        val textWidthPx = with(density) {
+                            (maxWidth - 16.dp).coerceAtLeast(1.dp).roundToPx()
+                        }
+                        val cueLines = remember(document.cues, textWidthPx, activeMeasureStyle, textMeasurer) {
+                            document.cues.map { cue ->
+                                measureCueVisualLines(cue.text, activeMeasureStyle, textWidthPx, textMeasurer)
+                            }
+                        }
+                        val noteStyle = MaterialTheme.typography.bodyMedium.copy(
+                            textAlign = LyricsTypographyPolicy.textAlignment,
+                        )
+                        val noteLines = remember(document.notes, textWidthPx, noteStyle, textMeasurer) {
+                            if (document.notes.isEmpty()) emptyList()
+                            else measurePlainVisualLines(
+                                document.notes.joinToString("\n"),
+                                noteStyle,
+                                textWidthPx,
+                                textMeasurer,
+                            )
+                        }
+                        val totalVisualLines = cueLines.sumOf { it.count } + noteLines.size
+                        val minimumLineSlotHeight = maxOf(
+                            40.dp,
+                            with(density) { LyricsTypographyPolicy.activeCue.lineHeight.toDp() },
+                        ) + 9.8.dp
+                        val activeCueLineCount = cueLines.getOrNull(activeIndex ?: -1)?.count
+                        val visibleLineCount = LyricsTypographyPolicy.visibleLineCount(
+                            availableHeightDp = maxHeight.value,
+                            minimumLineHeightDp = minimumLineSlotHeight.value,
+                            activeCueLineCount = activeCueLineCount,
+                        )
+                        // The viewport is divided into an integer number of complete visual rows.
+                        // This makes its top and bottom edges row boundaries rather than clip points.
+                        val lineSlotHeight = maxHeight / visibleLineCount
+                        val activeCueRows = activeCueLineCount ?: 1
+                        val leadingPaddingLines = if (activeIndex != null) {
+                            (visibleLineCount - activeCueRows) / 2f
+                        } else if (totalVisualLines <= visibleLineCount) {
+                            (visibleLineCount - totalVisualLines) / 2f
+                        } else {
+                            0f
+                        }
+                        val trailingPaddingLines = if (activeIndex != null) {
+                            visibleLineCount - activeCueRows - leadingPaddingLines
+                        } else if (totalVisualLines <= visibleLineCount) {
+                            visibleLineCount - totalVisualLines - leadingPaddingLines
+                        } else {
+                            0f
+                        }
+                        val verticalPadding = PaddingValues(
+                            top = lineSlotHeight * leadingPaddingLines,
+                            bottom = lineSlotHeight * trailingPaddingLines,
+                        )
+
+                        LaunchedEffect(
+                            resourceIdentity,
+                            activeIndex,
+                            followState.following,
+                            visibleLineCount,
+                            lineSlotHeight,
+                            totalVisualLines,
+                        ) {
+                            if (!followState.following || activeIndex == null) return@LaunchedEffect
+
+                            programmaticScroll = true
+                            try {
+                                snapshotFlow { listState.layoutInfo.totalItemsCount }
+                                    .first { it > activeIndex }
+                                // The symmetric content padding already places this cue at
+                                // the center rows; zero item offset avoids counting that padding twice.
+                                listState.animateScrollToItem(activeIndex)
+                            } finally {
+                                programmaticScroll = false
+                            }
+                        }
+
                         LazyColumn(
                             state = listState,
+                            contentPadding = verticalPadding,
+                            flingBehavior = rememberSnapFlingBehavior(
+                                lazyListState = listState,
+                                snapPosition = SnapPosition.Start,
+                            ),
                             modifier = Modifier
                                 .fillMaxSize()
                                 .testTag("lyrics-timed-content")
@@ -240,7 +309,6 @@ fun LyricsStage(
                                         }
                                     }
                                 },
-                            verticalArrangement = Arrangement.spacedBy(2.dp),
                         ) {
                             itemsIndexed(
                                 items = document.cues,
@@ -252,9 +320,27 @@ fun LyricsStage(
                                     durationSeconds = durationSeconds,
                                     seekEnabled = seekEnabled,
                                 )
-                                Row(
+                                val lines = cueLines[index]
+                                val cueTypography = if (current) {
+                                    LyricsTypographyPolicy.activeCue
+                                } else {
+                                    LyricsTypographyPolicy.inactiveCue
+                                }
+                                val cueStyle = (if (current) {
+                                    MaterialTheme.typography.titleLarge
+                                } else {
+                                    MaterialTheme.typography.bodyLarge
+                                }).copy(
+                                    fontSize = cueTypography.fontSize,
+                                    lineHeight = cueTypography.lineHeight,
+                                    color = if (current) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                                    textAlign = LyricsTypographyPolicy.textAlignment,
+                                )
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .height(lineSlotHeight * lines.count)
                                         .clickable(enabled = target != null) {
                                             val now = SystemClock.elapsedRealtime()
                                             if (followState.textSelected) return@clickable
@@ -274,7 +360,6 @@ fun LyricsStage(
                                                 onSeek(currentTarget)
                                             }
                                         }
-                                        .padding(horizontal = 8.dp, vertical = 10.dp)
                                         .semantics {
                                             if (target != null) role = Role.Button
                                             contentDescription = if (target != null) "跳转到歌词：" + cue.text else cue.text
@@ -282,66 +367,143 @@ fun LyricsStage(
                                         .then(if (current) Modifier.testTag("lyrics-cue-active") else Modifier)
                                         .testTag("lyrics-cue-" + index),
                                 ) {
-                                    val cueTypography = if (current) {
-                                        LyricsTypographyPolicy.activeCue
-                                    } else {
-                                        LyricsTypographyPolicy.inactiveCue
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().height(lineSlotHeight),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = lines.first,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("lyrics-cue-text-" + index),
+                                            style = cueStyle,
+                                            textAlign = LyricsTypographyPolicy.textAlignment,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Clip,
+                                        )
                                     }
-                                    val cueStyle = (if (current) {
-                                        MaterialTheme.typography.titleLarge
-                                    } else {
-                                        MaterialTheme.typography.bodyLarge
-                                    }).copy(
-                                        fontSize = cueTypography.fontSize,
-                                        lineHeight = cueTypography.lineHeight,
-                                        color = if (current) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                    LyricCueText(
-                                        text = cue.text,
-                                        style = cueStyle,
-                                        modifier = Modifier.fillMaxWidth().testTag("lyrics-cue-text-" + index),
-                                    )
+                                    lines.second?.let { secondLine ->
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().height(lineSlotHeight),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = secondLine,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .testTag("lyrics-cue-second-line"),
+                                                style = cueStyle,
+                                                textAlign = LyricsTypographyPolicy.textAlignment,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = LyricsTypographyPolicy.secondLineOverflow,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                             itemsIndexed(
-                                items = document.notes,
+                                items = noteLines,
                                 key = { index, line -> "note:" + index + ":" + line },
                             ) { index, note ->
-                                Text(
-                                    text = note,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                                        .testTag("lyrics-note-" + index),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().height(lineSlotHeight),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = note,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("lyrics-note-" + index),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = LyricsTypographyPolicy.textAlignment,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Clip,
+                                    )
+                                }
                             }
                         }
                     }
                 }
             } else {
-                // Plain/unsupported lyrics deliberately have no follow timer, active row or cue action.
                 val plain = document.text
                 if (plain.isNotEmpty()) {
                     SelectionContainer {
-                        Column(
+                        BoxWithConstraints(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                                .padding(horizontal = 8.dp, vertical = 8.dp)
                                 .testTag("lyrics-plain-scroll"),
                         ) {
-                            Text(
-                                text = plain,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("lyrics-plain-text"),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyLarge,
+                            val density = LocalDensity.current
+                            val textMeasurer = rememberTextMeasurer()
+                            val plainStyle = MaterialTheme.typography.bodyLarge.copy(
+                                lineHeight = LyricsTypographyPolicy.inactiveCue.lineHeight,
+                                textAlign = LyricsTypographyPolicy.textAlignment,
                             )
+                            val textWidthPx = with(density) {
+                                (maxWidth - 16.dp).coerceAtLeast(1.dp).roundToPx()
+                            }
+                            val visualLines = remember(plain, textWidthPx, plainStyle, textMeasurer) {
+                                measurePlainVisualLines(plain, plainStyle, textWidthPx, textMeasurer)
+                            }
+                            val minimumLineSlotHeight = maxOf(
+                                34.dp,
+                                with(density) { LyricsTypographyPolicy.inactiveCue.lineHeight.toDp() },
+                            ) + 10.dp
+                            val visibleLineCount = LyricsTypographyPolicy.visibleLineCount(
+                                availableHeightDp = maxHeight.value,
+                                minimumLineHeightDp = minimumLineSlotHeight.value,
+                            )
+                            val lineSlotHeight = maxHeight / visibleLineCount
+                            val topPaddingLines = if (visualLines.size <= visibleLineCount) {
+                                (visibleLineCount - visualLines.size) / 2f
+                            } else 0f
+                            val bottomPaddingLines = if (visualLines.size <= visibleLineCount) {
+                                visibleLineCount - visualLines.size - topPaddingLines
+                            } else 0f
+
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(
+                                    top = lineSlotHeight * topPaddingLines,
+                                    bottom = lineSlotHeight * bottomPaddingLines,
+                                ),
+                                flingBehavior = rememberSnapFlingBehavior(
+                                    lazyListState = listState,
+                                    snapPosition = SnapPosition.Start,
+                                ),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("lyrics-plain-text"),
+                            ) {
+                                itemsIndexed(
+                                    items = visualLines,
+                                    key = { index, line -> "plain:" + index + ":" + line },
+                                ) { index, line ->
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().height(lineSlotHeight),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = line,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 8.dp)
+                                                .testTag("lyrics-plain-line-" + index),
+                                            style = plainStyle,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = LyricsTypographyPolicy.textAlignment,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Clip,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 } else {
@@ -363,64 +525,55 @@ fun LyricsStage(
     }
 }
 
-@Composable
-private fun LyricCueText(
+private data class CueVisualLines(
+    val first: String,
+    val second: String?,
+) {
+    val count: Int get() = if (second == null) 1 else 2
+}
+
+private fun measureCueVisualLines(
     text: String,
     style: TextStyle,
-    modifier: Modifier = Modifier,
-) {
-    val textMeasurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    BoxWithConstraints(modifier = modifier) {
-        val maxWidthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
-        val layout = remember(text, style, maxWidthPx, textMeasurer) {
-            textMeasurer.measure(
-                text = text,
-                style = style,
-                constraints = Constraints(maxWidth = maxWidthPx),
-                maxLines = 2,
-                overflow = TextOverflow.Clip,
-            )
-        }
-        val firstLineEnd = if (layout.hasVisualOverflow && layout.lineCount >= 2) {
-            layout.getLineEnd(0, visibleEnd = true).coerceIn(0, text.length)
-        } else {
-            text.length
-        }
-        val scrollingSecondLine = if (firstLineEnd in 1 until text.length) {
-            text.substring(firstLineEnd).trimStart()
-        } else {
-            ""
-        }
+    maxWidthPx: Int,
+    textMeasurer: androidx.compose.ui.text.TextMeasurer,
+): CueVisualLines {
+    val layout = textMeasurer.measure(
+        text = text,
+        style = style,
+        constraints = Constraints(maxWidth = maxWidthPx),
+        maxLines = 2,
+        overflow = TextOverflow.Clip,
+    )
+    if (layout.lineCount < 2) return CueVisualLines(text, null)
 
-        if (scrollingSecondLine.isEmpty()) {
-            Text(
-                text = text,
-                modifier = Modifier.fillMaxWidth(),
-                style = style,
-                maxLines = 2,
-                overflow = TextOverflow.Clip,
-            )
-        } else {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = text.substring(0, firstLineEnd).trimEnd(),
-                    modifier = Modifier.fillMaxWidth(),
-                    style = style,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                )
-                Text(
-                    text = scrollingSecondLine,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("lyrics-cue-second-line"),
-                    style = style,
-                    maxLines = LyricsTypographyPolicy.secondLineMaxLines,
-                    softWrap = LyricsTypographyPolicy.secondLineSoftWrap,
-                    overflow = LyricsTypographyPolicy.secondLineOverflow,
-                )
-            }
+    val firstLineEnd = layout.getLineEnd(0, visibleEnd = true).coerceIn(0, text.length)
+    val firstLine = text.substring(0, firstLineEnd).trimEnd()
+    val secondLine = text.substring(firstLineEnd).trimStart()
+    return CueVisualLines(firstLine, secondLine.takeIf { it.isNotEmpty() })
+}
+
+private fun measurePlainVisualLines(
+    text: String,
+    style: TextStyle,
+    maxWidthPx: Int,
+    textMeasurer: androidx.compose.ui.text.TextMeasurer,
+): List<String> = text.replace("\r\n", "\n").split('\n').flatMap { paragraph ->
+    if (paragraph.isEmpty()) {
+        listOf("")
+    } else {
+        val layout = textMeasurer.measure(
+            text = paragraph,
+            style = style,
+            constraints = Constraints(maxWidth = maxWidthPx),
+            maxLines = Int.MAX_VALUE,
+            overflow = TextOverflow.Clip,
+        )
+        (0 until layout.lineCount).map { line ->
+            paragraph.substring(
+                layout.getLineStart(line).coerceIn(0, paragraph.length),
+                layout.getLineEnd(line, visibleEnd = true).coerceIn(0, paragraph.length),
+            ).trimEnd()
         }
     }
 }

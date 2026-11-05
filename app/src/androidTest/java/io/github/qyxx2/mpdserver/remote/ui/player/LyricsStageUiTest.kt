@@ -248,8 +248,8 @@ class LyricsStageUiTest {
             .fetchSemanticsNode().boundsInRoot.height / density
         val longCueHeightDp = composeRule.onNodeWithTag("lyrics-cue-1")
             .fetchSemanticsNode().boundsInRoot.height / density
-        assertTrue("inactive lyric type should be large (at least 50dp row height)", shortCueHeightDp >= 50f)
-        assertTrue("a long lyric row must stay at two lines or fewer", longCueHeightDp <= 100f)
+        assertTrue("inactive lyric type should remain approximately 50dp after device-pixel rounding; actual=$shortCueHeightDp", shortCueHeightDp >= 49.5f)
+        assertTrue("a long lyric row must stay at two visual lines or fewer; actual=$longCueHeightDp", longCueHeightDp <= shortCueHeightDp * 2.1f)
     }
 
     @Test
@@ -310,14 +310,14 @@ class LyricsStageUiTest {
     }
 
     @Test
-    fun overlongSecondLineRemainsStaticAndEllipsized() {
+    fun overlongSecondLineRemainsStaticAndCenterClipped() {
         val longCue = "超长歌词内容".repeat(45)
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
             MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
                 LyricsStage(
                     song = song("[00:01]$longCue"),
-                    resourceIdentity = "static-ellipsis-second-line",
+                    resourceIdentity = "static-center-clipped-second-line",
                     positionSeconds = 1.5,
                     durationSeconds = 120.0,
                     seekEnabled = false,
@@ -340,6 +340,139 @@ class LyricsStageUiTest {
                 assertEquals("second-line pixels must not move over time", before[x, y], after[x, y])
             }
         }
+    }
+
+    @Test
+    fun activeCueIsCenteredAndVisibleCueRowsAreNeverPartiallyCut() {
+        val timedLyrics = (1..24).joinToString("\n") {
+            "[00:%02d]歌词第%d行".format(it, it)
+        }
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song(timedLyrics, "lrc"),
+                    resourceIdentity = "centered-eight-line-viewport",
+                    positionSeconds = 10.5,
+                    durationSeconds = 120.0,
+                    seekEnabled = false,
+                    onSeek = {},
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val viewport = composeRule.onNodeWithTag("lyrics-timed-content").fetchSemanticsNode().boundsInRoot
+        val active = composeRule.onNodeWithTag("lyrics-cue-active").fetchSemanticsNode().boundsInRoot
+        assertTrue("the active cue must be completely inside the lyric viewport", active.top >= viewport.top && active.bottom <= viewport.bottom)
+        assertEquals("the active cue should be centered as a whole", viewport.center.y, active.center.y, 3f)
+        composeRule.onNodeWithTag("lyrics-cue-8").assertIsDisplayed()
+        composeRule.onNodeWithTag("lyrics-cue-10").assertIsDisplayed()
+
+        val visibleRows = (0 until 24).flatMap { index ->
+            composeRule.onAllNodesWithTag("lyrics-cue-text-$index").fetchSemanticsNodes()
+        }.filter { node ->
+            val bounds = node.boundsInRoot
+            bounds.bottom > viewport.top && bounds.top < viewport.bottom
+        }
+        assertTrue("the lyric viewport must expose no more than eight visual rows", visibleRows.size <= 8)
+        val visibleCueGroups = (0 until 24).flatMap { index ->
+            composeRule.onAllNodesWithTag("lyrics-cue-$index").fetchSemanticsNodes()
+        }.filter { node ->
+            node.boundsInRoot.bottom > viewport.top && node.boundsInRoot.top < viewport.bottom
+        }
+        val completeCueGroups = visibleCueGroups.filter {
+            it.boundsInRoot.height > viewport.height / 30f
+        }
+        assertEquals("a one-line active cue occupies the center of seven complete rows", 6, completeCueGroups.size)
+        completeCueGroups.forEach { node ->
+            assertTrue("a visible cue group must not be cut at the top", node.boundsInRoot.top >= viewport.top)
+            assertTrue("a visible cue group must not be cut at the bottom", node.boundsInRoot.bottom <= viewport.bottom)
+        }
+        visibleRows.forEach { node ->
+            assertTrue("a visible lyric row must not be cut at the top", node.boundsInRoot.top >= viewport.top)
+            assertTrue("a visible lyric row must not be cut at the bottom", node.boundsInRoot.bottom <= viewport.bottom)
+        }
+    }
+
+    @Test
+    fun activeCueStaysCenteredWhenTheSongHasFewerThanEightLines() {
+        var positionSeconds by mutableStateOf<Double?>(1.5)
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song("[00:01]第一行\n[00:02]第二行\n[00:03]第三行", "lrc"),
+                    resourceIdentity = "short-lyrics-current-cue-center",
+                    positionSeconds = positionSeconds,
+                    durationSeconds = 120.0,
+                    seekEnabled = false,
+                    onSeek = {},
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        var viewport = composeRule.onNodeWithTag("lyrics-timed-content").fetchSemanticsNode().boundsInRoot
+        var active = composeRule.onNodeWithTag("lyrics-cue-active").fetchSemanticsNode().boundsInRoot
+        assertEquals("first cue should be centered even when the whole document fits", viewport.center.y, active.center.y, 3f)
+
+        composeRule.runOnIdle { positionSeconds = 3.5 }
+        composeRule.waitForIdle()
+        viewport = composeRule.onNodeWithTag("lyrics-timed-content").fetchSemanticsNode().boundsInRoot
+        active = composeRule.onNodeWithTag("lyrics-cue-active").fetchSemanticsNode().boundsInRoot
+        assertEquals("last cue should be centered even when the whole document fits", viewport.center.y, active.center.y, 3f)
+    }
+
+    @Test
+    fun activeTwoLineCueIsCenteredAsOneCompleteGroup() {
+        val longCue = "这一句歌词需要分成两行显示".repeat(18)
+        composeRule.setContent {
+            MpdServerRemoteTheme(themePreference = ThemePreference.FOLLOW_SYSTEM) {
+                LyricsStage(
+                    song = song(
+                        ((4..9).joinToString("\n") { "[00:%02d]前置歌词第%d行".format(it, it) } +
+                            "\n[00:10]$longCue\n" +
+                            (11..18).joinToString("\n") { "[00:%02d]后续歌词第%d行".format(it, it) }),
+                        "lrc",
+                    ),
+                    resourceIdentity = "centered-two-line-cue",
+                    positionSeconds = 10.5,
+                    durationSeconds = 120.0,
+                    seekEnabled = false,
+                    onSeek = {},
+                    onShowArtwork = {},
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val viewport = composeRule.onNodeWithTag("lyrics-timed-content").fetchSemanticsNode().boundsInRoot
+        val active = composeRule.onNodeWithTag("lyrics-cue-active").fetchSemanticsNode().boundsInRoot
+        assertTrue("both lines of the active cue must remain inside the viewport", active.top >= viewport.top && active.bottom <= viewport.bottom)
+        assertEquals("the two-line cue must be centered as one group", viewport.center.y, active.center.y, 3f)
+        val firstLine = composeRule.onNodeWithTag(
+            "lyrics-cue-text-6",
+            useUnmergedTree = true,
+        ).fetchSemanticsNode().boundsInRoot
+        val secondLine = composeRule.onNodeWithTag(
+            "lyrics-cue-second-line",
+            useUnmergedTree = true,
+        ).fetchSemanticsNode().boundsInRoot
+        assertTrue("first visual line must extend above the viewport center", firstLine.center.y < viewport.center.y)
+        assertTrue("second visual line must extend below the viewport center", secondLine.center.y > viewport.center.y)
+        assertTrue("both visual lines must remain complete", firstLine.top >= viewport.top && secondLine.bottom <= viewport.bottom)
+        val visibleCueGroups = (0 until 18).flatMap { index ->
+            composeRule.onAllNodesWithTag("lyrics-cue-$index").fetchSemanticsNodes()
+        }.filter { node ->
+            node.boundsInRoot.bottom > viewport.top && node.boundsInRoot.top < viewport.bottom
+        }.filter { it.boundsInRoot.height > viewport.height / 30f }
+        assertTrue("two-line centered cue should keep surrounding cue groups complete",
+            visibleCueGroups.all { it.boundsInRoot.top >= viewport.top && it.boundsInRoot.bottom <= viewport.bottom })
+        composeRule.onNodeWithTag("lyrics-cue-second-line", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
