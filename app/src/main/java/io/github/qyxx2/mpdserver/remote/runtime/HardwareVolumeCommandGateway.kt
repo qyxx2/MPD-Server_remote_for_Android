@@ -40,6 +40,8 @@ data class HardwareVolumeCommandState(
     val queuedInputCount: Int = 0,
     val retryableIntentId: String? = null,
     val message: String? = null,
+    /** Confirmed canonical value plus transient FIFO inputs; never written to SnapshotStore. */
+    val previewVolumePercent: Int? = null,
 )
 
 /**
@@ -78,6 +80,10 @@ class HardwareVolumeCommandGateway(
                 val expected = session ?: return@synchronized
                 if (!sessionMatches(expected, observed, originProvider())) {
                     abortQueuedInputsLocked("Hardware volume state/session is no longer fresh")
+                } else {
+                    // Keep the short-lived overlay preview aligned with canonical readback while
+                    // preserving queued inputs and without changing the hide deadline.
+                    publishLocked(phase = _state.value.phase)
                 }
             }
         }
@@ -494,7 +500,26 @@ class HardwareVolumeCommandGateway(
             queuedInputCount = queuedInputCount,
             retryableIntentId = retryableIntentId,
             message = message,
+            previewVolumePercent = projectedVolumePreviewLocked(),
         )
+    }
+
+    /** Compute the display-only target without duplicating a value already confirmed by readback. */
+    private fun projectedVolumePreviewLocked(): Int? {
+        val currentState = stateProvider()
+        val capability = HardwareVolumeCapabilityPolicy.evaluate(currentState)
+        var projected = capability.controllableVolumePercent ?: return null
+        val work = active
+        if (work != null) {
+            val snapshot = currentState.snapshot
+            val alreadyConfirmed = snapshot != null &&
+                snapshot.epoch == work.session.epoch &&
+                snapshot.sequence > work.baseSequence &&
+                projected == work.targetPercent
+            if (!alreadyConfirmed) projected = work.targetPercent
+        }
+        queue.forEach { input -> projected = targetFor(input, projected) }
+        return projected.coerceIn(0, 100)
     }
 
     private fun targetFor(input: PendingInput, current: Int): Int = when (input) {

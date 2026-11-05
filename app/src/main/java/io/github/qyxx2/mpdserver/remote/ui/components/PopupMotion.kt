@@ -178,6 +178,7 @@ internal fun PopupMotionHost(
             } ?: TransformOrigin.Center
             val values = PopupMotionValues(alpha = alpha, scale = scale, transformOrigin = origin)
             val surfaceModifier = Modifier
+                .forwardForegroundVolumeKeys()
                 .onGloballyPositioned { popupBounds.value = it.screenRect() }
                 .graphicsLayer {
                     this.alpha = alpha

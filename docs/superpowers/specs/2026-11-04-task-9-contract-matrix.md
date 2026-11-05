@@ -1,6 +1,6 @@
 # Task 9 — DAC 硬件音量控制合同矩阵
 
-> **状态：** 规格已冻结；Batch 0（上游接口核对）、Batch 1（DTO/资格投影）、Batch 2（实时 invalidate/完整快照）、Batch 3（PUT mutation/命令串行化）和 Batch 4（DAC 紧凑面板）和 Batch 5（Slider 交互/服务端读回）已完成；Batch 6–7 尚未执行。Batch 5 证据见 [验证报告](../reports/2026-11-04-task-9-batch5-verification.md)，Batch 4 证据见 [验证报告](../reports/2026-11-04-task-9-batch4-verification.md)。
+> **状态：** 规格已冻结；Batch 0–6 已完成；Batch 7 集成验收已由用户于 2026-11-05 确认通过。本次提交不补写未提供的现场验收数据。Batch 6 证据见 [验证报告](../reports/2026-11-05-task-9-batch6-verification.md)，Batch 5 证据见 [验证报告](../reports/2026-11-04-task-9-batch5-verification.md)，Batch 4 证据见 [验证报告](../reports/2026-11-04-task-9-batch4-verification.md)。
 > **基线：** Android `main` commit `c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef`。
 > **分支：** `feature/task-9-hardware-volume-control`。
 > **主设计：** [Task 9 硬件音量控制规格](2026-11-04-task-9-hardware-volume-control-design.md)。
@@ -62,8 +62,8 @@
 | B3 — Mutation 与命令串行化 | PUT/幂等/读回；Slider absolute intent 与 key delta 输入仲裁；unknown/failed/retry 语义。实现与自动化验证已完成，详见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)。 | T9-06 至 T9-10、T9-19 |
 | B4 — DAC 紧凑弹窗展示 | **已完成。** 替换大型详情对话框；完成两行信息布局、fresh 输出字段、服务端音量投影、几何锚定和现有弹窗动效。证据见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)。 | T9-11 至 T9-14 |
 | B5 — Slider 交互控制 | **已完成。** 手势本地 preview、释放单次绝对提交、pending/完整快照 readback、canonical tuple 失效、FAILED/UNKNOWN、无障碍 SetProgress 同路径；证据见 [Batch 5 验证报告](../reports/2026-11-04-task-9-batch5-verification.md)。 | T9-04、T9-07、T9-08、T9-15 |
-| B6 — App 前台全局音量键与提示浮窗 | 建立 Activity/应用窗口级输入 adapter；加入顶部横条纯数字浮窗，覆盖所有前台路由和自有弹窗；按键立即更新，2 秒无新按键后隐藏；未来输入源保持可扩展。 | T9-08、T9-09、T9-16 至 T9-18、T9-21 |
-| B7 — 集成回归与 NAS/Android 实机验收 | 全量 clean/build/test/lint、NAS 可恢复写入、Android 实机两种输入源、播放保护和证据归档。 | T9-01 至 T9-20 |
+| B6 — App 前台全局音量键与提示浮窗 | **已完成。** Activity 统一输入适配器、应用自有 Popup/Dialog 按键转发、同一 gateway FIFO 预览、状态环下方 8dp 纯数字提示、2 秒隐藏与 Dialog-local z-order；SM-G986N Android 13 instrumentation 5/5、545 项单测、Lint/Debug APK 通过。详见 [Batch 6 验证报告](../reports/2026-11-05-task-9-batch6-verification.md)。 | T9-08、T9-09、T9-16 至 T9-18、T9-21 |
+| B7 — 集成回归与 NAS/Android 实机验收 | **验收已通过（用户于 2026-11-05 确认）。** 现场验收的详细命令、设备/服务端参数及音量恢复数值未随本次提交提供，本次不作独立复测声明。 | T9-01 至 T9-21 |
 
 ## 5. 每批统一交付规则
 

@@ -82,7 +82,12 @@ internal fun MotionAlertDialog(
                     dialogWindow?.setDimAmount(0f)
                     dialogWindow?.setBackgroundDrawable(ColorDrawable(AndroidColor.TRANSPARENT))
                 }
-                Box(modifier = Modifier.fillMaxSize().imePadding().semantics { paneTitle = dialogTitle }) {
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                        .imePadding()
+                        .forwardForegroundVolumeKeys()
+                        .semantics { paneTitle = dialogTitle },
+                ) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -123,6 +128,14 @@ internal fun MotionAlertDialog(
                                 confirmButton()
                             }
                         }
+                    }
+                    LocalHardwareVolumeOverlayEnvironment.current?.let { overlay ->
+                        HardwareVolumeOverlayPopup(
+                            state = overlay.state,
+                            geometry = overlay.geometry,
+                            preferences = overlay.preferences,
+                            darkTheme = overlay.darkTheme,
+                        )
                     }
                 }
             }

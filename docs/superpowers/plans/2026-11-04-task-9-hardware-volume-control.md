@@ -5,7 +5,7 @@
 **Android 基线：** c6d9450534c179ce4cc80e6a15f1fd70fb5bb0ef
 **合同：** [Task 9 合同矩阵](../specs/2026-11-04-task-9-contract-matrix.md)
 **设计：** [Task 9 设计规格](../specs/2026-11-04-task-9-hardware-volume-control-design.md)
-**状态：** Batch 0–5 已完成；Batch 6–7 尚未执行。B5 Slider 控制/读回见 [Batch 5 验证报告](../reports/2026-11-04-task-9-batch5-verification.md)，B4 DAC 紧凑面板见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)；B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
+**状态：** Batch 0–6 已完成；Batch 7 集成验收已由用户于 2026-11-05 确认通过。B7 的现场验收记录未随本次提交提供，本次仅同步验收状态，不补写未经提供的设备/服务器数值。B6 前台音量键/提示浮窗见 [Batch 6 验证报告](../reports/2026-11-05-task-9-batch6-verification.md)，B5 Slider 控制/读回见 [Batch 5 验证报告](../reports/2026-11-04-task-9-batch5-verification.md)，B4 DAC 紧凑面板见 [Batch 4 验证报告](../reports/2026-11-04-task-9-batch4-verification.md)；B1 DTO/共享快照资格投影见 [Batch 1 验证报告](../reports/2026-11-04-task-9-batch1-verification.md)，B2 realtime invalidate/完整快照同步见 [Batch 2 验证报告](../reports/2026-11-04-task-9-batch2-verification.md)，B3 mutation/命令串行化见 [Batch 3 验证报告](../reports/2026-11-04-task-9-batch3-verification.md)；上游接口核对见 [Batch 0 验证报告](../reports/2026-11-04-task-9-batch0-verification.md)。
 
 ## 0. 执行前约束
 
@@ -186,6 +186,8 @@
 
 ## Batch 6 — App 前台任意页面的音量键与全局提示浮窗
 
+**状态：已完成。** Activity 统一接管前台 Volume key，应用自有 Popup/Dialog 转发到同一输入适配器；命令预览继续由 SnapshotStore 与 gateway FIFO 派生。顶部提示 Popup 依据实际状态环/安全 Insets 定位、2 秒无按键隐藏；MotionAlertDialog 在自身 Dialog 窗口内复用同一提示投影，避免独立 Dialog 窗口遮挡。SM-G986N / Android 13 instrumentation 5/5、全量单测 545/545、Lint、Debug APK 和差异检查通过。详见 [Batch 6 验证报告](../reports/2026-11-05-task-9-batch6-verification.md)。
+
 **目标：** App 在前台任意位置时，Volume Up/Down 都控制远端硬件音量；同时显示跟随按键变化的顶部横条纯数字浮窗。不在各屏幕散布事件处理。
 
 **预期代码范围：**
@@ -230,6 +232,8 @@
 10. 更新 README、Task 9 plan checkboxes 和最终验证报告；不要替 Task 7/8 的独立退出门打勾。
 
 **退出门：** T9-01 至 T9-21 全部有证据；NAS 原值已恢复；所有残余限制明确记录。
+
+**Batch 7 验收状态：已通过（用户于 2026-11-05 确认）。** 本次提交未重新执行 NAS 写入或 Android 实机验收；具体现场数据与过程以用户完成的验收记录为准。
 
 ## 总退出条件
 

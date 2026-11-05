@@ -451,6 +451,62 @@ class HardwareVolumeCommandGatewayTest {
         JsonConfiguration.json.decodeFromString(
             """{"epoch":"$epoch","sequence":$sequence,"captured_at":"2026-11-04T12:00:00Z","explicit_stop_generation":0,"revisions":{"library":0,"playlist":0},"playback":{},"current_song":null,"queue":{"revision":0,"items":[]},"history":{},"playback_observation":{},"output":{},"output_observation":{},"hardware_volume":{"state":{"status":"AVAILABLE","volume_percent":$volume,"output_name":"USB DAC","output_plugin":"alsa","output_enabled":true,"control_source":"MPD_HARDWARE_MIXER","error_code":null,"error_message":null,"updated_at":"2026-11-04T12:00:00Z","stale":false},"last_request":null},"hardware_volume_observation":{"observed_at":"2026-11-04T12:00:00Z","freshness":"fresh","error_code":null,"error_message":null},"library_sync":{"generation":0}}""",
         )
+
+    @Test fun keyPreviewIncludesQueuedStepsAndDoesNotDoubleCountAfterReadbackArrives() = runBlocking {
+        val snapshots = freshStore(50)
+        val origin = ServerOrigin.parse("http://music.example:18000")
+        val sent = java.util.concurrent.CopyOnWriteArrayList<MutationRequest>()
+        val readbackStarted = CountDownLatch(1)
+        val releaseReadback = CountDownLatch(1)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val coordinator = MutationCoordinator(
+            origin = origin,
+            send = { request ->
+                sent += request
+                HttpResult.NoContent()
+            },
+            synchronize = {
+                val target = sent.last().payloadTarget()
+                if (sent.size == 1) {
+                    readbackStarted.countDown()
+                    releaseReadback.await(2, TimeUnit.SECONDS)
+                }
+                acceptReadback(snapshots, target)
+            },
+            parentScope = scope,
+            keyFactory = { "preview-key-${sent.size}" },
+        )
+        val gateway = gateway(snapshots, origin, coordinator, scope)
+        try {
+            gateway.step(1)
+            assertTrue(readbackStarted.await(2, TimeUnit.SECONDS))
+            assertEquals(51, gateway.state.value.previewVolumePercent)
+
+            gateway.step(1)
+            assertEquals(52, gateway.state.value.previewVolumePercent)
+            releaseReadback.countDown()
+
+            withTimeout(2_000) {
+                while (currentVolume(snapshots) != 51) delay(5)
+            }
+            assertEquals(
+                "a server readback that confirms the active step must become the preview base, not be added twice",
+                52,
+                gateway.state.value.previewVolumePercent,
+            )
+
+            withTimeout(3_000) {
+                gateway.state.first { it.phase == HardwareVolumeCommandPhase.IDLE && currentVolume(snapshots) == 52 }
+            }
+            assertEquals(52, gateway.state.value.previewVolumePercent)
+        } finally {
+            releaseReadback.countDown()
+            gateway.close()
+            coordinator.close()
+            scope.cancelForTest()
+        }
+    }
+
 }
 
 private fun CoroutineScope.cancelForTest() = coroutineContext[kotlinx.coroutines.Job]?.cancel()
