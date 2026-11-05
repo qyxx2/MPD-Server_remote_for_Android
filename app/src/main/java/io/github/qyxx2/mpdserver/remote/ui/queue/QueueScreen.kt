@@ -71,8 +71,13 @@ import io.github.qyxx2.mpdserver.remote.ui.player.PlayerArtworkMemoryCache
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -120,6 +125,7 @@ internal fun QueueScreen(
     presentation: PlayerPresentation,
     onExit: () -> Unit,
     onOpenPlayer: () -> Unit,
+    clockPosition: StateFlow<Double?> = MutableStateFlow(null),
     artworkPresentation: PlayerPresentation = presentation,
     artworkCacheKey: PlayerArtworkCacheKey? = null,
     artworkCache: PlayerArtworkMemoryCache? = null,
@@ -188,6 +194,29 @@ internal fun QueueScreen(
             queueProjection.current?.let(::add)
             addAll(queueProjection.next)
         }
+    }
+    val visibleSongIds = remember(visibleRows) {
+        visibleRows.mapNotNull { it.songId.takeIf(String::isNotBlank) }.toSet()
+    }
+    var remainingDurations by remember(runtime, resourceIdentity) {
+        mutableStateOf<Map<String, Double?>>(emptyMap())
+    }
+    LaunchedEffect(runtime, resourceIdentity, visibleSongIds, snapshotState.controlsEligible) {
+        if (!snapshotState.controlsEligible) {
+            remainingDurations = emptyMap()
+            return@LaunchedEffect
+        }
+        val retained = remainingDurations.filterKeys { it in visibleSongIds }
+        val missing = visibleSongIds - retained.keys
+        val loaded = coroutineScope {
+            missing.map { songId ->
+                async {
+                    val duration = (runtime.reads.getSong(songId) as? ApiResult.Success)?.value?.duration
+                    songId to duration
+                }
+            }.awaitAll().toMap()
+        }
+        remainingDurations = retained + loaded
     }
     // Display order runs oldest -> newest -> current -> pending, matching Web's reversal of
     // its newest-first Played prefix. The current occurrence remains the initial viewport anchor.
@@ -649,12 +678,11 @@ internal fun QueueScreen(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "剩余播放时间：--:--",
-                        modifier = Modifier.weight(1f).testTag("queue-remaining-time"),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                    QueueRemainingTimeLabel(
+                        visibleRows = visibleRows,
+                        durationsBySongId = remainingDurations,
+                        clockPosition = clockPosition,
+                        modifier = Modifier.weight(1f),
                     )
                     Row(
                         modifier = Modifier
@@ -1084,4 +1112,27 @@ private fun QueueStatusMessage(
             style = MaterialTheme.typography.bodyLarge,
         )
     }
+}
+
+
+@Composable
+private fun QueueRemainingTimeLabel(
+    visibleRows: List<QueueItemDto>,
+    durationsBySongId: Map<String, Double?>,
+    clockPosition: StateFlow<Double?>,
+    modifier: Modifier = Modifier,
+) {
+    val currentPosition by clockPosition.collectAsStateWithLifecycle()
+    val remaining = QueueRemainingTime.remainingSeconds(
+        visibleRows = visibleRows,
+        durationsBySongId = durationsBySongId,
+        currentPositionSeconds = currentPosition,
+    )
+    Text(
+        text = "剩余播放时间：" + QueueRemainingTime.format(remaining),
+        modifier = modifier.testTag("queue-remaining-time"),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+    )
 }

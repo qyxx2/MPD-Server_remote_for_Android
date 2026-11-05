@@ -99,7 +99,10 @@ import io.github.qyxx2.mpdserver.remote.ui.player.MiniPlayerExpansionPolicy
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerEntityNavigationRequest
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentation
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerPresentationHandoff
+import io.github.qyxx2.mpdserver.remote.protocol.dto.ActualPlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerActions
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerClock
+import io.github.qyxx2.mpdserver.remote.ui.player.PlayerFacts
 import io.github.qyxx2.mpdserver.remote.ui.player.PlayerAction
 import io.github.qyxx2.mpdserver.remote.ui.player.ConfirmedPlaybackStatus
 import io.github.qyxx2.mpdserver.remote.ui.player.resolveArtistNavigationRequest
@@ -143,6 +146,8 @@ import io.github.qyxx2.mpdserver.remote.ui.preferences.UiPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -265,6 +270,85 @@ fun AppNavHost(
     val playerActionState by playerActions.state.collectAsStateWithLifecycle()
     LaunchedEffect(playerActions, snapshotState, activities) {
         playerActions.update(snapshotState, activities)
+    }
+    // One display-only clock is shared by Player and Queue. Canonical position remains owned by
+    // SnapshotStore; this clock only projects the same accepted observation between server reads.
+    val sharedPlayerClock = remember(runtime) { PlayerClock() }
+    val sharedClockPosition = remember(sharedPlayerClock) {
+        MutableStateFlow<Double?>(sharedPlayerClock.positionSeconds)
+    }
+    val clockLifecycleScope = rememberCoroutineScope()
+    var clockLifecycleStarted by remember(lifecycleOwner) {
+        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+    }
+    val clockSnapshot = playerActions.currentSnapshot() ?: snapshotState
+    val clockFacts = remember(clockSnapshot) { PlayerFacts.from(clockSnapshot) }
+    val clockObservation = clockFacts.playbackObservation
+    val clockRouteActive = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route ||
+        currentRoute == AppDestination.QUEUE.route
+
+    LaunchedEffect(sharedPlayerClock, snapshotState, playerActionState) {
+        sharedPlayerClock.update(clockSnapshot)
+        sharedClockPosition.value = sharedPlayerClock.positionSeconds
+    }
+    LaunchedEffect(sharedPlayerClock, clockRouteActive, clockLifecycleStarted) {
+        if (!clockRouteActive || !clockLifecycleStarted) {
+            sharedClockPosition.value = sharedPlayerClock.positionSeconds
+            return@LaunchedEffect
+        }
+        while (true) {
+            delay(100)
+            sharedClockPosition.value = sharedPlayerClock.positionSeconds
+        }
+    }
+    LaunchedEffect(runtime, clockRouteActive, snapshotState.controlsEligible, clockObservation?.actualState) {
+        if (!clockRouteActive) return@LaunchedEffect
+        if (snapshotState.controlsEligible && clockObservation?.actualState == ActualPlaybackStateDto.playing) {
+            try {
+                runtime.refreshSnapshot()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // SnapshotStore and StateReadCoordinator retain the authoritative read error.
+            }
+            sharedPlayerClock.update(playerActions.currentSnapshot() ?: runtime.snapshots.state.value)
+            sharedClockPosition.value = sharedPlayerClock.positionSeconds
+        }
+    }
+    DisposableEffect(lifecycleOwner, sharedPlayerClock, runtime, clockRouteActive) {
+        var backgrounded = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> if (clockRouteActive) {
+                    backgrounded = true
+                    clockLifecycleStarted = false
+                    sharedPlayerClock.setVisible(false)
+                    sharedClockPosition.value = sharedPlayerClock.positionSeconds
+                }
+                Lifecycle.Event.ON_START -> if (backgrounded) {
+                    backgrounded = false
+                    clockLifecycleStarted = true
+                    sharedPlayerClock.setVisible(true)
+                    clockLifecycleScope.launch {
+                        runtime.refreshSnapshot()
+                        sharedPlayerClock.completeForegroundRead(
+                            playerActions.currentSnapshot() ?: runtime.snapshots.state.value,
+                        )
+                        sharedClockPosition.value = sharedPlayerClock.positionSeconds
+                        if (sharedPlayerClock.isAwaitingForegroundRead) {
+                            runtime.refreshSnapshot()
+                            sharedPlayerClock.completeForegroundRead(
+                                playerActions.currentSnapshot() ?: runtime.snapshots.state.value,
+                            )
+                            sharedClockPosition.value = sharedPlayerClock.positionSeconds
+                        }
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val currentServerOrigin = runtime.realtimeController.currentOrigin()
     val homeArtworkIdentity = remember(
@@ -1037,7 +1121,7 @@ fun AppNavHost(
                                     mediaPresentation = mediaProjection.mediaPresentation,
                                     mediaHandoffActive = mediaProjection.isHandoff,
                                     mediaHandoffPositionSeconds = mediaProjection.positionSeconds,
-                                    clockUpdatesEnabled = currentRoute == AppDestination.FULL_SCREEN_PLAYER.route,
+                                    clockPosition = sharedClockPosition,
                                     entryProgress = entryProgress,
                                     actions = playerActions,
                                     artworkCacheKey = artworkCacheKey,
@@ -1076,6 +1160,7 @@ fun AppNavHost(
                                     artworkCacheKey = artworkCacheKey,
                                     artworkCache = artworkCache,
                                     songCache = queueSongCache,
+                                    clockPosition = sharedClockPosition,
                                     contentPadding = safeContentPadding,
                                     onDismissDragDelta = ::updatePlayerDismissDrag,
                                     onDismissGestureEnd = ::finishPlayerDismissGesture,
@@ -1185,6 +1270,7 @@ fun AppNavHost(
                         playerMediaHandoffActive = mediaProjection.isHandoff,
                         playerMediaPositionSeconds = mediaProjection.positionSeconds,
                         playerActions = playerActions,
+                        clockPosition = sharedClockPosition,
                         playerArtworkCacheKey = artworkCacheKey,
                         playerArtworkCache = artworkCache,
                         queueSongCache = queueSongCache,
@@ -1250,9 +1336,8 @@ fun AppNavHost(
                             mediaPresentation = mediaProjection.mediaPresentation,
                             mediaHandoffActive = mediaProjection.isHandoff,
                             mediaHandoffPositionSeconds = mediaProjection.positionSeconds,
-                            clockUpdatesEnabled = false,
+                            clockPosition = sharedClockPosition,
                             entryProgress = entryProgress,
-                            refreshSnapshotOnMount = false,
                             actions = null,
                             artworkCacheKey = artworkCacheKey,
                             artworkCache = artworkCache,
@@ -1497,6 +1582,7 @@ private fun AppNavigationGraph(
     playerMediaHandoffActive: Boolean,
     playerMediaPositionSeconds: Double?,
     playerActions: PlayerActions,
+    clockPosition: StateFlow<Double?>,
     playerArtworkCacheKey: PlayerArtworkCacheKey?,
     playerArtworkCache: PlayerArtworkMemoryCache,
     queueSongCache: QueueSongCache,
@@ -1687,6 +1773,7 @@ private fun AppNavigationGraph(
                     mediaPresentation = playerMediaPresentation,
                     mediaHandoffActive = playerMediaHandoffActive,
                     mediaHandoffPositionSeconds = playerMediaPositionSeconds,
+                    clockPosition = clockPosition,
                     actions = playerActions,
                     artworkCacheKey = playerArtworkCacheKey,
                     artworkCache = playerArtworkCache,
@@ -1727,6 +1814,7 @@ private fun AppNavigationGraph(
                     artworkCacheKey = playerArtworkCacheKey,
                     artworkCache = playerArtworkCache,
                     songCache = queueSongCache,
+                    clockPosition = clockPosition,
                     contentPadding = queueContentPadding,
                 )
             }

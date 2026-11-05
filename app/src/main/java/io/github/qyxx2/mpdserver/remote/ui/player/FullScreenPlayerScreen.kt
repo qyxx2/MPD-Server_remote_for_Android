@@ -25,7 +25,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.State
@@ -41,7 +40,6 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -49,10 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.qyxx2.mpdserver.remote.protocol.dto.ActualPlaybackStateDto
 import io.github.qyxx2.mpdserver.remote.runtime.AppRuntime
 import io.github.qyxx2.mpdserver.remote.runtime.HardwareVolumeCapabilityPolicy
 import io.github.qyxx2.mpdserver.remote.runtime.SnapshotStoreState
@@ -60,8 +55,6 @@ import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
 import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -75,9 +68,8 @@ fun FullScreenPlayerScreen(
     mediaPresentation: PlayerPresentation = presentation,
     mediaHandoffActive: Boolean = false,
     mediaHandoffPositionSeconds: Double? = null,
-    clockUpdatesEnabled: Boolean = true,
+    clockPosition: StateFlow<Double?>,
     entryProgress: Float = 1f,
-    refreshSnapshotOnMount: Boolean = true,
     actions: PlayerActions? = null,
     onExit: () -> Unit,
     onOpenQueue: () -> Unit,
@@ -104,88 +96,9 @@ fun FullScreenPlayerScreen(
     } else {
         PlayerActionsState()
     }
-    val playerClock = remember(runtime) { PlayerClock() }
-    val clockPosition = remember(playerClock) {
-        kotlinx.coroutines.flow.MutableStateFlow(playerClock.positionSeconds)
-    }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val lifecycleScope = androidx.compose.runtime.rememberCoroutineScope()
-    var lifecycleStarted by remember(lifecycleOwner) {
-        mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
-    }
-
     val clockSnapshot = actions?.currentSnapshot() ?: snapshotState
-    // One typed projection per immutable canonical snapshot. PlayerFacts internally caches the
-    // decoded Queue/song/observation DTOs, and this local reference also avoids rebuilding wrappers
-    // several times while rendering the same player frame.
+    // Player and Queue share this read-only position flow from AppNavHost.
     val clockFacts = remember(clockSnapshot) { PlayerFacts.from(clockSnapshot) }
-    LaunchedEffect(playerClock, snapshotState, actionState) {
-        playerClock.update(clockSnapshot)
-        clockPosition.value = playerClock.positionSeconds
-    }
-    // The high-frequency clock is deliberately a StateFlow, not Compose state owned by this
-    // screen. Only the progress and lyrics regions collect it, so clock ticks cannot recompose
-    // artwork, song identity, controls, or the rest of FullScreenPlayerScreen.
-    LaunchedEffect(playerClock, clockUpdatesEnabled, lifecycleStarted) {
-        if (!clockUpdatesEnabled || !lifecycleStarted) {
-            clockPosition.value = playerClock.positionSeconds
-            return@LaunchedEffect
-        }
-        while (true) {
-            delay(100)
-            clockPosition.value = playerClock.positionSeconds
-        }
-    }
-    val clockObservation = clockFacts.playbackObservation
-    LaunchedEffect(runtime, refreshSnapshotOnMount, snapshotState.controlsEligible, clockObservation?.actualState) {
-        // Match the Web session: establish a timing baseline on the real Player route when
-        // playback is active. A temporary pull-up preview must not trigger an additional read.
-        if (!refreshSnapshotOnMount) return@LaunchedEffect
-        if (snapshotState.controlsEligible && clockObservation?.actualState == ActualPlaybackStateDto.playing) {
-            try {
-                runtime.refreshSnapshot()
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // The existing SnapshotStore/StateReadCoordinator retain the authoritative read error.
-            }
-            playerClock.update(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
-            clockPosition.value = playerClock.positionSeconds
-        }
-    }
-    DisposableEffect(lifecycleOwner, playerClock, runtime) {
-        var backgrounded = false
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_STOP -> {
-                    backgrounded = true
-                    lifecycleStarted = false
-                    playerClock.setVisible(false)
-                    clockPosition.value = playerClock.positionSeconds
-                }
-                Lifecycle.Event.ON_START -> if (backgrounded) {
-                    backgrounded = false
-                    lifecycleStarted = true
-                    playerClock.setVisible(true)
-                    lifecycleScope.launch {
-                        runtime.refreshSnapshot()
-                        playerClock.completeForegroundRead(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
-                        clockPosition.value = playerClock.positionSeconds
-                        // If the coalesced request had begun before foregrounding, its timing is
-                        // intentionally rejected by PlayerClock. Start one post-foreground read.
-                        if (playerClock.isAwaitingForegroundRead) {
-                            runtime.refreshSnapshot()
-                            playerClock.completeForegroundRead(actions?.currentSnapshot() ?: runtime.snapshots.state.value)
-                            clockPosition.value = playerClock.positionSeconds
-                        }
-                    }
-                }
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
     // The slider preview is local presentation only. The base position always comes from a fresh,
     // target-bound server observation and is never written into SnapshotStore.
     val observed = clockFacts.playbackObservation
