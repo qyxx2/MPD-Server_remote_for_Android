@@ -37,8 +37,8 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 10000
+        versionName = "1.0.0"
         resValue("string", "app_name", appDisplayName)
         buildConfigField("String", "APP_DISPLAY_NAME", "\"$appDisplayName\"")
     }

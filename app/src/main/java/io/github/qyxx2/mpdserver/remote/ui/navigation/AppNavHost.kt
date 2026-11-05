@@ -136,6 +136,7 @@ import io.github.qyxx2.mpdserver.remote.ui.settings.ServerSettingsScreen
 import io.github.qyxx2.mpdserver.remote.ui.settings.AppearanceSettingsScreen
 import io.github.qyxx2.mpdserver.remote.ui.settings.AboutScreen
 import io.github.qyxx2.mpdserver.remote.ui.settings.createRepositoryLinkIntent
+import io.github.qyxx2.mpdserver.remote.ui.settings.createMpdServerRepositoryLinkIntent
 import androidx.compose.ui.platform.testTag
 import io.github.qyxx2.mpdserver.remote.ui.shell.AppShell
 import io.github.qyxx2.mpdserver.remote.ui.shell.MiniPlayer
@@ -1746,11 +1747,18 @@ private fun AppNavigationGraph(
                         )
                         SettingsSection.ABOUT -> {
                             val context = LocalContext.current
-                            AboutScreen(onOpenRepository = {
-                                runCatching {
-                                    context.startActivity(createRepositoryLinkIntent())
-                                }
-                            })
+                            AboutScreen(
+                                onOpenRepository = {
+                                    runCatching {
+                                        context.startActivity(createRepositoryLinkIntent())
+                                    }
+                                },
+                                onOpenMpdServerRepository = {
+                                    runCatching {
+                                        context.startActivity(createMpdServerRepositoryLinkIntent())
+                                    }
+                                },
+                            )
                         }
                     }
                 }

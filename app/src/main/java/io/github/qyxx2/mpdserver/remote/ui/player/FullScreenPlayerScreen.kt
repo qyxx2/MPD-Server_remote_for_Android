@@ -55,6 +55,7 @@ import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorKind
 import io.github.qyxx2.mpdserver.remote.ui.components.PopupMotionAnchorState
 import io.github.qyxx2.mpdserver.remote.ui.components.popupMotionAnchor
 import io.github.qyxx2.mpdserver.remote.ui.components.rememberPopupMotionAnchorState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -68,7 +69,7 @@ fun FullScreenPlayerScreen(
     mediaPresentation: PlayerPresentation = presentation,
     mediaHandoffActive: Boolean = false,
     mediaHandoffPositionSeconds: Double? = null,
-    clockPosition: StateFlow<Double?>,
+    clockPosition: StateFlow<Double?> = MutableStateFlow(null),
     entryProgress: Float = 1f,
     actions: PlayerActions? = null,
     onExit: () -> Unit,

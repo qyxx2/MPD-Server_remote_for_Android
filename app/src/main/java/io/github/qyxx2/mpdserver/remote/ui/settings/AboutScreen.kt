@@ -21,13 +21,21 @@ import androidx.compose.ui.unit.dp
 import io.github.qyxx2.mpdserver.remote.BuildConfig
 
 const val MPD_REMOTE_REPOSITORY_URL = "https://github.com/qyxx2/MPD-Server_remote_for_Android"
+const val MPD_SERVER_REPOSITORY_URL = "https://github.com/qyxx2/MPD-Server"
 
-/** The single source for the repository action used by the About page and its contract test. */
+/** The single source for the Android client repository action used by the About page and its contract test. */
 fun createRepositoryLinkIntent(): Intent =
     Intent(Intent.ACTION_VIEW, Uri.parse(MPD_REMOTE_REPOSITORY_URL))
 
+/** Opens the upstream MPD-Server project that provides this client's authoritative API and state. */
+fun createMpdServerRepositoryLinkIntent(): Intent =
+    Intent(Intent.ACTION_VIEW, Uri.parse(MPD_SERVER_REPOSITORY_URL))
+
 @Composable
-fun AboutScreen(onOpenRepository: () -> Unit) {
+fun AboutScreen(
+    onOpenRepository: () -> Unit,
+    onOpenMpdServerRepository: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 20.dp).testTag("about-settings-screen"),
@@ -56,7 +64,24 @@ fun AboutScreen(onOpenRepository: () -> Unit) {
                 modifier = Modifier.testTag("about-repository-url"),
             )
             OutlinedButton(onClick = onOpenRepository, modifier = Modifier.testTag("about-repository-link")) {
-                Text("查看 GitHub 仓库")
+                Text("查看 Android 客户端仓库")
+            }
+            Text(
+                "上游 MPD-Server",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                MPD_SERVER_REPOSITORY_URL,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.testTag("about-mpd-server-repository-url"),
+            )
+            OutlinedButton(
+                onClick = onOpenMpdServerRepository,
+                modifier = Modifier.testTag("about-mpd-server-repository-link"),
+            ) {
+                Text("查看 MPD-Server 仓库")
             }
         }
     }

@@ -48,8 +48,9 @@ import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusContent
 import io.github.qyxx2.mpdserver.remote.ui.components.ActivityRowPresentation
 import io.github.qyxx2.mpdserver.remote.ui.components.ActivityVisualState
 import io.github.qyxx2.mpdserver.remote.ui.components.ActivityStatusSheet
-import io.github.qyxx2.mpdserver.remote.ui.settings.createRepositoryLinkIntent
 import io.github.qyxx2.mpdserver.remote.ui.settings.AboutScreen
+import io.github.qyxx2.mpdserver.remote.ui.settings.createMpdServerRepositoryLinkIntent
+import io.github.qyxx2.mpdserver.remote.ui.settings.createRepositoryLinkIntent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -309,9 +310,11 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("about-app-name").assertIsDisplayed()
         composeRule.onNodeWithTag("about-introduction").assertIsDisplayed()
         composeRule.onNodeWithTag("about-author").assertIsDisplayed()
-        composeRule.onNodeWithTag("about-version").assertIsDisplayed()
+        composeRule.onNodeWithTag("about-version").assertTextEquals("1.0.0")
         composeRule.onNodeWithTag("about-repository-link").assertIsDisplayed()
         composeRule.onNodeWithText("https://github.com/qyxx2/MPD-Server_remote_for_Android").assertIsDisplayed()
+        composeRule.onNodeWithTag("about-mpd-server-repository-link").assertIsDisplayed()
+        composeRule.onNodeWithText("https://github.com/qyxx2/MPD-Server").assertIsDisplayed()
 
         val repositoryIntent = createRepositoryLinkIntent()
         assertEquals(Intent.ACTION_VIEW, repositoryIntent.action)
@@ -325,7 +328,10 @@ class AppNavigationUiTest {
     fun aboutRepositoryButtonInvokesTheOpenAction() {
         var openRequested = false
         composeRule.setContent {
-            AboutScreen(onOpenRepository = { openRequested = true })
+            AboutScreen(
+                onOpenRepository = { openRequested = true },
+                onOpenMpdServerRepository = {},
+            )
         }
 
         composeRule.onNodeWithTag("about-repository-link").performClick()
@@ -333,6 +339,23 @@ class AppNavigationUiTest {
         val intent = createRepositoryLinkIntent()
         assertEquals(Intent.ACTION_VIEW, intent.action)
         assertEquals("https://github.com/qyxx2/MPD-Server_remote_for_Android", intent.dataString)
+
+        val upstreamIntent = createMpdServerRepositoryLinkIntent()
+        assertEquals(Intent.ACTION_VIEW, upstreamIntent.action)
+        assertEquals("https://github.com/qyxx2/MPD-Server", upstreamIntent.dataString)
+    }
+
+    @Test
+    fun aboutUpstreamRepositoryButtonInvokesItsOpenAction() {
+        var openRequested = false
+        composeRule.setContent {
+            AboutScreen(
+                onOpenRepository = {},
+                onOpenMpdServerRepository = { openRequested = true },
+            )
+        }
+        composeRule.onNodeWithTag("about-mpd-server-repository-link").performClick()
+        composeRule.runOnIdle { assertTrue(openRequested) }
     }
 
     @Test
