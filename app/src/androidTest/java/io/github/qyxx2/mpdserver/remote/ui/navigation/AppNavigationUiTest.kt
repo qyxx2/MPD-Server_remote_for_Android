@@ -310,7 +310,7 @@ class AppNavigationUiTest {
         composeRule.onNodeWithTag("about-app-name").assertIsDisplayed()
         composeRule.onNodeWithTag("about-introduction").assertIsDisplayed()
         composeRule.onNodeWithTag("about-author").assertIsDisplayed()
-        composeRule.onNodeWithTag("about-version").assertTextEquals("1.0.0")
+        composeRule.onNodeWithTag("about-version").assertTextEquals("1.0.1")
         composeRule.onNodeWithTag("about-repository-link").assertIsDisplayed()
         composeRule.onNodeWithText("https://github.com/qyxx2/MPD-Server_remote_for_Android").assertIsDisplayed()
         composeRule.onNodeWithTag("about-mpd-server-repository-link").assertIsDisplayed()
