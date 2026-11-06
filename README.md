@@ -41,5 +41,4 @@ MPD-Server 的原生 Android 遥控客户端，使用 Kotlin + Jetpack Compose �
 ## 上游项目
 
 - 服务端：[qyxx2/MPD-Server](https://github.com/qyxx2/MPD-Server)
-- Android 客户端：[qyxx2/MPD-Server_remote_for_Android](https://github.com/qyxx2/MPD-Server_remote_for_Android)
 - MPD服务端：[Music Player Daemon/MPD](https://github.com/MusicPlayerDaemon/MPD)
